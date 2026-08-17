@@ -749,7 +749,6 @@ const VIEWS = [
 ];
 
 export default function Changes({ route }) {
-  const { t } = useTheme();
   const rawChanges = useStore(s => s.changes || []);
   const [creating, setCreating] = useState(false);
 
@@ -1174,21 +1173,26 @@ function CalendarView({ changes, view }) {
           </div>
         </Card>
 
-        <Section title="Blackout and freeze windows" hint="Published on the change calendar. Only emergency change is permitted inside one.">
+        <Section title="Blackout and freeze windows"
+          hint="Northwind's published freeze calendar. Only emergency change is permitted inside one, and only with the freeze owner on the call.">
           <div className={DENSITY.rowGap}>
-            {(monthFreezes.length ? monthFreezes : FREEZE_WINDOWS).map(f => (
-              <Card key={f.id} className={cx(DENSITY.rowPad, 'flex items-start gap-3')}>
-                <IconTile icon={Snowflake} accent={f.hue} size="sm" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className={cx('text-sm font-medium', t.text)}>{f.name}</p>
-                    <Chip accent={f.hue}>{fmtDate(f.start)} – {fmtDate(f.end)}</Chip>
-                    <Chip accent="slate" icon={Boxes}>{f.scope}</Chip>
+            {FREEZE_WINDOWS.map(f => {
+              const visible = monthFreezes.some(x => x.id === f.id);
+              return (
+                <Card key={f.id} className={cx(DENSITY.rowPad, 'flex items-start gap-3', !visible && 'opacity-60')}>
+                  <IconTile icon={Snowflake} accent={f.hue} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className={cx('text-sm font-medium', t.text)}>{f.name}</p>
+                      <Chip accent={f.hue}>{fmtDate(f.start)} – {fmtDate(f.end)}</Chip>
+                      <Chip accent="slate" icon={Boxes}>{f.scope}</Chip>
+                      {visible && <Chip accent={HUE} icon={CalendarDays}>on this month</Chip>}
+                    </div>
+                    <p className={cx('text-xs mt-1 leading-relaxed', t.textSecondary)}>{f.reason}</p>
                   </div>
-                  <p className={cx('text-xs mt-1 leading-relaxed', t.textSecondary)}>{f.reason}</p>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         </Section>
       </div>
@@ -1366,9 +1370,11 @@ function ChangeDetail({ change: c, all, view }) {
               <IconButton icon={Pencil} label="Change actions" onClick={() => setMenu(v => !v)} />
               <Menu open={menu} onClose={() => setMenu(false)} align="right" width="w-56">
                 <MenuLabel>Change actions</MenuLabel>
-                <MenuItem icon={ExternalLink} label="Open the approval" accent="amber"
-                  hint={approval ? approval.policyName : 'No approval raised'}
-                  onClick={() => { setMenu(false); if (approval) navigate('approvals', null, approval.id); }} />
+                {approval && (
+                  <MenuItem icon={ExternalLink} label="Open the approval" accent="amber"
+                    hint={approval.policyName || 'Approval run'}
+                    onClick={() => { setMenu(false); navigate('approvals', null, approval.id); }} />
+                )}
                 {!terminal && (
                   <MenuItem icon={Ban} label="Cancel this change" accent="red"
                     hint="Withdraw before implementation"
@@ -2590,14 +2596,14 @@ function NewChangeModal({ open, onClose, existing }) {
   const [assigneeId, setAssigneeId] = useState('');
   const [justification, setJustification] = useState('');
   const [productIds, setProductIds] = useState([]);
-  const [window, setWindow] = useState(() => defaultWindow());
+  const [win, setWin] = useState(() => defaultWindow());
 
   React.useEffect(() => {
     if (!open) return;
     setType('normal'); setTitle(''); setDescription('');
     setTemplateId(STANDARD_TEMPLATES[0].id);
     setAssigneeId(''); setJustification(''); setProductIds([]);
-    setWindow(defaultWindow());
+    setWin(defaultWindow());
   }, [open]);
 
   const template = STANDARD_TEMPLATES.find(x => x.id === templateId) || STANDARD_TEMPLATES[0];
@@ -2629,7 +2635,7 @@ function NewChangeModal({ open, onClose, existing }) {
     if (type === 'standard') {
       // A standard change inherits the approved procedure and its pre-approval:
       // it is created already scheduled, with no CAB stage in its path.
-      const end = new Date(new Date(window.start).getTime() + template.hours * 36e5).toISOString();
+      const end = new Date(new Date(win.start).getTime() + template.hours * 36e5).toISOString();
       addTo('changes', {
         ...base,
         status: 'scheduled',
@@ -2641,7 +2647,7 @@ function NewChangeModal({ open, onClose, existing }) {
         backoutPlan: template.backoutPlan,
         testPlan: template.testPlan,
         justification: justification.trim() || template.justification,
-        plannedStart: window.start,
+        plannedStart: win.start,
         plannedEnd: end,
       });
     } else if (type === 'emergency') {
@@ -2669,8 +2675,8 @@ function NewChangeModal({ open, onClose, existing }) {
         backoutPlan: '',
         testPlan: '',
         justification: justification.trim(),
-        plannedStart: window.start,
-        plannedEnd: window.end,
+        plannedStart: win.start,
+        plannedEnd: win.end,
       });
     }
 
@@ -2753,16 +2759,16 @@ function NewChangeModal({ open, onClose, existing }) {
 
         <div className="grid sm:grid-cols-2 gap-3">
           <Field label={type === 'emergency' ? 'Work starts' : 'Planned start'}>
-            <Input accent={HUE} type="datetime-local" value={toLocalInput(window.start)}
-              onChange={(e) => setWindow(w => ({ ...w, start: fromLocalInput(e.target.value) }))} />
+            <Input accent={HUE} type="datetime-local" value={toLocalInput(win.start)}
+              onChange={(e) => setWin(w => ({ ...w, start: fromLocalInput(e.target.value) }))} />
           </Field>
           <Field label={type === 'standard' ? `Planned end (${template.hours}h from start)` : 'Planned end'}>
             <Input accent={HUE} type="datetime-local"
               value={toLocalInput(type === 'standard'
-                ? new Date(new Date(window.start).getTime() + template.hours * 36e5).toISOString()
-                : window.end)}
+                ? new Date(new Date(win.start).getTime() + template.hours * 36e5).toISOString()
+                : win.end)}
               disabled={type === 'standard'}
-              onChange={(e) => setWindow(w => ({ ...w, end: fromLocalInput(e.target.value) }))} />
+              onChange={(e) => setWin(w => ({ ...w, end: fromLocalInput(e.target.value) }))} />
           </Field>
         </div>
 
@@ -2793,10 +2799,10 @@ function NewChangeModal({ open, onClose, existing }) {
           )}
         </Field>
 
-        {!!FREEZE_WINDOWS.filter(f => rangesOverlap(window.start, window.end, startOfDay(f.start), endOfDay(f.end))).length && (
+        {!!FREEZE_WINDOWS.filter(f => rangesOverlap(win.start, win.end, startOfDay(f.start), endOfDay(f.end))).length && (
           <Banner accent="red" icon={Snowflake} title="That window is inside a freeze">
             {FREEZE_WINDOWS
-              .filter(f => rangesOverlap(window.start, window.end, startOfDay(f.start), endOfDay(f.end)))
+              .filter(f => rangesOverlap(win.start, win.end, startOfDay(f.start), endOfDay(f.end)))
               .map(f => `${f.name} (${fmtDate(f.start)} – ${fmtDate(f.end)})`).join('; ')}.
             {type === 'emergency' ? ' Permitted for emergency change, with the freeze owner on the call.' : ' Pick another window, or raise this as an emergency change.'}
           </Banner>

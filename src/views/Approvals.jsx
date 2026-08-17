@@ -17,7 +17,7 @@ import {
 import { useStore, setCollection, patchIn } from '@/store/store.js';
 import {
   canDecide, decide, progress, isOverdue, applyTimeout, startApproval,
-  matchingPolicies, describeApprover, STAGE_RULES, TIMEOUT_ACTIONS,
+  matchingPolicies, describeApprover, resolveApprovers, STAGE_RULES, TIMEOUT_ACTIONS,
 } from '@/lib/approvals.js';
 import { explain, summarize, countRows } from '@/lib/conditions.js';
 import { navigate } from '@/lib/router.js';
@@ -542,6 +542,7 @@ export default function Approvals({ route }) {
   }, [visible, meId, now]);
 
   const selected = useMemo(() => all.find(r => r.id === selectedId) || null, [all, selectedId]);
+  const flashRequest = flash?.id ? all.find(r => r.id === flash.id) || null : null;
 
   const goLens = (value) => navigate('approvals', value);
   const open = (id) => navigate('approvals', lens, id);
@@ -555,9 +556,13 @@ export default function Approvals({ route }) {
     const next = decide(request, { approverId: meId, verdict, comment, now: new Date().toISOString() });
     if (next === request) return;
     patchIn('approvals', request.id, next);
+    // A decision does not always move the request. On an "any one approves"
+    // stage a single rejection leaves the stage open — saying "advanced" there
+    // would be a lie, so the three outcomes are reported separately.
+    const advanced = next.currentStage !== request.currentStage;
     setFlash({
       id: request.id,
-      kind: next.state === 'awaiting' ? 'advanced' : next.state,
+      kind: next.state !== 'awaiting' ? next.state : advanced ? 'advanced' : 'recorded',
       verdict,
       fromStage: request.stages[request.currentStage]?.name,
       toStage: next.stages[next.currentStage]?.name,
@@ -568,17 +573,22 @@ export default function Approvals({ route }) {
 
   const onTimeout = (request) => {
     const before = request.stages[request.currentStage];
-    const next = applyTimeout(request, resolveCtx(request), new Date().toISOString());
+    const ctx = resolveCtx(request);
+    const escalationTargets = before?.escalateTo ? resolveApprovers(before.escalateTo, ctx) : [];
+    const next = applyTimeout(request, ctx, new Date().toISOString());
     if (next === request) return;
     patchIn('approvals', request.id, next);
     const after = next.stages[next.currentStage];
+    const sameStage = next.currentStage === request.currentStage;
     setFlash({
       id: request.id,
-      kind: next.state === 'awaiting' ? (after?.escalated && next.currentStage === request.currentStage ? 'escalated' : 'advanced') : next.state,
+      kind: next.state !== 'awaiting' ? next.state : sameStage ? 'escalated' : 'advanced',
       fromStage: before?.name,
       toStage: after?.name,
       toIndex: next.currentStage,
       timeout: true,
+      escalateTo: before?.escalateTo ? describeApprover(before.escalateTo, ctx) : null,
+      resolvedCount: escalationTargets.length,
       added: (after?.approverIds || []).filter(id => !(before?.approverIds || []).includes(id)),
     });
   };
@@ -717,10 +727,15 @@ export default function Approvals({ route }) {
               </Banner>
             )}
 
+            {/* Deciding from a row can make it leave the current lens. Say where
+                it went rather than letting it vanish. */}
+            {flash?.id && flashRequest && <FlashBanner flash={flash} request={flashRequest} people={people} />}
+
             {flash?.kind === 'swept' && (
               <Banner accent="amber" icon={Sparkles} title="Timeout sweep complete">
-                Applied each stage's timeout action to {flash.count} overdue request{flash.count === 1 ? '' : 's'}.
-                Escalated stages now list the extra approver; auto-approve stages have advanced.
+                Applied each stage's own timeout action to {flash.count} overdue request{flash.count === 1 ? '' : 's'}.
+                Open one to see exactly what happened — an escalating stage names whoever was added, and says so
+                when the escalation target resolved to nobody. Stages set to “keep waiting” are deliberately untouched.
               </Banner>
             )}
           </div>
@@ -1102,14 +1117,17 @@ function RequestModal({ request, policy, people, directory, queues, meId, now, f
           </div>
 
           <div>
-            <button
+            <div
+              role="button"
+              tabIndex={0}
               onClick={() => setShowTrace(v => !v)}
-              className={cx('w-full flex items-center gap-2 mb-2', t.textSecondary)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowTrace(v => !v); } }}
+              className={cx('w-full flex items-center gap-2 mb-2 cursor-pointer', t.textSecondary)}
             >
               {showTrace ? <ChevronDown size={ICON.base} /> : <ChevronRight size={ICON.base} />}
               <GroupLabel>Why this approval exists</GroupLabel>
               <Divider className="flex-1" />
-            </button>
+            </div>
             {showTrace && <PolicyTrace policy={policy} request={request} />}
           </div>
 
@@ -1150,12 +1168,26 @@ function FlashBanner({ flash, request, people }) {
       </Banner>
     );
   }
+  if (flash.kind === 'recorded') {
+    const stage = request.stages[request.currentStage];
+    const tally = stageTally(stage || { decisions: [], approverIds: [], rule: 'all' });
+    return (
+      <Banner accent={flash.verdict === 'approved' ? 'emerald' : 'amber'} icon={CheckCheck}
+        title={`${flash.by}'s ${flash.verdict === 'approved' ? 'approval' : 'rejection'} is recorded — the stage is still open`}>
+        “{flash.fromStage}” runs on <strong className={t.text}>{stageRuleLabel(stage || {}).toLowerCase()}</strong>, so it
+        needs {tally.need} approval{tally.need === 1 ? '' : 's'} and has {tally.approved}. Nothing advances until it clears.
+      </Banner>
+    );
+  }
   if (flash.kind === 'escalated') {
     const names = (flash.added || []).map(id => people.get(id)?.name || id);
     return (
-      <Banner accent="amber" icon={Zap} title="Timeout policy applied — stage escalated">
-        {names.length ? `${names.join(', ')} ${names.length === 1 ? 'was' : 'were'} added as escalation approvers` : 'The escalation target was already on the stage'}
-        {' '}and the stage clock has been reset.
+      <Banner accent={names.length ? 'amber' : 'orange'} icon={Zap} title="Timeout policy applied">
+        {names.length
+          ? `${names.join(', ')} ${names.length === 1 ? 'was' : 'were'} added as an escalation approver and the stage clock has been reset.`
+          : flash.resolvedCount
+            ? `The escalation target (${flash.escalateTo}) was already on this stage, so nobody new was added. The clock has been reset.`
+            : `The escalation target (${flash.escalateTo || 'none configured'}) resolved to nobody, so nobody was added. RelayHQ reset the clock rather than skipping the stage — this is a policy configuration gap, not a decision.`}
       </Banner>
     );
   }
@@ -1191,7 +1223,7 @@ function SummaryGrid({ request, people, now }) {
   const { t } = useTheme();
   const requester = people.get(request.requesterId);
   return (
-    <Card className={cx(DENSITY.cardPad, 'grid gap-3 sm:grid-cols-4')}>
+    <Card className={cx(DENSITY.cardPad, 'grid gap-3 grid-cols-2 sm:grid-cols-4')}>
       <MetaCell label="Requester">
         <span className="flex items-center gap-2 min-w-0">
           <Avatar name={requester?.name || request.requesterId} size="md" />

@@ -265,17 +265,23 @@ export const RULES = [
   {
     id: 'rule-billing-autolabel',
     name: 'Auto-label billing questions and loop in Finance',
-    description: 'Support keeps the ticket — Finance just needs to see it. Labelling here is what makes the billing deflection report possible.',
+    description: 'Support keeps the ticket — Finance just needs to see it. Labelling here is what makes the billing deflection report possible. Gated on the requester being a customer: an employee asking for access to the billing console is an IT request, not a billing question, and without that gate this rule stole those tickets.',
     enabled: true,
     trigger: 'on_create',
     conditions: {
-      match: 'any',
+      match: 'all',
       rows: [
-        { field: 'ticket.subformId', op: 'is', value: SF.BILLING_QUESTION },
-        { field: 'ticket.catalogItemId', op: 'is', value: CAT.I_BILLING },
-        { field: 'ticket.title', op: 'contains', value: 'invoice' },
-        { field: 'ticket.title', op: 'contains', value: 'refund' },
-        { field: 'ticket.description', op: 'contains', value: 'charged twice' },
+        { field: 'requester.isExternal', op: 'is_true' },
+        {
+          match: 'any',
+          rows: [
+            { field: 'ticket.subformId', op: 'is', value: SF.BILLING_QUESTION },
+            { field: 'ticket.catalogItemId', op: 'is', value: CAT.I_BILLING },
+            { field: 'ticket.title', op: 'contains', value: 'invoice' },
+            { field: 'ticket.title', op: 'contains', value: 'refund' },
+            { field: 'ticket.description', op: 'contains', value: 'charged twice' },
+          ],
+        },
       ],
     },
     actions: [
@@ -305,6 +311,7 @@ export const RULES = [
     },
     actions: [
       { type: 'set_priority', priority: 'urgent' },
+      { type: 'assign_queue', queueId: Q.ENGINEERING },
       { type: 'add_label', label: 'emergency-change' },
       { type: 'start_approval', policyId: POL.EMERGENCY_CHANGE },
       { type: 'notify', target: { kind: 'queue', queueId: Q.ENGINEERING }, message: 'Emergency change raised — on-call authorisation required within 2 hours.' },

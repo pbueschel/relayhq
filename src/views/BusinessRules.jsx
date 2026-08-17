@@ -18,7 +18,7 @@ import {
 import { useStore, setCollection, addTo, patchIn, removeFrom, uid } from '@/store/store.js';
 import {
   FIELDS, FIELD_BY_ID, ALL_OPERATORS, operatorsFor, operatorLabel, fieldLabel,
-  isNullary, evaluate, explain, emptyGroup, defaultRowFor, countRows, summarize,
+  isNullary, evaluate, explain, emptyGroup, defaultRowFor, countRows,
 } from '@/lib/conditions.js';
 import {
   APPROVER_KINDS, STAGE_RULES, TIMEOUT_ACTIONS,
@@ -147,6 +147,24 @@ function setPath(obj, path, value) {
 
 function getPath(obj, path) {
   return String(path).split('.').reduce((acc, k) => (acc == null ? undefined : acc[k]), obj);
+}
+
+/**
+ * One-line summary of a condition tree with reference ids resolved to names.
+ * summarize() in the engine is pure and has no access to the collections, so it
+ * prints "Submitted form is sf-new-hire". Here we can do better.
+ */
+function readableSummary(group, options) {
+  if (!isGroupNode(group) || !(group.rows || []).length) return 'Always — no conditions';
+  const join = group.match === 'any' ? ' or ' : ' and ';
+  return group.rows.map((r) => {
+    if (isGroupNode(r)) return `(${readableSummary(r, options)})`;
+    const field = FIELD_BY_ID[r.field];
+    const opts = optionsForField(field, options);
+    const show = (v) => (field?.optionsFrom ? labelIn(opts, v, String(v)) : String(v));
+    const value = Array.isArray(r.value) ? r.value.map(show).join(', ') : show(r.value ?? '—');
+    return `${fieldLabel(r.field)} ${operatorLabel(r.op)}${isNullary(r.op) ? '' : ' ' + value}`;
+  }).join(join);
 }
 
 /** Render any context value for the trace's ACTUAL column. */
@@ -844,7 +862,7 @@ function RulesTab({ data }) {
                 accent={rule.enabled ? 'rose' : 'gray'}
                 icon={Filter}
                 title={rule.name}
-                subtitle={summarize(rule.conditions)}
+                subtitle={readableSummary(rule.conditions, options)}
                 onClick={() => setEditing(clone(rule))}
                 meta={
                   <>
@@ -1038,7 +1056,7 @@ function RuleEditorModal({ draft, data, onChange, onClose, onSave }) {
         {pane === 'conditions' && (
           <div className="space-y-3">
             <Banner accent="purple" icon={Split} title="Read it out loud">
-              <span className={t.text}>{summarize(draft.conditions)}</span>
+              <span className={t.text}>{readableSummary(draft.conditions, data.options)}</span>
             </Banner>
             <ConditionBuilder
               group={draft.conditions}
@@ -2092,7 +2110,7 @@ function PoliciesTab({ data }) {
               <div className="px-4 py-2.5 space-y-2">
                 <p className={cx('text-xs', t.textSecondary)}>
                   <span className={cx('font-semibold uppercase tracking-wider text-[10px] mr-1.5', t.textMuted)}>When</span>
-                  {summarize(p.appliesWhen)}
+                  {readableSummary(p.appliesWhen, data.options)}
                 </p>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {(p.stages || []).map((stage, i) => (
@@ -2258,7 +2276,7 @@ function PolicyEditorModal({ draft, data, onChange, onClose, onSave }) {
         {pane === 'when' && (
           <div className="space-y-3">
             <Banner accent="purple" icon={Split} title="Read it out loud">
-              <span className={t.text}>{summarize(draft.appliesWhen)}</span>
+              <span className={t.text}>{readableSummary(draft.appliesWhen, data.options)}</span>
             </Banner>
             <ConditionBuilder
               group={draft.appliesWhen}

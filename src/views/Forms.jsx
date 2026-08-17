@@ -659,20 +659,22 @@ function FormEditorBody({ form, products, onClose }) {
               {products.map(p => {
                 const on = (draft.productIds || []).includes(p.id);
                 return (
-                  <button
+                  <div
                     key={p.id}
-                    onClick={() => toggleProduct(p.id)}
-                    className={cx('flex items-center gap-2.5 rounded-lg border text-left transition-colors',
+                    className={cx('flex items-center gap-2.5 rounded-lg border transition-colors',
                       DENSITY.rowPad,
-                      on ? cx(a('amber').borderStrong, t.bgCard) : cx(t.bgCard, t.borderLight, t.bgHover))}
+                      on ? cx(a('amber').borderStrong, t.bgCard) : cx(t.bgCard, t.borderLight))}
                   >
-                    <Checkbox checked={on} onChange={() => toggleProduct(p.id)} accent="amber" />
-                    <Folder size={ICON.base} className={on ? a('amber').fg : t.textMuted} />
-                    <span className="min-w-0 flex-1">
-                      <span className={cx('text-sm block truncate', t.text)}>{p.name}</span>
-                      {p.description && <span className={cx('text-[11px] block truncate', t.textMuted)}>{p.description}</span>}
-                    </span>
-                  </button>
+                    <Folder size={ICON.base} className={cx('flex-shrink-0', on ? a('amber').fg : t.textMuted)} />
+                    <Checkbox
+                      accent="amber"
+                      className="flex-1 min-w-0"
+                      checked={on}
+                      onChange={() => toggleProduct(p.id)}
+                      label={p.name}
+                      hint={p.description}
+                    />
+                  </div>
                 );
               })}
             </div>
@@ -823,6 +825,7 @@ function Builder({ subform, queues, policies, directory, assets }) {
   const [expanded, setExpanded] = useState(null);
   const [settings, setSettings] = useState(false);
   const [confirming, setConfirming] = useState(null);   // 'subform' | a field
+  const [notice, setNotice] = useState(null);
   const [answers, setAnswers] = useState({});
   const [submitted, setSubmitted] = useState(false);
 
@@ -854,8 +857,13 @@ function Builder({ subform, queues, policies, directory, assets }) {
     if (target < 0 || target >= next.length) return;
     [next[index], next[target]] = [next[target], next[index]];
     // A condition may only point backwards. Moving a field past its source
-    // would create a forward reference, so the condition is dropped and said so.
-    setFields(dropForwardConditions(next));
+    // would create a forward reference, so the condition is dropped — and the
+    // drop is announced, never silent.
+    const { fields: cleaned, dropped } = dropForwardConditions(next);
+    setFields(cleaned);
+    setNotice(dropped.length
+      ? `Reordering removed the condition on ${dropped.map(l => `“${l}”`).join(' and ')}. A field can only react to an answer above it.`
+      : null);
   };
 
   const deleteField = (field) => {
@@ -925,6 +933,12 @@ function Builder({ subform, queues, policies, directory, assets }) {
                 hint="Order is the order a person answers them. A condition may only point at a field above it."
                 action={<span className={cx('text-xs', t.textMuted)}>{fields.length} fields</span>}
               >
+                {notice && (
+                  <Banner accent="amber" icon={AlertTriangle} className="mb-3">
+                    {notice}{' '}
+                    <button onClick={() => setNotice(null)} className={cx('underline', t.text)}>Dismiss</button>
+                  </Banner>
+                )}
                 {fields.length === 0 ? (
                   <EmptyState
                     icon={Layers}
@@ -999,14 +1013,23 @@ function isBlank(v) {
   return v == null || v === '' || v === false || (Array.isArray(v) && v.length === 0);
 }
 
-/** After a reorder, drop any condition that now points forwards. */
+/**
+ * After a reorder, drop any condition that now points forwards, and report
+ * which ones were dropped so the builder can say so out loud.
+ */
 function dropForwardConditions(fields) {
   const seen = new Set();
-  return fields.map(f => {
-    const out = f.showIf?.fieldId && !seen.has(f.showIf.fieldId) ? { ...f, showIf: undefined } : f;
+  const dropped = [];
+  const out = fields.map(f => {
+    if (f.showIf?.fieldId && !seen.has(f.showIf.fieldId)) {
+      dropped.push(f.label || 'an untitled field');
+      seen.add(f.id);
+      return { ...f, showIf: undefined };
+    }
     seen.add(f.id);
-    return out;
+    return f;
   });
+  return { fields: out, dropped };
 }
 
 /* ------------------------------------------------------------------ *
@@ -1286,8 +1309,10 @@ function OptionsEditor({ options, onChange, accent }) {
     <div>
       <GroupLabel className="block mb-1.5">Options</GroupLabel>
       <div className="space-y-1.5">
+        {/* Keyed by position, not by text: keying on the value would remount the
+            input on every keystroke and steal focus — the v1 remount bug. */}
         {options.map((o, i) => (
-          <div key={`${o}-${i}`} className="flex items-center gap-1.5">
+          <div key={i} className="flex items-center gap-1.5">
             <Input
               accent={accent}
               value={o}
@@ -1514,7 +1539,7 @@ function PreviewPane({
   const generalName = queueName(queues, Q.GENERAL) || 'General';
 
   return (
-    <div className="sticky top-0 min-w-0 space-y-2">
+    <div className="sticky top-0 min-w-0 space-y-2 max-h-[calc(100vh-9rem)] overflow-auto">
       <div className="flex items-center justify-between gap-2">
         <GroupLabel>Live preview</GroupLabel>
         <button onClick={onReset} className={cx('text-[11px]', t.textMuted, 'hover:underline')}>Reset answers</button>
@@ -1599,7 +1624,7 @@ function PreviewPane({
 }
 
 function PreviewField({ field, value, onChange, directory, assets }) {
-  const { t, a } = useTheme();
+  const { t } = useTheme();
   const meta = typeMeta(field.type);
 
   if (field.type === 'checkbox') {
