@@ -780,7 +780,7 @@ function SubformRow({ subform, queues, policies }) {
   const { t } = useTheme();
   const aud = audienceMeta(subform.audience);
   const policy = policies.find(p => p.id === subform.approvalPolicyId) || null;
-  const conditional = (subform.fields || []).filter(f => f.showIf?.fieldId).length;
+  const conditional = (subform.fields || []).filter(f => f.showIf?.fieldId);
   const required = (subform.fields || []).filter(f => f.required).length;
 
   return (
@@ -792,14 +792,18 @@ function SubformRow({ subform, queues, policies }) {
       onClick={() => navigate('forms', 'requests', subform.id)}
       meta={
         <>
-          <span className={cx('text-[11px] tabular-nums hidden sm:inline', t.textMuted)}>
+          <span className={cx('text-[11px] tabular-nums', t.textMuted)}>
             {(subform.fields || []).length} fields · {required} required
           </span>
-          {conditional > 0 && (
-            <Chip accent="violet" icon={GitBranch} title={`${conditional} conditional field${conditional === 1 ? '' : 's'}`}>
-              {conditional} conditional
-            </Chip>
-          )}
+          {subform.enabled === false && <StatusPill status="closed" />}
+          {/* Chips carry VALUES: the conditional fields are named, not counted. */}
+          <ChipGroup
+            accent="violet"
+            icon={GitBranch}
+            max={1}
+            items={conditional}
+            render={(f) => f.label || 'Untitled field'}
+          />
           {policy && <Chip accent="amber" icon={Stamp} title={policy.description || policy.name}>{policy.name}</Chip>}
           {subform.routing?.queueId
             ? <Chip accent="gray" icon={Inbox}>{queueName(queues, subform.routing.queueId) || 'Unknown queue'}</Chip>
@@ -935,8 +939,10 @@ function Builder({ subform, queues, policies, directory, assets }) {
               >
                 {notice && (
                   <Banner accent="amber" icon={AlertTriangle} className="mb-3">
-                    {notice}{' '}
-                    <button onClick={() => setNotice(null)} className={cx('underline', t.text)}>Dismiss</button>
+                    {notice}
+                    <span className="block mt-1.5">
+                      <Button variant="soft" accent="amber" size="xs" onClick={() => setNotice(null)}>Dismiss</Button>
+                    </span>
                   </Banner>
                 )}
                 {fields.length === 0 ? (
@@ -1057,18 +1063,14 @@ function FieldTypeRail({ onAdd }) {
 }
 
 function FieldTypeButton({ meta, onClick }) {
-  const { t, a } = useTheme();
-  const c = a(meta.accent);
-  const Icon = meta.icon;
+  const { t } = useTheme();
   return (
     <button
       onClick={onClick}
       title={`Add a ${meta.label.toLowerCase()} field`}
       className={cx('w-full flex items-center gap-2 px-1.5 py-1.5 rounded-lg text-left transition-colors', t.bgHover)}
     >
-      <span className={cx('inline-flex items-center justify-center p-1.5 rounded-lg flex-shrink-0', c.softStrong)}>
-        <Icon size={ICON.base} className={c.fg} />
-      </span>
+      <IconTile icon={meta.icon} accent={meta.accent} size="sm" />
       <span className="min-w-0 flex-1">
         <span className={cx('text-xs font-medium block truncate', t.text)}>{meta.label}</span>
         <span className={cx('text-[10px] block truncate', t.textMuted)}>{meta.hint}</span>
@@ -1182,7 +1184,6 @@ function FieldCard({ field, index, count, earlier, fields, expanded, onToggle, o
   const { t, a } = useTheme();
   const meta = typeMeta(field.type);
   const c = a(meta.accent);
-  const Icon = meta.icon;
   const condition = describeCondition(field.showIf, fields);
 
   return (
@@ -1190,9 +1191,7 @@ function FieldCard({ field, index, count, earlier, fields, expanded, onToggle, o
       <div className="flex items-center gap-2.5 px-3 py-2.5">
         <span className={cx('w-1 self-stretch min-h-8 rounded-full flex-shrink-0', c.rail)} />
         <span className={cx('text-[10px] font-semibold tabular-nums w-4 text-right flex-shrink-0', t.textMuted)}>{index + 1}</span>
-        <span className={cx('inline-flex items-center justify-center p-1.5 rounded-lg flex-shrink-0', c.softStrong)}>
-          <Icon size={ICON.base} className={c.fg} />
-        </span>
+        <IconTile icon={meta.icon} accent={meta.accent} size="sm" />
         <button onClick={onToggle} className="flex-1 min-w-0 text-left">
           <span className="flex items-center gap-2 min-w-0">
             <span className={cx('text-sm font-medium truncate', t.text)}>{field.label || 'Untitled field'}</span>
@@ -1542,7 +1541,7 @@ function PreviewPane({
     <div className="sticky top-0 min-w-0 space-y-2 max-h-[calc(100vh-9rem)] overflow-auto">
       <div className="flex items-center justify-between gap-2">
         <GroupLabel>Live preview</GroupLabel>
-        <button onClick={onReset} className={cx('text-[11px]', t.textMuted, 'hover:underline')}>Reset answers</button>
+        <Button variant="ghost" size="xs" onClick={onReset}>Reset answers</Button>
       </div>
 
       <div className={cx('rounded-2xl p-3', t.portalBg)}>

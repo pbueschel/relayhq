@@ -1297,10 +1297,14 @@ function AutomationEditor({ automation, runs, lookup }) {
               {plural(nodes.filter(n => n.type !== 'util.sticky').length, 'node')} · updated {relTime(automation.updatedAt)}
             </span>
             <Divider vertical className="h-5" />
+            {/* Label ahead of the switch: the DS toggle's knob travels past the
+                right edge of its track, so a trailing label collides with it. */}
+            <span className={cx('text-xs font-medium', automation.active ? '' : t.textMuted)}>
+              {automation.active ? 'Active' : 'Paused'}
+            </span>
             <Toggle
               accent="emerald"
               checked={!!automation.active}
-              label={automation.active ? 'Active' : 'Paused'}
               onChange={(v) => patchIn('automations', automation.id, { active: v })}
             />
           </div>
@@ -1963,13 +1967,11 @@ function ConfigPanel({ node, step, lookup, onPatch, onConfig, onDelete, onOpenPa
         </Field>
 
         <div className={cx('flex items-center justify-between rounded-lg border px-3 py-2', t.bgCard, t.borderLight)}>
-          <Toggle
-            accent="emerald"
-            checked={!node.disabled}
-            label={node.disabled ? 'Node disabled' : 'Node enabled'}
-            onChange={(v) => onPatch({ disabled: !v })}
-          />
-          <IconButton icon={Trash2} label="Delete node" accent="red" onClick={onDelete} />
+          <span className={cx('text-sm', t.textSecondary)}>{node.disabled ? 'Node disabled' : 'Node enabled'}</span>
+          <span className="flex items-center gap-2">
+            <Toggle accent="emerald" checked={!node.disabled} onChange={(v) => onPatch({ disabled: !v })} />
+            <IconButton icon={Trash2} label="Delete node" accent="red" onClick={onDelete} />
+          </span>
         </div>
 
         {node.disabled && (
@@ -2066,7 +2068,10 @@ function ConfigField({ spec, value, lookup, onChange }) {
   if (spec.type === 'toggle') {
     return (
       <div className={cx('rounded-lg border px-3 py-2', t.bgCard, t.borderLight)}>
-        <Toggle accent="sky" checked={!!value} label={spec.label} onChange={onChange} />
+        <div className="flex items-center justify-between gap-3">
+          <span className={cx('text-sm', t.textSecondary)}>{spec.label}</span>
+          <Toggle accent="sky" checked={!!value} onChange={onChange} />
+        </div>
         {spec.hint && <p className={cx('text-[11px] mt-1', t.textMuted)}>{spec.hint}</p>}
       </div>
     );

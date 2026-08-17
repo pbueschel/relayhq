@@ -49,30 +49,30 @@ whole thing is live on GitHub Pages with verification gates in CI.
 - [x] W4.2 — Headless Chrome render check over every route — **AC:** fails on unmounted views and on `undefined`/`NaN`/`[object Object]` in the DOM
 - [x] W4.3 — GitHub Actions running both gates before deploy — **AC:** green on `main`; site live
 
-### E5 — Modules  🟡 in progress
-- [ ] W5.1 — Catalog: three-level tree, shared-atom attachment, import/copy, cascade delete
-- [ ] W5.2 — Knowledge: article + Instagram-style guide authoring, lesson metadata, reuse panel
-- [ ] W5.3 — Forms: subform builder, 13 field types, conditional display, routing, approval policy
-- [ ] W5.4 — Business Rules: queues, derived routing, condition builder, rule tester, approval policy editor, SLA
-- [ ] W5.5 — Approvals: inbox, stage ladder, decide/advance, timeout demo, delegation
-- [ ] W5.6 — Changes: three change types, ITIL lifecycle, derived risk, CAB, calendar with freeze windows and conflict detection, PIR
-- [ ] W5.7 — Problems: RCA, known-error workaround enforcement, incident links, permanent fix via change
-- [ ] W5.8 — Workspace: stats, lens bar, composing filters, ticket card with SLA and internal/external requester, task modal gating
-- [ ] W5.9 — Projects: ClickUp-style List/Board/Calendar/Timeline, group-by, custom fields and statuses, dependencies, milestones
-- [ ] W5.10 — Assets: model/asset split, person *and* location ownership, check-in/out history, license allocations, compliance position, contracts and renewals
-- [ ] W5.11 — Automations: n8n-style canvas, node taxonomy over RelayHQ's domain, expressions, execution log
-- [ ] W5.12 — Learning: curriculum → course → module → lesson from knowledge atoms, learners rollup, lesson player
-- [ ] W5.13 — Portal: drill-down, KB-before-form, accessible Stories guide viewer, real submission, academy, the argument panel
+### E5 — Modules  ✅
+- [x] W5.1 — Catalog: three-level tree, shared-atom attachment, import/copy, cascade delete
+- [x] W5.2 — Knowledge: article + Instagram-style guide authoring, lesson metadata, reuse panel
+- [x] W5.3 — Forms: subform builder, 13 field types, conditional display, routing, approval policy
+- [x] W5.4 — Business Rules: queues, derived routing, condition builder, rule tester, approval policy editor, SLA
+- [x] W5.5 — Approvals: inbox, stage ladder, decide/advance, timeout demo, delegation
+- [x] W5.6 — Changes: three change types, ITIL lifecycle, derived risk, CAB, calendar with freeze windows and conflict detection, PIR
+- [x] W5.7 — Problems: RCA, known-error workaround enforcement, incident links, permanent fix via change
+- [x] W5.8 — Workspace: stats, lens bar, composing filters, ticket card with SLA and internal/external requester, task modal gating
+- [x] W5.9 — Projects: ClickUp-style List/Board/Calendar/Timeline, group-by, custom fields and statuses, dependencies, milestones
+- [x] W5.10 — Assets: model/asset split, person *and* location ownership, check-in/out history, license allocations, compliance position, contracts and renewals
+- [x] W5.11 — Automations: n8n-style canvas, node taxonomy over RelayHQ's domain, expressions, execution log
+- [x] W5.12 — Learning: curriculum → course → module → lesson from knowledge atoms, learners rollup, lesson player
+- [x] W5.13 — Portal: drill-down, KB-before-form, accessible Stories guide viewer, real submission, academy, the argument panel
 
-### E6 — Research  🟡 in progress
-- [ ] W6.1 — ITSM/PM/automation market research, fact-checked — **AC:** dated synthesis in `docs/research/` with a gap-analysis table
-- [ ] W6.2 — External customer service + training/LMS research, fact-checked — **AC:** dated synthesis; the tri-modal thesis tested honestly
-- [ ] W6.3 — Research-informed refinement pass over the modules — **AC:** every "must" recommendation either built or explicitly declined in `docs/decisions.md`
+### E6 — Research  ✅
+- [x] W6.1 — ITSM/PM/automation market research, fact-checked — **AC:** dated synthesis in `docs/research/` with a gap-analysis table
+- [x] W6.2 — External customer service + training/LMS research, fact-checked — **AC:** dated synthesis; the tri-modal thesis tested honestly
+- [x] W6.3 — Research-informed refinement pass over the modules — **AC:** every "must" recommendation either built or explicitly declined in `docs/decisions.md`
 
 ### E7 — Documentation
 - [x] W7.1 — CLAUDE.md, plan.md, worklog, decisions
-- [ ] W7.2 — Design system playbook
-- [ ] W7.3 — README with the product story and local dev instructions
+- [x] W7.2 — Design system playbook
+- [x] W7.3 — README with the product story and local dev instructions
 
 ## Held — awaiting Phil's go-ahead
 

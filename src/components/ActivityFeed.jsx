@@ -47,6 +47,10 @@ import { navigate } from '@/lib/router.js';
  * builds itself. An unknown verb degrades to its own name with the underscores
  * removed rather than throwing away the entry — an audit log that hides events
  * it does not recognise is worse than one that renders them plainly.
+ *
+ * `selfPhrase` covers the case where the actor IS the target: an automation
+ * that swept forty tickets has no single record to point at, and "Triage ran
+ * Triage" is not a sentence.
  * ------------------------------------------------------------------ */
 
 const VERBS = {
@@ -62,7 +66,7 @@ const VERBS = {
   completed:      { phrase: 'completed',      icon: Award,          hue: 'emerald' },
   checked_out:    { phrase: 'checked out',    icon: PackageOpen,    hue: 'cyan' },
   checked_in:     { phrase: 'checked in',     icon: PackageCheck,   hue: 'cyan' },
-  ran_automation: { phrase: 'ran',            icon: Play,           hue: 'sky' },
+  ran_automation: { phrase: 'ran on',         icon: Play,           hue: 'sky', selfPhrase: 'ran' },
   closed:         { phrase: 'closed',         icon: CircleCheckBig, hue: 'gray' },
   resolved:       { phrase: 'resolved',       icon: CircleCheckBig, hue: 'emerald' },
   archived:       { phrase: 'archived',       icon: Archive,        hue: 'slate' },
@@ -122,9 +126,11 @@ const TARGET_ROUTE = {
   subcategory:  ['catalog', null],
 };
 
+/* An unregistered type keeps its own name: entityHue() answers grey for it and
+ * TARGET_ROUTE has no entry, so it renders as a plain neutral chip. Coercing it
+ * to a known kind would paint it in a hue that lies about what it is. */
 function targetKind(type) {
-  const kind = TARGET_ALIAS[type] || type;
-  return ENTITIES[kind] ? kind : 'ticket';
+  return TARGET_ALIAS[type] || type;
 }
 
 /* ------------------------------------------------------------------ *
@@ -364,11 +370,16 @@ function ActivityRow({ entry, actor, compact, now }) {
   const route = TARGET_ROUTE[kind];
   const isBot = actor.kind === 'automation' || actor.kind === 'system';
 
+  // An automation acting on itself (a sweep with no single subject) drops the
+  // chip and takes the shorter phrase.
+  const selfTargeted = !!entry.targetId && entry.targetId === entry.actorId;
+  const phrase = selfTargeted ? (verb.selfPhrase || verb.phrase) : verb.phrase;
+
   return (
     <div className={cx('relative flex items-start gap-2.5 rounded-lg px-1 py-1.5 transition-colors', t.bgHover)}>
       <span className={cx('flex-shrink-0 flex justify-center', compact ? 'w-5' : 'w-6')}>
         {isBot
-          ? <IconTile icon={Bot} accent="sky" size="sm" />
+          ? <IconTile icon={Bot} accent={entityHue('automation')} size="sm" />
           : <Avatar name={actor.name} size={compact ? 'sm' : 'md'} ring />}
       </span>
 
@@ -380,11 +391,15 @@ function ActivityRow({ entry, actor, compact, now }) {
           <p className={cx('text-sm leading-snug', t.textSecondary)}>
             <span className={cx('font-medium', t.text)}>{actor.name}</span>
             {' '}
-            <VerbIcon size={ICON.xs} className={cx('inline-block align-baseline', vc.fg)} aria-hidden="true" />
+            <VerbIcon size={ICON.xs} className={cx('inline-block align-middle', vc.fg)} aria-hidden="true" />
             {' '}
-            {verb.phrase}
-            {' '}
-            <ActivityTarget entry={entry} kind={kind} accent={c} route={route} />
+            {phrase}
+            {!selfTargeted && (
+              <>
+                {' '}
+                <ActivityTarget entry={entry} kind={kind} accent={c} route={route} />
+              </>
+            )}
           </p>
           {!compact && entry.detail && (
             <p className={cx('text-xs mt-0.5 leading-relaxed', t.textMuted)}>{entry.detail}</p>

@@ -736,6 +736,19 @@ export default function Portal({ route }) {
         )}
       </PageBody>
 
+      <footer className={cx('flex-shrink-0 border-t px-6 py-2 flex items-center justify-between gap-3 flex-wrap text-[11px]',
+        t.border, t.textMuted)}>
+        <span>{s.settings?.orgName || 'Northwind Systems'} · {form.name}</span>
+        <span className="flex items-center gap-1.5">
+          Powered by
+          <span className={cx('inline-flex items-center gap-1 font-medium', t.textSecondary)}>
+            <span className={cx('w-3.5 h-3.5 rounded-[4px] flex-shrink-0', GRADIENT.brand)} />
+            RelayHQ
+          </span>
+          · service, support and training on one substrate
+        </span>
+      </footer>
+
       <WhyPanel
         open={whyOpen}
         onClose={() => { setWhyOpen(false); setWhyHint(false); }}
@@ -747,7 +760,7 @@ export default function Portal({ route }) {
 
       <TicketModal
         ticket={(s.tickets || []).find(tk => tk.id === detailId) || null}
-        queue={byQueue}
+        queues={byQueue}
         subforms={bySf}
         onClose={() => setDetailId(null)}
       />
@@ -1809,7 +1822,7 @@ function RequestsScreen({ tickets, orgTickets, org, queues, requester, onOpen, o
   );
 }
 
-function TicketModal({ ticket, queue, subforms, onClose }) {
+function TicketModal({ ticket, queues, subforms, onClose }) {
   const { t } = useTheme();
   if (!ticket) return null;
   const publicComments = (ticket.comments || []).filter(c => !c.internal);
@@ -1827,7 +1840,7 @@ function TicketModal({ ticket, queue, subforms, onClose }) {
       subtitle={`${ticket.key} · raised ${fmtWhen(ticket.createdAt)}`}
       footer={<>
         <span className={cx('text-xs', t.textMuted)}>
-          {queue.get(ticket.queueId)?.name || 'Unrouted'}
+          {queues.get(ticket.queueId)?.name || 'Unrouted'}
         </span>
         <Button variant="outline" onClick={onClose}>Close</Button>
       </>}
@@ -2246,6 +2259,18 @@ function WhyNumbers({ facts }) {
           disagree with itself.
         </li>
       </ul>
+
+      <Banner accent="slate" icon={CircleAlert} title="What we will not tell you" className="mt-4">
+        You will see a deflection percentage quoted almost everywhere in this category. We do not quote one, because
+        we went looking for a trustworthy source and there is not one — the published figures run from 5% to 80%, every
+        one of them is self-reported by a vendor, and the market leader publishes a formula with no benchmark at all.
+        <span className="block mt-1.5">
+          A request that was never filed leaves no record, so <strong className={t.text}>no system can observe deflection
+          directly</strong>. What RelayHQ can honestly measure is <strong className={t.text}>assisted resolution</strong>:
+          it owns both the drill path and the form, so it logs which atoms a person actually read before they submitted
+          — or before they closed the tab without submitting. That number is ours to earn on your data, not to borrow.
+        </span>
+      </Banner>
     </Section>
   );
 }
