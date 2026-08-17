@@ -204,3 +204,88 @@ session would otherwise have no way back to what he actually approved.
 **The working pattern worth keeping:** every visual change this session went artifact → Phil's
 reaction → implementation. None of the three was built as specced; each got a correction that only
 surfaced because he had something concrete to react to. Propose visually before writing the view.
+
+---
+
+## 2026-08-17 (second session) — The header stopped moving, and the gates learned to see it
+
+Phil resized the browser window, watched the module top bar change shape, and said so. Everything
+below came out of that one observation.
+
+### Changed
+
+**`ModuleHeader` is two bands of fixed height that never wrap** (`src/ds/header.jsx`, rewritten).
+
+- ROW 1 — `h-[52px]`, a three-column grid: identity left, the view control (lens / SubTabs) CENTRED,
+  `actions` + `primary` right. Phil chose this arrangement from three options and then moved the New
+  button from the left of the row to the right.
+- ROW 2 — `h-[44px]`, the new `FilterBar`: the scoped search, then the filters, then `Clear all`.
+- The old `tools` and `tray` props are GONE, along with `FilterToggle` and `FilterTray`.
+
+Row 1 is a grid, not a flex row with spacers, for a specific reason: a spacer centres against whatever
+flanks it, so the lens would have slid sideways every time the subtitle changed length — the same bug
+in a quieter form. Equal `minmax(0,1fr)` tracks hold the centre still.
+
+**All 32 call sites across 14 views migrated in one pass**, eleven of them by parallel subagents
+working one file each. `PoliciesTab` and `SlaTab` in BusinessRules have a search but no filters, so
+they render a `FilterBar` carrying only the search rather than dropping to one band — flagged by the
+agent as a deliberate deviation and kept.
+
+**`SubTabs` gained an `inline` variant** (`src/ds/nav.jsx`) at `CONTROL_H` that shrinks by scrolling,
+copying `ViewSwitcher`'s existing precedent.
+
+**`PageBody` now aligns left by default**, with `align="centre"` kept for reading surfaces. No view
+currently needs the centred variant — the article and lesson prose is already capped at `max-w-2xl`
+internally, so it reads correctly inside a left-aligned column. Assets moved to one width cap across
+all five tabs.
+
+**Workspace groups by due date by default** (`src/views/Workspace.jsx`). Grouping is now its own state
+(`groupBy`) instead of being derived from the lens, with a `GroupByToggle` on the filter bar preserving
+the by-type view. `sortItems` already ordered rows overdue-first by due date inside every section, so
+only the section boundaries changed.
+
+**The living styleguide changed in the same commit** (`src/views/DesignSystem.jsx`): the header banner
+rewritten, the two header demos migrated, the `FilterToggle` demo replaced with a `FilterBar` demo, and
+standing rule 8 reversed from "Centre the content, cap the width" to "Cap the width, align it left".
+
+### Bugs found and fixed
+
+- **The header re-wrapped without the window moving.** The reflow trigger was never the tools cluster —
+  it was the SUBTITLE. `truncate` implies `white-space: nowrap`, so flexbox breaks lines against the
+  full untruncated string, and `subsetLabel()` swaps a ~289px resting label for a ~68px one the moment a
+  filter is set. Typing in the search could unwrap the header; clearing it could wrap it back.
+- **Assets clipped its own Compliance tab.** `SubTabs` had no `min-w-0` and no overflow, so it was a
+  ~641px hard floor; below roughly a 938px viewport `main`'s `overflow-hidden` cut the last tab off with
+  nothing to say it had gone.
+- **`Clear all` scrolled out of reach.** First cut put the whole filter row in one scroll container, so
+  at 1100px a filtered list had no visible way to unfilter it. `Clear all` is now pinned outside the
+  scrolling region.
+- **`width-check` measured only half the header.** Finding the band by walking up from the `<h2>` stops
+  at the first full-width ancestor, which is row 1 — the gate reported a constant 52px and would have
+  passed a filter bar that wrapped. `ModuleHeader` now carries `data-module-header` as an explicit hook.
+- **CI ran a gate CLAUDE.md did not list.** `bun test/engines.js` has always run in the workflow; the
+  documented gate list omitted it, so every local "gates pass" was one gate short.
+
+### Verification
+
+smoke **503 passed** (was 414; +76 assertions incl. header conformance) · engines **99 passed** ·
+`bun run build` clean · `bun test/render-check.js` **15/15 routes** · `bun test/width-check.js`
+**4 routes at 97px / 2 control rows, unchanged across 1024–1728px**.
+
+The new gate was verified by REINSTATING the old wrapping header: it fails with exit code 1 and prints
+the real symptom (`1024:148px/3r  1280:101px/2r`). A gate that has never failed is not a gate.
+
+### Next
+
+Start E9 at **W9.0**, not W9.1. The whole `Application & Software` product (44 items) is unreachable in
+the portal because no FORM lists `cat-p-applications` in `productIds`, and `Portal.jsx:618` scopes the
+help tree to that array. Add `P_APPLICATIONS` to `src/store/seed/ids.js`, list it on `form-employee-help`,
+and add a smoke guard that every root product is reachable from at least one published form. W9.1 and
+W9.2 are both moot until that lands — the icon cannot render on a product that never renders.
+
+### Held/blocked
+
+- The landing page is still HELD for sharing.
+- **New:** the landing page's three hand-drawn `<Shot>` mockups now depict a header and list alignment
+  the product no longer has. Redrawing them is a change to a held outward-facing deliverable — build,
+  then stop and show Phil.

@@ -15,7 +15,7 @@ import {
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
   Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, MenuDivider, FilterPill,
   LensBar, SubTabs, ViewSwitcher, PageBody, Breadcrumbs,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, MultiSelectFilter,
+  ModuleHeader, ScopedSearch, FilterBar, MultiSelectFilter,
   subsetLabel, optionCounts, passes, countActive,
 } from '@/ds';
 
@@ -49,7 +49,7 @@ export default function DesignSystem() {
         gradient={GRADIENT.brand}
         title="RelayHQ Design System"
         subtitle="The visual language, rendered live from @/ds — this page cannot drift from the app"
-        tools={<SubTabs items={SECTIONS} value={section} onChange={setSection} />}
+        nav={<SubTabs items={SECTIONS} value={section} onChange={setSection} inline />}
       />
 
       <PageBody width="max-w-6xl">
@@ -559,18 +559,14 @@ function Header() {
   const [restLens, setRestLens] = useState('all');
   const [restQuery, setRestQuery] = useState('');
   const [restFilters, setRestFilters] = useState({});
-  const [restTray, setRestTray] = useState(false);
 
   const [lens, setLens] = useState('all');
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState({ queue: ['q-cs', 'q-it'] });
-  const [trayOpen, setTrayOpen] = useState(true);
 
   /* The standalone controls. */
   const [assetQuery, setAssetQuery] = useState('');
   const [changeQuery, setChangeQuery] = useState('memory');
-  const [toggleA, setToggleA] = useState(false);
-  const [toggleB, setToggleB] = useState(false);
   const [unsetQueues, setUnsetQueues] = useState([]);
   const [setQueues, setSetQueues] = useState(['q-cs', 'q-it']);
   const [inlineLens, setInlineLens] = useState('open');
@@ -578,15 +574,13 @@ function Header() {
   const [standaloneLens, setStandaloneLens] = useState('open');
 
   const restActive = countActive(restFilters);
-  const restShowTray = restTray || restActive > 0;
-  const clearRest = () => { setRestFilters({}); setRestQuery(''); setRestTray(false); };
+  const clearRest = () => { setRestFilters({}); setRestQuery(''); };
   const restRows = headerRows(restFilters);
   const restLensItems = headerLensItems(restRows);
   const restVisible = restRows.filter(r => headerLens(restLens).groups.includes(statusMeta(r.status).group));
 
   const activeFilters = countActive(filters);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
   const rows = headerRows(filters);
   const lensItems = headerLensItems(rows);
   const visible = rows.filter(r => headerLens(lens).groups.includes(statusMeta(r.status).group));
@@ -596,19 +590,29 @@ function Header() {
 
   return (
     <div className="space-y-6">
-      <Banner accent="purple" icon={AlertCircle} title="One band, then a tray that only exists when it is doing something">
+      <Banner accent="purple" icon={AlertCircle} title="Two bands of fixed height, and neither may wrap">
         The old opening was a top bar, a title band, a stat strip, a lens bar and a filter toolbar — five control radii at
         three heights, centred controls fighting a left-aligned title, and a stat strip printing the numbers the lens
         already carried. Everything here is one height (<code>CONTROL_H</code>) and one radius. The stat strip is gone on
         purpose — the lens already carries the counts. Keep <code>Stat</code> for the BODY of a view, where it is content
-        rather than chrome. Both headers below are live and driven by a twenty-record stand-in collection; there is no
-        list underneath them because the band is the subject.
+        rather than chrome.
+        <br /><br />
+        <strong className={t.text}>The shape is fixed, and that is the rule.</strong> Collapsing those five bands into one
+        left a single <code>flex-wrap</code> row holding identity, primary action and every control at once, so the header
+        reflowed with the window — 56px wide, 103px at a laptop, 141px narrow. Worse, it reflowed without the window
+        moving at all: <code>subsetLabel()</code> swaps a long resting subtitle for “20 of 118 shown” the moment a filter
+        is set, and <code>truncate</code> implies <code>white-space: nowrap</code>, so flexbox breaks lines against the
+        FULL string — typing in the search could unwrap the header and clearing it could wrap it back. A header that
+        changes shape while you use it reads as broken. Row 1 is now a three-column grid rather than a flex row with
+        spacers, because a spacer centres against whatever happens to flank it; equal side tracks hold the centre still.
+        Row 2 shrinks by scrolling, never by wrapping. Both headers below are live and driven by a twenty-record stand-in
+        collection; there is no list underneath them because the band is the subject.
       </Banner>
 
       <Demo
         title="ModuleHeader — resting"
-        code="<ModuleHeader icon module title subtitle primary tools tray />"
-        hint="Identity and the primary action together on the left; the lens, the scoped search and the filter toggle on the right. Nothing is filtered yet, so the subtitle carries the resting label and no tray exists — the tray is a band that only appears when it is doing something. The state behind it is four values: the filter selections, the query, the lens and whether the tray shows. useHeaderFilters() packages them for a view that would rather not spell them out."
+        code="<ModuleHeader icon module title subtitle nav primary filterBar />"
+        hint="Identity on the left, the view lens CENTRED, the primary action on the right — then the filter bar below, carrying the scoped search and the filters together because they do the same job. Nothing is filtered yet, so the subtitle carries the resting label. The filter bar is always present: once the search field moved down here it could no longer live in a container another control was able to dismiss. useHeaderFilters() packages the state — the selections and the query, and nothing about a tray, because there is no longer one to open."
       >
         <div className={cx('w-full rounded-lg border overflow-hidden', t.borderLight)}>
           <ModuleHeader
@@ -616,39 +620,33 @@ function Header() {
             module="workspace"
             title="Tickets"
             subtitle={subsetLabel(restVisible.length, HEADER_ROWS.length, `${HEADER_ROWS.length} tickets across ${HEADER_QUEUES.length} queues`)}
+            nav={<LensBar items={restLensItems} value={restLens} onChange={setRestLens} inline />}
             primary={<Button variant="grad" module="workspace" icon={Plus}>New ticket</Button>}
-            tools={<>
-              <LensBar items={restLensItems} value={restLens} onChange={setRestLens} inline />
-              <ScopedSearch
-                value={restQuery}
-                onChange={setRestQuery}
-                scope={`${restVisible.length} ${headerLens(restLens).noun}`}
+            filterBar={
+              <FilterBar
                 accent="teal"
-              />
-              <FilterToggle
-                open={restShowTray}
-                count={restActive}
-                accent="teal"
-                onClick={() => (restActive > 0 ? clearRest() : setRestTray(o => !o))}
-              />
-            </>}
-            tray={restShowTray ? (
-              <FilterTray
-                open
                 filters={HEADER_FILTERS}
                 value={restFilters}
                 onChange={setRestFilters}
                 onClearAll={clearRest}
+                search={
+                  <ScopedSearch
+                    value={restQuery}
+                    onChange={setRestQuery}
+                    scope={`${restVisible.length} ${headerLens(restLens).noun}`}
+                    accent="teal"
+                  />
+                }
               />
-            ) : null}
+            }
           />
         </div>
       </Demo>
 
       <Demo
-        title="ModuleHeader — filtering, tray open"
-        code="tray={showTray ? <FilterTray … /> : null}"
-        hint="Two queues are selected, so three things changed at once and none of them can be missed: the toggle carries its count, the tray is showing the filters that are doing the work, and the subtitle reports the subset rather than the whole. Toggle a filter and watch every number on the band move together."
+        title="ModuleHeader — filtering"
+        code="filterBar={<FilterBar search filters value onChange onClearAll />}"
+        hint="Two queues are selected, so two things changed at once and neither can be missed: the filter carries its values — “Queue · Customer Support +1”, never a bare category — and the subtitle reports the subset rather than the whole. Toggle a filter and watch the numbers move together, and watch the band NOT move: the subtitle is the thing that used to change the header's height, and it no longer can."
       >
         <div className={cx('w-full rounded-lg border overflow-hidden', t.borderLight)}>
           <ModuleHeader
@@ -657,30 +655,24 @@ function Header() {
             title="Tickets"
             subtitle={subsetLabel(visible.length, HEADER_ROWS.length, `${HEADER_ROWS.length} tickets across ${HEADER_QUEUES.length} queues`)}
             primary={<Button variant="grad" module="workspace" icon={Plus}>New ticket</Button>}
-            tools={<>
-              <LensBar items={lensItems} value={lens} onChange={setLens} inline />
-              <ScopedSearch
-                value={query}
-                onChange={setQuery}
-                scope={`${visible.length} ${headerLens(lens).noun}`}
+            nav={<LensBar items={lensItems} value={lens} onChange={setLens} inline />}
+            filterBar={
+              <FilterBar
                 accent="teal"
-              />
-              <FilterToggle
-                open={showTray}
-                count={activeFilters}
-                accent="teal"
-                onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-              />
-            </>}
-            tray={showTray ? (
-              <FilterTray
-                open
                 filters={HEADER_FILTERS}
                 value={filters}
                 onChange={setFilters}
                 onClearAll={clearFilters}
+                search={
+                  <ScopedSearch
+                    value={query}
+                    onChange={setQuery}
+                    scope={`${visible.length} ${headerLens(lens).noun}`}
+                    accent="teal"
+                  />
+                }
               />
-            ) : null}
+            }
           />
         </div>
       </Demo>
@@ -695,13 +687,20 @@ function Header() {
       </Demo>
 
       <Demo
-        title="FilterToggle"
-        code="<FilterToggle open count accent onClick />"
-        hint="At zero it is a quiet control that opens the tray. With filters set it carries the count, so a collapsed tray can never hide the fact that the list is narrowed. In the app the same click clears the filters when any are set — the count is a state you can always get out of."
+        title="FilterBar"
+        code="<FilterBar search filters value onChange onClearAll>{extras}</FilterBar>"
+        hint="Row 2, and always on screen. It replaced a tray that only rendered when something was active — a good idea for a band of filters and a fatal one once the search field moved down beside them, because the filter toggle's own handler cleared the values AND closed the tray, so one click would have unmounted the field and thrown away whatever was being typed into it. A control you type in cannot live somewhere another control can dismiss. It scrolls rather than wraps, which is what holds the header's height fixed; that makes it a clipping context, so the menus opened from it are positioned fixed rather than absolute. Grouping controls belong here too — they shape the list rather than narrowing it, so they sit beside the filters but outside the active count."
       >
-        <FilterToggle open={toggleA} count={0} accent="teal" onClick={() => setToggleA(o => !o)} />
-        <FilterToggle open={toggleB} count={2} accent="teal" onClick={() => setToggleB(o => !o)} />
-        <span className={cx('text-xs', t.textMuted)}>count 0 · count 2</span>
+        <div className={cx('w-full rounded-lg border overflow-hidden', t.borderLight)}>
+          <FilterBar
+            accent="teal"
+            filters={HEADER_FILTERS}
+            value={restFilters}
+            onChange={setRestFilters}
+            onClearAll={clearRest}
+            search={<ScopedSearch value={restQuery} onChange={setRestQuery} scope="20 tickets" accent="teal" />}
+          />
+        </div>
       </Demo>
 
       <Demo
@@ -721,7 +720,7 @@ function Header() {
       >
         <div className="w-full space-y-4">
           <div>
-            <GroupLabel>inline — sits in the header tools cluster, beside the search</GroupLabel>
+            <GroupLabel>inline — sits centred in a ModuleHeader's first band</GroupLabel>
             <div className="mt-1.5 flex items-center gap-2 flex-wrap">
               <LensBar items={allLensItems} value={inlineLens} onChange={setInlineLens} inline />
               <ScopedSearch value={inlineQuery} onChange={setInlineQuery} scope="20 tickets" accent="teal" />
@@ -776,11 +775,12 @@ function Patterns() {
         </div>
       </Section>
 
-      <Section title="Layout" hint="Centre the content, cap the width. Wide viewports should produce balanced margins, not a left-hugging layout with a dead right half.">
+      <Section title="Layout" hint="Cap the width, align it left. The header spans the pane, so a list that centres itself under a cap no longer shares an edge with its own title — which reads as two screens stacked rather than one.">
         <Card className={DENSITY.cardPad}>
-          <div className={cx('rounded-lg border-2 border-dashed p-4 text-center text-xs', t.borderLight, t.textMuted)}>
-            <div className="max-w-md mx-auto rounded bg-purple-500/20 py-6">max-w-5xl mx-auto</div>
-            <p className="mt-2">viewport</p>
+          <div className={cx('rounded-lg border-2 border-dashed p-4 text-xs', t.borderLight, t.textMuted)}>
+            <div className="rounded bg-purple-500/20 py-2 mb-2 text-center">header — spans the pane</div>
+            <div className="max-w-md rounded bg-purple-500/20 py-6 text-center">max-w-5xl, aligned left</div>
+            <p className="mt-2 text-center">viewport</p>
           </div>
         </Card>
       </Section>
@@ -798,7 +798,7 @@ const RULES = [
   ['A set filter shows its values', '“Queue · Customer Support +1”, never a bare “Queue”. Same rule as chips: a control that is doing something has to say what it is doing. MultiSelectFilter renders the label for you, so supply options with real names.'],
   ['In-page search names its scope', 'Two search fields on one screen are confusing unless they announce which is which. ScopedSearch puts the set in the placeholder — “Search 24 assets…”, “Search 9 changes…” — and ⌘K in the bar above stays the one that searches everything.'],
   ['The subtitle reports the subset', '“9 of 20 shown” whenever something narrows the list, the resting label when nothing does. subsetLabel() is the only place that decides, so a subset is never read as the whole.'],
-  ['Centre the content, cap the width', 'max-w-5xl for list rows, justify-center for lens bars and toolbars.'],
+  ['Cap the width, align it left', 'A list shares its left edge with the header above it. PageBody caps the column and aligns it left by default; centring it put the rows on a different edge from the module title — 152px apart at a 1600px window, and on Assets the edge jumped sideways between tabs that used different caps. Pass align="centre" only for a reading surface, where balanced margins genuinely help. This reverses the earlier rule; the header is the thing the body has to agree with.'],
   ['Container queries, not viewport breakpoints', 'md:/lg: respond to the window and fire at the wrong moment inside a nested pane. Use container-type: inline-size with clamp(min, Ncqw, max). LensBar is the reference implementation.'],
   ['Modals are centred popups', 'Pinned header, flex-1 overflow-auto body, pinned footer, border-2 in the entity accent. Rendered through a portal so nesting never clips.'],
   ['Borrow known patterns', 'If a mature product has solved this interaction, match it. Slack/GitHub for the header, Linear/Notion for ⌘K, ClickUp for projects, Trello for the ticket card, n8n for the automation canvas.'],

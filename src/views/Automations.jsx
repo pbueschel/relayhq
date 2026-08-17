@@ -13,7 +13,7 @@ import {
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
   Modal, ConfirmDelete, Menu, MenuItem, MenuDivider, MenuLabel,
   SubTabs, PageBody,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, NOW } from '@/store/store.js';
 import { Q, USR } from '@/store/seed/ids.js';
@@ -772,19 +772,18 @@ function lastRunState(automation, runsBy) {
 
 function AutomationList({ automations, runs, lookup }) {
   const { t } = useTheme();
-  /* One header state: the multi-select filter values, the in-page query and
-   * whether the tray is showing. The old All / Active / Paused / With errors
-   * tabs are gone — they were single-select spellings of two of these filters,
-   * and "paused OR erroring" was a question they could not ask. */
+  /* One header state: the multi-select filter values and the in-page query. The
+   * filter bar is always on screen, so nothing tracks whether it is showing. The
+   * old All / Active / Paused / With errors tabs are gone — they were
+   * single-select spellings of two of these filters, and "paused OR erroring"
+   * was a question they could not ask. */
   const [filters, setFilters] = useState({});
   const [query, setQuery] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(null);
 
   const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   // Newest first per workflow. `addTo` appends, so a test run started just now
   // lands at the END of the collection — taking runs[0] unsorted would keep
@@ -885,31 +884,25 @@ function AutomationList({ automations, runs, lookup }) {
             New automation
           </Button>
         }
-        tools={<>
-          <ScopedSearch
-            value={query}
-            onChange={setQuery}
-            /* Names its own scope so it can never be read as the global ⌘K
-             * field in the bar above. */
-            scope={`${automations.length} automations`}
+        filterBar={
+          <FilterBar
             accent="sky"
-          />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
-            accent="sky"
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-          />
-        </>}
-        tray={showTray ? (
-          <FilterTray
-            open
             filters={FILTER_DEFS}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
+            search={
+              <ScopedSearch
+                value={query}
+                onChange={setQuery}
+                /* Names its own scope so it can never be read as the global ⌘K
+                 * field in the bar above. */
+                scope={`${automations.length} automations`}
+                accent="sky"
+              />
+            }
           />
-        ) : null}
+        }
       />
 
       <PageBody>
@@ -1356,7 +1349,7 @@ function AutomationEditor({ automation, runs, lookup }) {
     <div className="flex-1 flex flex-col overflow-hidden min-w-0">
       {/* Inside the canvas the header is identity plus the run controls. There
           is nothing to filter here — the workflow IS the selection — so the
-          tray and the scoped search that the list carries are absent. */}
+          filter bar the list carries is absent and this header is one band tall. */}
       <ModuleHeader
         icon={Workflow}
         module="automations"

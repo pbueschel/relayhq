@@ -14,7 +14,7 @@ import {
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
   Modal, ConfirmDelete,
   SubTabs, PageBody,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, setCollection, addTo, patchIn, removeFrom, uid } from '@/store/store.js';
 import {
@@ -341,15 +341,19 @@ export default function BusinessRules({ route }) {
   /**
    * These stay SubTabs. They switch WHAT you are looking at — queues, routing,
    * rules, policies, clocks — not how one collection is drawn, which is the job
-   * a lens does. So they ride in the header's tools cluster, and each tab owns
-   * the rest of the band: its own primary action, its own scoped search, and
-   * the filters that make sense for the records it lists.
+   * a lens does. So they ride centred in the header's first row as its `nav`,
+   * and each tab owns the rest of the header: its own primary action, its own
+   * scoped search, and the filters that make sense for the records it lists.
+   *
+   * `inline` because a header nav is 30px and must shrink by scrolling — the
+   * standalone bar cannot shrink at all, so the last tab would be clipped away.
    */
   const tabs = (
     <SubTabs
       value={sub}
       onChange={(v) => navigate('rules', v)}
       items={TABS.map((x) => ({ ...x, count: counts[x.value] }))}
+      inline
     />
   );
 
@@ -373,16 +377,13 @@ function QueuesTab({ data, routing, tabs }) {
   const { queues, rules, directory } = data;
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
-  /* One header state: the multi-select filter values, the in-page query, and
-   * whether the tray is showing. The tray forces itself open whenever something
-   * is active, so a filter can never be on while its control is hidden. */
+  /* One header state: the multi-select filter values and the in-page query.
+   * There is no open/closed flag any more — the filter bar is always on screen,
+   * so a filter can never be on while its control is hidden. */
   const [filters, setFilters] = useState({});
   const [query, setQuery] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
 
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   /* Chips show VALUES, not counts — so these carry the actual form and rule
    * names and ChipGroup collapses the overflow. "4 forms" told you a queue was
@@ -460,19 +461,19 @@ function QueuesTab({ data, routing, tabs }) {
             New queue
           </Button>
         }
-        tools={<>
-          {tabs}
-          <ScopedSearch value={query} onChange={setQuery} scope={`${queues.length} queues`} accent={ACCENT} />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
+        nav={tabs}
+        filterBar={
+          <FilterBar
             accent={ACCENT}
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen((o) => !o))}
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+            search={
+              <ScopedSearch value={query} onChange={setQuery} scope={`${queues.length} queues`} accent={ACCENT} />
+            }
           />
-        </>}
-        tray={showTray ? (
-          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
-        ) : null}
+        }
       />
 
       <PageBody>
@@ -739,11 +740,8 @@ function RoutingTab({ data, routing, tabs }) {
   const { queues, options } = data;
   const [filters, setFilters] = useState({});
   const [query, setQuery] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
 
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   const generalId = (queues.find((q) => q.isDefault) || {}).id || Q.GENERAL;
   const needle = query.trim().toLowerCase();
@@ -779,19 +777,19 @@ function RoutingTab({ data, routing, tabs }) {
         title="Business Rules"
         subtitle={subsetLabel(rows.length, routing.rows.length,
           `${routing.rows.length} routed forms · ${unrouted} fall to the default queue · ${routing.orphans.length} unattached`)}
-        tools={<>
-          {tabs}
-          <ScopedSearch value={query} onChange={setQuery} scope={`${routing.rows.length} routes`} accent={ACCENT} />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
+        nav={tabs}
+        filterBar={
+          <FilterBar
             accent={ACCENT}
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen((o) => !o))}
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+            search={
+              <ScopedSearch value={query} onChange={setQuery} scope={`${routing.rows.length} routes`} accent={ACCENT} />
+            }
           />
-        </>}
-        tray={showTray ? (
-          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
-        ) : null}
+        }
       />
 
       <PageBody>
@@ -919,11 +917,8 @@ function RulesTab({ data, tabs }) {
   const [event, setEvent] = useState('on_create');
   const [filters, setFilters] = useState({});
   const [query, setQuery] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
 
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   const enabled = rules.filter((r) => r.enabled).length;
 
@@ -979,25 +974,25 @@ function RulesTab({ data, tabs }) {
             New rule
           </Button>
         }
-        tools={<>
-          {tabs}
-          <ScopedSearch value={query} onChange={setQuery} scope={`${rules.length} rules`} accent={ACCENT} />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
-            accent={ACCENT}
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen((o) => !o))}
-          />
-        </>}
+        nav={tabs}
         actions={
           <Button variant={testerOpen ? 'solid' : 'soft'} accent="emerald" size="sm" icon={FlaskConical}
             onClick={() => setTesterOpen((v) => !v)}>
             {testerOpen ? 'Hide tester' : 'Test rules'}
           </Button>
         }
-        tray={showTray ? (
-          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
-        ) : null}
+        filterBar={
+          <FilterBar
+            accent={ACCENT}
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+            search={
+              <ScopedSearch value={query} onChange={setQuery} scope={`${rules.length} rules`} accent={ACCENT} />
+            }
+          />
+        }
       />
 
       <PageBody width="max-w-6xl">
@@ -2298,10 +2293,19 @@ function PoliciesTab({ data, tabs }) {
             New policy
           </Button>
         }
-        tools={<>
-          {tabs}
-          <ScopedSearch value={query} onChange={setQuery} scope={`${policies.length} policies`} accent={ACCENT} />
-        </>}
+        nav={tabs}
+        /* No filters here — a policy is read by name, and the search already
+         * covers its conditions. The band still renders because the scoped
+         * search lives on it, and a field you type into cannot sit in a
+         * container that appears and disappears. */
+        filterBar={
+          <FilterBar
+            accent={ACCENT}
+            search={
+              <ScopedSearch value={query} onChange={setQuery} scope={`${policies.length} policies`} accent={ACCENT} />
+            }
+          />
+        }
       />
 
       <PageBody width="max-w-6xl">
@@ -2851,10 +2855,17 @@ function SlaTab({ data, tabs }) {
             New SLA policy
           </Button>
         }
-        tools={<>
-          {tabs}
-          <ScopedSearch value={query} onChange={setQuery} scope={`${slas.length} SLA policies`} accent={ACCENT} />
-        </>}
+        nav={tabs}
+        /* No filters here either — five policies read fine as a list. The band
+         * carries the scoped search alone. */
+        filterBar={
+          <FilterBar
+            accent={ACCENT}
+            search={
+              <ScopedSearch value={query} onChange={setQuery} scope={`${slas.length} SLA policies`} accent={ACCENT} />
+            }
+          />
+        }
       />
 
       <PageBody>

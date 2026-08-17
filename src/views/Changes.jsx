@@ -14,7 +14,7 @@ import {
   Field, Input, Textarea, Select, TileGroup, SearchInput,
   Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, MenuDivider,
   ViewSwitcher, PageHeader, PageBody, Breadcrumbs,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, NOW } from '@/store/store.js';
 import { startApproval, decide, progress, describeApprover } from '@/lib/approvals.js';
@@ -907,12 +907,11 @@ export default function Changes({ route }) {
   const rawChanges = useStore(s => s.changes || []);
   const [creating, setCreating] = useState(false);
 
-  /* One header state: the multi-select filter values, the in-page query, and
-   * whether the tray is showing. The tray forces itself open whenever something
-   * is active, so a filter can never be on while its control is hidden. */
+  /* One header state: the multi-select filter values and the in-page query.
+   * There is no tray flag any more — the filter bar is always on screen, so a
+   * filter can never be on while its control is hidden. */
   const [filters, setFilters] = useState({});
   const [search, setSearch] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
 
   const view = VIEWS.some(v => v.value === route?.sub) ? route.sub : 'list';
   const selectedId = route?.id || null;
@@ -930,9 +929,6 @@ export default function Changes({ route }) {
     conflicts: conflictsFor(c, changes),
     freezes: freezeClashes(c),
   })), [changes]);
-
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
 
   const shown = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -980,7 +976,7 @@ export default function Changes({ route }) {
     ];
   }, [enriched]);
 
-  const clearFilters = () => { setFilters({}); setSearch(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setSearch(''); };
 
   if (selectedId) {
     return selected
@@ -1015,33 +1011,30 @@ export default function Changes({ route }) {
           enriched.length,
           `${enriched.length} changes · standard, normal and emergency change enablement`,
         )}
+        /* The view switcher is centred in row 1, between the module identity and
+         * the primary action, so it holds still while the subtitle beneath the
+         * title changes length. */
+        nav={<ViewSwitcher items={VIEWS} value={view} onChange={(v) => navigate('changes', v)} inline />}
         primary={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setCreating(true)}>New change</Button>}
-        tools={<>
-          <ViewSwitcher items={VIEWS} value={view} onChange={(v) => navigate('changes', v)} inline />
-          <ScopedSearch
-            value={search}
-            onChange={setSearch}
-            /* Names its own scope, so it can never be mistaken for the global
-             * field in the bar above. */
-            scope={`${enriched.length} changes`}
+        filterBar={
+          <FilterBar
             accent={HUE}
-          />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
-            accent={HUE}
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-          />
-        </>}
-        tray={showTray ? (
-          <FilterTray
-            open
             filters={FILTER_DEFS}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
+            search={
+              <ScopedSearch
+                value={search}
+                onChange={setSearch}
+                /* Names its own scope, so it can never be mistaken for the global
+                 * field in the bar above. */
+                scope={`${enriched.length} changes`}
+                accent={HUE}
+              />
+            }
           />
-        ) : null}
+        }
       />
 
       {view === 'list' && (

@@ -14,7 +14,7 @@ import {
   Field, Input, Select, Textarea, TileGroup,
   Modal,
   SubTabs, ViewSwitcher, PageBody,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -318,11 +318,18 @@ export default function Assets({ route }) {
   /**
    * These stay SubTabs. Hardware, software, locations, contracts and the
    * compliance report are five different collections — they change WHAT you are
-   * looking at, not how one list is drawn, which is a lens's job. They ride in
-   * the header's tools cluster; each tab owns the rest of the band, because the
-   * filters that make sense for a laptop are not the ones for a licence.
+   * looking at, not how one list is drawn, which is a lens's job. They ride
+   * CENTRED in the header's first band; each tab owns the filter bar below,
+   * because the filters that make sense for a laptop are not the ones for a
+   * licence.
+   *
+   * `inline` matters here more than anywhere else in the app. The standalone
+   * SubTabs cannot shrink — no min-w-0, no overflow, nowrap buttons — so this
+   * bar was a ~641px hard floor, and below roughly a 938px viewport `main`'s
+   * overflow-hidden simply cut the Compliance tab off the end with nothing to
+   * say it had gone.
    */
-  const tabBar = <SubTabs items={tabItems} value={tab} onChange={(v) => navigate('assets', v)} />;
+  const tabBar = <SubTabs items={tabItems} value={tab} onChange={(v) => navigate('assets', v)} inline />;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -425,18 +432,15 @@ function DaysChip({ days, label }) {
 
 function HardwareTab({ assets, models, locations, contracts, directory, currentUser, openId, tabs }) {
   const { t } = useTheme();
-  /* One header state: the multi-select filter values, the in-page query and
-   * whether the tray is showing. The tray forces itself open while anything is
-   * active, so a filter can never be on with its control hidden. */
+  /* One header state: the multi-select filter values and the in-page query.
+   * There is no tray flag any more — the filter bar is always on screen, so a
+   * filter can never be active with its control hidden. */
   const [filters, setFilters] = useState({});
   const [q, setQ] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
   const [group, setGroup] = useState('none');
   const [view, setView] = useState('list');
 
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQ(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQ(''); };
 
   const open = openId ? byId(assets, openId) : null;
 
@@ -539,26 +543,24 @@ function HardwareTab({ assets, models, locations, contracts, directory, currentU
          * estate figures the stat strip used to print above the list. */
         subtitle={subsetLabel(rows.length, assets.length,
           `${stats.total} tracked units · ${stats.deployed} deployed · ${stats.unassigned} unassigned · ${fmtMoney(stats.value)} at purchase`)}
-        tools={<>
-          {tabs}
-          <ScopedSearch value={q} onChange={setQ} scope={`${assets.length} assets`} accent="cyan" />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
+        nav={tabs}
+        filterBar={
+          <FilterBar
             accent="cyan"
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-          />
-        </>}
-        tray={showTray ? (
-          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters}>
-            {/* Grouping shapes the list rather than narrowing it, so it sits in
-                the tray beside the filters but outside the active count. */}
-            <span className="flex items-center gap-1.5">
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+            search={<ScopedSearch value={q} onChange={setQ} scope={`${assets.length} assets`} accent="cyan" />}
+          >
+            {/* Grouping shapes the list rather than narrowing it, so it sits on
+                the filter bar beside the filters but outside the active count. */}
+            <span className="flex items-center gap-1.5 flex-shrink-0">
               <span className={cx('text-[10px] font-semibold uppercase tracking-wider', t.textMuted)}>Group by</span>
-              <SubTabs value={group} onChange={setGroup} items={GROUP_OPTIONS} />
+              <SubTabs value={group} onChange={setGroup} items={GROUP_OPTIONS} inline />
             </span>
-          </FilterTray>
-        ) : null}
+          </FilterBar>
+        }
       />
 
       <PageBody width="max-w-6xl">
@@ -1077,12 +1079,9 @@ function MoveModal({ asset, mode, locations, directory, currentUser, onClose }) 
 function SoftwareTab({ licenses, locations, contracts, directory, openId, tabs }) {
   const [filters, setFilters] = useState({});
   const [q, setQ] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
   const open = openId ? byId(licenses, openId) : null;
 
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQ(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQ(''); };
 
   /** The agreement a licence is bought under. "No contract on file" is a state. */
   const contractTypeOf = (lic) => byId(contracts, lic.contractId)?.type || 'none';
@@ -1171,19 +1170,17 @@ function SoftwareTab({ licenses, locations, contracts, directory, openId, tabs }
             Licence position
           </Button>
         }
-        tools={<>
-          {tabs}
-          <ScopedSearch value={q} onChange={setQ} scope={`${licenses.length} products`} accent="pink" />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
+        nav={tabs}
+        filterBar={
+          <FilterBar
             accent="pink"
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+            search={<ScopedSearch value={q} onChange={setQ} scope={`${licenses.length} products`} accent="pink" />}
           />
-        </>}
-        tray={showTray ? (
-          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
-        ) : null}
+        }
       />
 
       <PageBody width="max-w-6xl">
@@ -1527,13 +1524,16 @@ function LocationsTab({ locations, assets, models, directory, openId, tabs }) {
         title="Assets"
         subtitle={subsetLabel(shownSites, sites.length,
           `${sites.length} sites in ${locations.filter(l => l.type === 'region').length} regions`)}
-        tools={<>
-          {tabs}
-          <ScopedSearch value={q} onChange={setQ} scope={`${sites.length} sites`} accent="emerald" />
-        </>}
+        nav={tabs}
+        filterBar={
+          <FilterBar
+            accent="emerald"
+            search={<ScopedSearch value={q} onChange={setQ} scope={`${sites.length} sites`} accent="emerald" />}
+          />
+        }
       />
 
-      <PageBody width="max-w-5xl">
+      <PageBody width="max-w-6xl">
         <div className="space-y-4">
           <Banner accent="emerald" icon={MapPin} title="Counts roll up through the tree">
             A region shows every asset at every site beneath it, not just what is parked at the region itself.
@@ -1756,13 +1756,16 @@ function ContractsTab({ contracts, assets, models, directory, openId, tabs }) {
         title="Assets"
         subtitle={subsetLabel(renewals.length + visible.length, contracts.length,
           `${contracts.length} agreements · ${dueSoon.length} renewing in 90 days · ${fmtMoney(exposure)} at renewal`)}
-        tools={<>
-          {tabs}
-          <ScopedSearch value={q} onChange={setQ} scope={`${contracts.length} agreements`} accent="lime" />
-        </>}
+        nav={tabs}
+        filterBar={
+          <FilterBar
+            accent="lime"
+            search={<ScopedSearch value={q} onChange={setQ} scope={`${contracts.length} agreements`} accent="lime" />}
+          />
+        }
       />
 
-      <PageBody width="max-w-5xl">
+      <PageBody width="max-w-6xl">
         <div className="space-y-5">
           <Banner accent="amber" icon={AlertCircle} title="Auto-renew is the silent default this screen exists to break">
             An auto-renewing agreement renews itself at the current terms unless notice is served before{' '}
@@ -1997,10 +2000,13 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations, tabs 
         title="Assets"
         subtitle={subsetLabel(rows.length, licenses.length,
           `${licenses.length} licensed products · ${fmtMoney(totals.exposure)} of exposure · ${totals.unpapered} with no contract on file`)}
-        tools={<>
-          {tabs}
-          <ScopedSearch value={q} onChange={setQ} scope={`${licenses.length} products`} accent="amber" />
-        </>}
+        nav={tabs}
+        filterBar={
+          <FilterBar
+            accent="amber"
+            search={<ScopedSearch value={q} onChange={setQ} scope={`${licenses.length} products`} accent="amber" />}
+          />
+        }
       />
 
       <PageBody width="max-w-6xl">

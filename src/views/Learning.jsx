@@ -15,7 +15,7 @@ import {
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
   Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, FilterPill,
   SubTabs, PageBody,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -444,15 +444,18 @@ export default function Learning({ route }) {
   /**
    * These stay SubTabs. Curricula, courses, learners and one person's own
    * enrollments are four different collections — they change WHAT you are
-   * looking at, not how one list is drawn. They ride in the header's tools
-   * cluster; each tab owns the rest of the band, because the filters that make
-   * sense for a course are not the ones that make sense for a learner.
+   * looking at, not how one list is drawn. They ride centred in the header's
+   * first row as its `nav`; each tab owns its own filter bar below, because the
+   * filters that make sense for a course are not the ones that make sense for a
+   * learner. `inline` is the header sizing: 30px, scrolling rather than
+   * clipping, so the band's height never moves.
    */
   const tabs = (
     <SubTabs
       items={TABS.map(x => ({ ...x, count: tabCount(x.value, s) }))}
       value={tab}
       onChange={(v) => navigate('learning', v)}
+      inline
     />
   );
 
@@ -511,16 +514,13 @@ function tabCount(value, s) {
 
 function CurriculaList({ curricula, courseIndex, kb, enrollments, jobFunctions, dirIndex, contactIndex, orgIndex, tabs }) {
   const { t } = useTheme();
-  /* One header state: the multi-select filter values, the in-page query and
-   * whether the tray is showing. The tray opens itself whenever a filter is
-   * active, so a filter can never be on with its control hidden. */
+  /* One header state: the multi-select filter values and the in-page query.
+   * There is no tray flag any more — the filter bar is a permanent band, so a
+   * filter can never be on with its control hidden. */
   const [filters, setFilters] = useState({});
   const [query, setQuery] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
 
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   const needle = query.trim().toLowerCase();
   const visible = curricula.filter(cur => {
@@ -561,19 +561,19 @@ function CurriculaList({ curricula, courseIndex, kb, enrollments, jobFunctions, 
          * facts when nothing narrows the list, "2 of 5 shown" when it does. */
         subtitle={subsetLabel(visible.length, curricula.length,
           `${curricula.length} curricula covering ${courseCount} courses`)}
-        tools={<>
-          {tabs}
-          <ScopedSearch value={query} onChange={setQuery} scope={`${curricula.length} curricula`} accent={ACCENT} />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
+        nav={tabs}
+        filterBar={
+          <FilterBar
             accent={ACCENT}
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+            search={
+              <ScopedSearch value={query} onChange={setQuery} scope={`${curricula.length} curricula`} accent={ACCENT} />
+            }
           />
-        </>}
-        tray={showTray ? (
-          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
-        ) : null}
+        }
       />
 
       <PageBody width="max-w-6xl">
@@ -1008,12 +1008,9 @@ function assignCurriculum(person, curriculum, missingCourses) {
 function CoursesList({ courses, kb, curricula, jobFunctions, enrollments, items, tabs }) {
   const [filters, setFilters] = useState({});
   const [query, setQuery] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
   const [newCourse, setNewCourse] = useState(false);
 
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   const needle = query.trim().toLowerCase();
   const filtered = courses.filter(c => {
@@ -1066,19 +1063,19 @@ function CoursesList({ courses, kb, curricula, jobFunctions, enrollments, items,
             New course
           </Button>
         }
-        tools={<>
-          {tabs}
-          <ScopedSearch value={query} onChange={setQuery} scope={`${courses.length} courses`} accent={ACCENT} />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
+        nav={tabs}
+        filterBar={
+          <FilterBar
             accent={ACCENT}
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+            search={
+              <ScopedSearch value={query} onChange={setQuery} scope={`${courses.length} courses`} accent={ACCENT} />
+            }
           />
-        </>}
-        tray={showTray ? (
-          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
-        ) : null}
+        }
       />
 
       <PageBody width="max-w-6xl">
@@ -2159,12 +2156,9 @@ function Learners({
   const { t } = useTheme();
   const [filters, setFilters] = useState({});
   const [query, setQuery] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
   const [expanded, setExpanded] = useState(null);
 
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   const everyone = useMemo(() => {
     const byLearner = new Map();
@@ -2219,19 +2213,19 @@ function Learners({
         title="Learning"
         subtitle={subsetLabel(rows.length, everyone.length,
           `${plural(everyone.length, 'person', 'people')} with at least one enrollment · ${overdueCount} overdue · ${plural(certCount, 'certificate', 'certificates')} issued`)}
-        tools={<>
-          {tabs}
-          <ScopedSearch value={query} onChange={setQuery} scope={`${everyone.length} learners`} accent={ACCENT} />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
+        nav={tabs}
+        filterBar={
+          <FilterBar
             accent={ACCENT}
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+            search={
+              <ScopedSearch value={query} onChange={setQuery} scope={`${everyone.length} learners`} accent={ACCENT} />
+            }
           />
-        </>}
-        tray={showTray ? (
-          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
-        ) : null}
+        }
       />
 
       <PageBody width="max-w-7xl">
@@ -2454,11 +2448,20 @@ function MyLearning({
         title="Learning"
         subtitle={subsetLabel(shown.length, mine.length,
           `${viewer.name} · ${plural(outstanding, 'course', 'courses')} outstanding · ${mine.length - outstanding} finished`)}
-        tools={<>
-          {tabs}
-          <ScopedSearch value={query} onChange={setQuery}
-            scope={`${mine.length} enrollments`} accent={ACCENT} />
-        </>}
+        nav={tabs}
+        /* One person's own enrollments are few enough that there is nothing
+         * worth filtering by — but the search still belongs on the band with
+         * the filters everywhere else, so the field is never re-found in a
+         * different place from one tab to the next. */
+        filterBar={
+          <FilterBar
+            accent={ACCENT}
+            search={
+              <ScopedSearch value={query} onChange={setQuery}
+                scope={`${mine.length} enrollments`} accent={ACCENT} />
+            }
+          />
+        }
       />
 
       <PageBody>

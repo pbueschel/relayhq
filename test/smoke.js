@@ -379,6 +379,82 @@ for (const k of seed.knowledge || []) {
 ok('every image slide has alt text', altProblems.length === 0, altProblems.slice(0, 5).join(', '));
 
 /* ------------------------------------------------------------------ *
+ * GUARD — the module header's shape is fixed, and every module shares it.
+ *
+ * The header used to be a single `flex-wrap` row carrying identity, the primary
+ * action and every control at once, so it changed height with the window (56px
+ * / 103px / 141px on Workspace) and — worse — changed height when you typed,
+ * because `subsetLabel()` swaps a long subtitle for a short one and `truncate`
+ * implies nowrap, so flexbox breaks against the full string.
+ *
+ * Neither gate could see any of that: smoke asserted nothing about the header,
+ * and render-check drives a single 800x600 viewport, permanently BELOW the
+ * reflow threshold, so the wrapped state was the only state it ever saw.
+ *
+ * These guards are cheap and they close the specific ways it can come back.
+ * ------------------------------------------------------------------ */
+
+/* These guards look for the ABSENCE of things, so they have to read code rather
+ * than prose — a comment explaining why the header must not wrap contains the
+ * word it is banning, and would fail the check it documents. */
+const stripComments = (text) => text
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
+
+const dsHeader = files.find(f => f.rel.endsWith('src/ds/header.jsx'));
+ok('ds/header.jsx found', !!dsHeader);
+
+if (dsHeader) {
+  const code = stripComments(dsHeader.text);
+  /* A floor is what let the row grow. Fixed heights, or the shape is not fixed. */
+  ok('module header rows have fixed heights, not minimums',
+    !/min-h-\[/.test(code),
+    'min-h- in header.jsx — a minimum height is what allowed the band to grow');
+
+  /* flex-wrap in the header IS the reflow. */
+  ok('module header never wraps',
+    !/flex-wrap/.test(code),
+    'flex-wrap in header.jsx — the band must shrink by scrolling, never by wrapping');
+
+  /* A flex spacer centres against whatever flanks it, so the centred control
+   * would slide every time the subtitle changed length. Equal grid tracks do not. */
+  ok('module header centres its nav with equal grid tracks',
+    /grid-cols-\[minmax\(0,1fr\)_auto_minmax\(0,1fr\)\]/.test(code),
+    'row 1 must be a three-column grid, not a flex row with spacers');
+
+  /* The filter bar scrolls, which clips absolutely-positioned children in both
+   * axes. The filter menus must therefore be fixed, or they get sliced off. */
+  ok('filter menus escape the filter bar\'s scroll clip',
+    /className=\{cx\('fixed w-60/.test(code),
+    'MultiSelectFilter panel must be `fixed`; an `absolute` panel is clipped by overflow-x-auto');
+}
+
+/* The legacy props and the components that fed them are gone. A view still
+ * passing `tools` or `tray` renders a header with NO CONTROLS AT ALL rather
+ * than an error, which is exactly the half-migrated state that would ship
+ * green — so it has to fail here instead. */
+const LEGACY_HEADER = /\b(tools|tray)=\{/;
+for (const f of files) {
+  if (!f.rel.startsWith('src/views/') && !f.rel.startsWith('src/components/')) continue;
+  const m = stripComments(f.text).match(LEGACY_HEADER);
+  ok(`no legacy header props in ${f.rel}`, !m, m && m[0]);
+}
+for (const f of files) {
+  const m = stripComments(f.text).match(/\bFilter(Toggle|Tray)\b/);
+  ok(`no FilterToggle/FilterTray in ${f.rel}`, !m, m && m[0]);
+}
+
+/* Every module opens with the same component. plan.md has declared this an
+ * acceptance criterion since W8.2 and nothing has ever checked it. */
+const VIEW_EXCEPTIONS = new Set(['src/views/Landing.jsx', 'src/views/Portal.jsx']);
+for (const f of files) {
+  if (!f.rel.startsWith('src/views/')) continue;
+  if (VIEW_EXCEPTIONS.has(f.rel)) continue;
+  ok(`${f.rel} uses ModuleHeader`, /<ModuleHeader/.test(f.text),
+    'every module view opens with the shared header');
+}
+
+/* ------------------------------------------------------------------ *
  * Report
  * ------------------------------------------------------------------ */
 

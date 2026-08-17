@@ -13,7 +13,7 @@ import {
   Field, Input, Textarea, Select, Checkbox, TileGroup, SearchInput,
   Modal, ConfirmDelete,
   LensBar, PageBody,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, addTo, patchIn, removeFrom, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -368,15 +368,11 @@ export default function Problems({ route }) {
   const [lens, setLens] = useState('open');
   const [creating, setCreating] = useState(false);
 
-  /* One header state: the multi-select filter values, the in-page query, and
-   * whether the tray is showing. The tray forces itself open whenever something
-   * is active, so a filter can never be on while its control is hidden. */
+  /* One header state: the multi-select filter values and the in-page query. The
+   * filter bar carries both and is always on screen, so a filter can never be
+   * on while its control is hidden. */
   const [filters, setFilters] = useState({});
   const [search, setSearch] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
-
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
 
   const problems = useMemo(() => raw.map(normalize), [raw]);
   const people = useMemo(() => ({ contacts, organizations, directory }), [contacts, organizations, directory]);
@@ -447,7 +443,7 @@ export default function Problems({ route }) {
     ];
   }, [problems]);
 
-  const clearFilters = () => { setFilters({}); setSearch(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setSearch(''); };
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -464,33 +460,29 @@ export default function Problems({ route }) {
           problems.length,
           `${plural(problems.length, 'problem', 'problems')} · the root cause behind repeated incidents, and the change that removes it`,
         )}
+        /* The lens is centred in row 1, between the module identity and the
+         * primary action, so it holds still while either of them changes width. */
+        nav={<LensBar items={lensItems} value={lens} onChange={setLens} inline />}
         primary={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setCreating(true)}>New problem</Button>}
-        tools={<>
-          <LensBar items={lensItems} value={lens} onChange={setLens} inline />
-          <ScopedSearch
-            value={search}
-            onChange={setSearch}
-            /* Names its own scope, so it can never be mistaken for the global
-             * field in the bar above. */
-            scope={`${lensItems.find(l => l.value === lens)?.count ?? problems.length} problems`}
+        filterBar={
+          <FilterBar
             accent={HUE}
-          />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
-            accent={HUE}
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-          />
-        </>}
-        tray={showTray ? (
-          <FilterTray
-            open
             filters={FILTER_DEFS}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
+            search={
+              <ScopedSearch
+                value={search}
+                onChange={setSearch}
+                /* Names its own scope, so it can never be mistaken for the global
+                 * field in the bar above. */
+                scope={`${lensItems.find(l => l.value === lens)?.count ?? problems.length} problems`}
+                accent={HUE}
+              />
+            }
           />
-        ) : null}
+        }
       />
 
       <PageBody className="@container">

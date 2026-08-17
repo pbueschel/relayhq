@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import {
   Briefcase, Plus, ChevronRight, ChevronDown, ChevronLeft, List, LayoutGrid,
   SquareKanban, Calendar, ChartGantt, Circle, CircleCheck, Flag, User, Users,
@@ -8,13 +8,13 @@ import {
   Sparkles, MoreHorizontal, ArrowRight,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, LAYOUT, ENTITIES, PRIORITY, priorityMeta, CONTROL_H,
+  useTheme, useDismiss, cx, ICON, DENSITY, LAYOUT, ENTITIES, PRIORITY, priorityMeta, CONTROL_H,
   Button, IconButton, IconTile, Chip, ChipGroup, PriorityFlag, EntityTag,
   Avatar, AvatarStack, EmptyState, Card, GroupLabel, Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, Toggle,
   Modal, ConfirmDelete, Menu, MenuItem, MenuDivider, MenuLabel,
   SubTabs, ViewSwitcher, PageBody,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, setCollection, addTo, patchIn, removeFrom, uid, NOW } from '@/store/store.js';
 import { useRoute, navigate } from '@/lib/router.js';
@@ -836,14 +836,12 @@ function ProjectsLanding({ projects, personal, tasks, people, onOpenTask, onNewP
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(() => new Set([projects[0]?.id].filter(Boolean)));
 
-  /* One header state: the multi-select values, the in-page query, and whether the
-   * tray is showing. The tray forces itself open whenever something is active, so
-   * a filter can never be on while its control is hidden. */
+  /* One header state: the multi-select values and the in-page query. The filter
+   * bar is always on screen, so there is no state in which a filter is on while
+   * its control is hidden — the invariant the old tray flag existed to protect. */
   const [filters, setFilters] = useState({});
-  const [trayOpen, setTrayOpen] = useState(false);
   const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   const all = useMemo(() => [...projects, personal], [projects, personal]);
 
@@ -938,33 +936,29 @@ function ProjectsLanding({ projects, personal, tasks, people, onOpenTask, onNewP
           all.length,
           `${projects.length} projects and your personal list · ${stats.open} tasks open · ${stats.overdue} overdue`,
         )}
+        /* The view switch is centred in row 1, between the module identity and
+         * the primary action, so it holds still while either changes width. */
+        nav={<ViewSwitcher items={LANDING_VIEWS} value={mode} onChange={setMode} inline />}
         primary={<Button variant="grad" module={MODULE} icon={Plus} onClick={onNewProject}>New project</Button>}
-        tools={<>
-          <ViewSwitcher items={LANDING_VIEWS} value={mode} onChange={setMode} inline />
-          <ScopedSearch
-            value={query}
-            onChange={setQuery}
-            /* Names its own scope, so it can never be mistaken for the global
-               field in the bar above. */
-            scope={`${all.length} projects`}
+        filterBar={
+          <FilterBar
             accent={HUE_PROJECT}
-          />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
-            accent={HUE_PROJECT}
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-          />
-        </>}
-        tray={showTray ? (
-          <FilterTray
-            open
             filters={FILTER_DEFS}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
+            search={
+              <ScopedSearch
+                value={query}
+                onChange={setQuery}
+                /* Names its own scope, so it can never be mistaken for the global
+                   field in the bar above. */
+                scope={`${all.length} projects`}
+                accent={HUE_PROJECT}
+              />
+            }
           />
-        ) : null}
+        }
       />
 
       <PageBody width="max-w-6xl">
@@ -1321,32 +1315,15 @@ function ProjectWorkspace({ project, view, tasks, people, curricula, onOpenTask 
           rows.length,
           project.description || `${prog.total} ${prog.total === 1 ? 'task' : 'tasks'}`,
         )}
+        /* Which of the four drawings you are on is centred in row 1, so it holds
+         * still while the project name and the progress cluster change width. */
+        nav={<ViewSwitcher items={VIEWS} value={view} onChange={(v) => navigate('projects', project.id, v)} inline />}
         primary={
           <Button variant="grad" module={gradKeyFor(project)} icon={Plus}
             onClick={() => addTo('tasks', newTask(project, {}, 'New task'))}>
             New task
           </Button>
         }
-        tools={<>
-          <ViewSwitcher items={VIEWS} value={view} onChange={(v) => navigate('projects', project.id, v)} inline />
-          <GroupByControl value={groupBy} onChange={setGroupBy} accent={hue} />
-          {view === 'list' && (
-            <ColumnsControl
-              project={project}
-              hidden={hiddenColumns} onChange={setHiddenColumns}
-              showSubtasks={showSubtasks} onShowSubtasks={setShowSubtasks}
-              accent={hue}
-            />
-          )}
-          <ScopedSearch
-            value={query}
-            onChange={setQuery}
-            /* Names its own scope, so it can never be mistaken for the global
-               field in the bar above. */
-            scope={`${rows.length} tasks`}
-            accent={hue}
-          />
-        </>}
         actions={
           <>
             <AvatarStack names={(project.memberIds || []).map(id => people.find(p => p.id === id)?.name).filter(Boolean)} max={5} size="sm" />
@@ -1358,6 +1335,35 @@ function ProjectWorkspace({ project, view, tasks, people, curricula, onOpenTask 
               <IconButton icon={Settings2} label="Project settings" accent={hue} onClick={() => setSettings(true)} />
             )}
           </>
+        }
+        filterBar={
+          <FilterBar
+            accent={hue}
+            search={
+              <ScopedSearch
+                value={query}
+                onChange={setQuery}
+                /* Names its own scope, so it can never be mistaken for the global
+                   field in the bar above. */
+                scope={`${rows.length} tasks`}
+                accent={hue}
+              />
+            }
+          >
+            {/* Group-by and Columns SHAPE the list rather than narrowing it, so they
+                sit on the filter bar beside the search but outside any active count.
+                The workspace has no multi-select filters of its own — it is already
+                scoped to one project, and the search is the only narrowing it does. */}
+            <GroupByControl value={groupBy} onChange={setGroupBy} accent={hue} />
+            {view === 'list' && (
+              <ColumnsControl
+                project={project}
+                hidden={hiddenColumns} onChange={setHiddenColumns}
+                showSubtasks={showSubtasks} onShowSubtasks={setShowSubtasks}
+                accent={hue}
+              />
+            )}
+          </FilterBar>
         }
       />
 
@@ -1396,7 +1402,7 @@ function ProjectWorkspace({ project, view, tasks, people, curricula, onOpenTask 
  * The band runs ONE control height and ONE radius; FilterPill is taller and
  * rounder, so a group-by pill next to the scoped search dragged a second height
  * into a row that had just been flattened to one. Same shape as the filter
- * controls in the tray, because they belong to the same band.
+ * controls beside it on the filter bar, because they belong to the same band.
  */
 function HeaderMenuButton({ icon: Icon, label, active, open, onClick, accent = HUE_PROJECT }) {
   const { t, a } = useTheme();
@@ -1415,29 +1421,86 @@ function HeaderMenuButton({ icon: Icon, label, active, open, onClick, accent = H
   );
 }
 
+/**
+ * The panel one of those triggers opens, positioned `fixed`.
+ *
+ * `Menu` places itself `absolute`, which was right while these controls sat in the
+ * header's tools row. On the filter bar it is not: that band shrinks by SCROLLING,
+ * and an `overflow-x: auto` box clips its children in BOTH axes — an absolute panel
+ * would be sliced off at the band's bottom edge and never seen at all. Fixed
+ * escapes the clip (nothing here establishes a containing block for it) while
+ * staying a DOM descendant, so one `useDismiss` ref on the wrapper still covers the
+ * trigger and the panel together. Same escape MultiSelectFilter makes, same reason.
+ *
+ * A fixed panel does not follow its anchor, so it re-measures on anything that can
+ * move it. The scroll listener captures, because the band's own horizontal scroll
+ * does not bubble.
+ */
+function HeaderMenu({ open, anchorRef, align = 'left', width = 224, children }) {
+  const { t } = useTheme();
+  const [pos, setPos] = useState(null);
+
+  const place = useCallback(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const left = align === 'right' ? r.right - width : r.left;
+    setPos({
+      left: Math.round(Math.min(Math.max(8, left), Math.max(8, window.innerWidth - width - 8))),
+      top: Math.round(r.bottom + 4),
+    });
+  }, [anchorRef, align, width]);
+
+  useLayoutEffect(() => { if (open) place(); }, [open, place]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const on = () => place();
+    window.addEventListener('resize', on);
+    window.addEventListener('scroll', on, true);
+    return () => {
+      window.removeEventListener('resize', on);
+      window.removeEventListener('scroll', on, true);
+    };
+  }, [open, place]);
+
+  if (!open || !pos) return null;
+  return (
+    <div
+      role="menu"
+      style={{ left: pos.left, top: pos.top, width }}
+      className={cx('fixed rounded-xl border shadow-2xl overflow-hidden z-50 py-1', t.modal, t.borderLight)}
+    >
+      {children}
+    </div>
+  );
+}
+
 function GroupByControl({ value, onChange, accent = HUE_PROJECT }) {
   const [open, setOpen] = useState(false);
+  const ref = useDismiss(open, () => setOpen(false));
   const current = GROUP_BY.find(g => g.value === value) || GROUP_BY[0];
   return (
-    <div className="relative">
+    <div className="relative flex-shrink-0" ref={ref}>
       {/* The control names its VALUE, not its category — "Group · Status", the
           same rule the filter chips follow. */}
       <HeaderMenuButton icon={current.icon} label={`Group · ${current.label}`} active accent={accent}
         open={open} onClick={() => setOpen(o => !o)} />
-      <Menu open={open} onClose={() => setOpen(false)} align="right" width="w-56">
+      <HeaderMenu open={open} anchorRef={ref} align="right" width={224}>
         <MenuLabel>Group by</MenuLabel>
         {GROUP_BY.map(g => (
           <MenuItem key={g.value} icon={g.icon} label={g.label} selected={g.value === value}
             hint={g.value === 'status' ? "This project's own statuses" : undefined}
             onClick={() => { onChange(g.value); setOpen(false); }} />
         ))}
-      </Menu>
+      </HeaderMenu>
     </div>
   );
 }
 
 function ColumnsControl({ project, hidden, onChange, showSubtasks, onShowSubtasks, accent = HUE_PROJECT }) {
   const [open, setOpen] = useState(false);
+  const ref = useDismiss(open, () => setOpen(false));
   const toggle = (id) => onChange(prev => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -1449,14 +1512,14 @@ function ColumnsControl({ project, hidden, onChange, showSubtasks, onShowSubtask
     .filter(col => hidden.has(col.id))
     .map(col => col.label);
   return (
-    <div className="relative">
+    <div className="relative flex-shrink-0" ref={ref}>
       <HeaderMenuButton
         icon={Columns3}
         label={hiddenLabels.length
           ? `Columns · ${hiddenLabels[0]}${hiddenLabels.length > 1 ? ` +${hiddenLabels.length - 1}` : ''}`
           : 'Columns'}
         active={hiddenLabels.length > 0} accent={accent} open={open} onClick={() => setOpen(o => !o)} />
-      <Menu open={open} onClose={() => setOpen(false)} align="right" width="w-64">
+      <HeaderMenu open={open} anchorRef={ref} align="right" width={256}>
         <MenuLabel>Show columns</MenuLabel>
         {CORE_COLUMNS.map(col => (
           <MenuItem key={col.id} icon={Eye} label={col.label} selected={!hidden.has(col.id)}
@@ -1470,7 +1533,7 @@ function ColumnsControl({ project, hidden, onChange, showSubtasks, onShowSubtask
         <MenuDivider />
         <MenuItem icon={CornerDownRight} label="Show subtasks" selected={showSubtasks}
           hint="Subtasks follow their parent's group" onClick={() => onShowSubtasks(!showSubtasks)} />
-      </Menu>
+      </HeaderMenu>
     </div>
   );
 }

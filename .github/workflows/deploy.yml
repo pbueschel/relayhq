@@ -28,6 +28,10 @@ jobs:
       - run: bun run build
       - name: Render check (headless)
         run: bun test/render-check.js
+      # Runs after render-check, never alongside it: two headless Chromes
+      # against the same profile hang each other.
+      - name: Header shape check (headless)
+        run: bun test/width-check.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

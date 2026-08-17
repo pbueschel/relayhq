@@ -11,7 +11,7 @@ import {
   Field, Input, Select, SearchInput, TileGroup,
   Modal, ConfirmDelete,
   PageBody, Breadcrumbs,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, setCollection, addTo, uid, nowISO } from '@/store/store.js';
 import { useRoute, navigate } from '@/lib/router.js';
@@ -239,12 +239,11 @@ export default function Catalog({ route }) {
   // spelling a person id into a view — those live in seed/ids.js.
   const currentUser = useStore(s => s.currentUser);
 
-  /* One header state: the multi-select filter values, the in-page query, and
-   * whether the tray is showing. The tray forces itself open whenever something
-   * is active, so a filter can never be on while its control is hidden. */
+  /* One header state: the multi-select filter values and the in-page query.
+   * There is no tray flag any more — the filter bar is always on screen, so a
+   * filter can never be on while its control is hidden. */
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState({});
-  const [trayOpen, setTrayOpen] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set((catalog || []).map(p => p.id)));
 
   // TWO rename states, never one. Tree row and detail header edit the same
@@ -421,8 +420,7 @@ export default function Catalog({ route }) {
   }, [catalog, select]);
 
   const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   /* Items are the leaves — the only nodes that carry content — so they are what
    * the subtitle counts, what the search names as its scope, and what every
@@ -502,31 +500,25 @@ export default function Catalog({ route }) {
           `${(catalog || []).length} products · ${allItems.length} items · one catalog serving employees and customers`,
         )}
         primary={<Button variant="grad" module="catalog" icon={Plus} onClick={addProduct}>New product</Button>}
-        tools={<>
-          {/* Names its own scope, so it can never be mistaken for the global
-              field in the bar above. It filters the TREE, as it always has. */}
-          <ScopedSearch
-            value={query}
-            onChange={setQuery}
-            scope={`${allItems.length} catalog items`}
+        filterBar={
+          <FilterBar
             accent="amber"
-          />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
-            accent="amber"
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-          />
-        </>}
-        tray={showTray ? (
-          <FilterTray
-            open
             filters={FILTER_DEFS}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
+            search={
+              /* Names its own scope, so it can never be mistaken for the global
+               * field in the bar above. It filters the TREE, as it always has. */
+              <ScopedSearch
+                value={query}
+                onChange={setQuery}
+                scope={`${allItems.length} catalog items`}
+                accent="amber"
+              />
+            }
           />
-        ) : null}
+        }
       />
 
       <div className="flex-1 flex overflow-hidden min-h-0">

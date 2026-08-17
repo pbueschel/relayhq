@@ -44,17 +44,26 @@ because the colour map encodes this rule. Do not weaken those guards to land a f
 
 ## Verification gates
 
-Both must pass before any work is called done, and CI runs both:
+All of these must pass before any work is called done, and CI runs all of them:
 
 ```
-bun test/smoke.js      # content guards, DS invariants, seed referential integrity
-bun run build          # must be clean
+bun test/smoke.js          # content guards, DS invariants, seed referential integrity, header conformance
+bun test/engines.js        # condition + approval engine behaviour
+bun run build              # must be clean
 bun test/render-check.js   # headless Chrome over all routes — RUN THIS ALONE
+bun test/width-check.js    # header shape across four widths — RUN THIS ALONE
 ```
 
-`render-check` starts its own static server and drives headless Chrome. **Run it alone** — a second
-headless Chrome against the same profile will hang the run. There is no `timeout` binary on macOS;
-the script uses explicit kill timers instead.
+`engines.js` was missing from this list for a long time while CI ran it
+(`bun test/smoke.js && bun test/engines.js`), so a local "gates pass" was quietly one gate short.
+
+`render-check` and `width-check` each start their own static server and drive headless Chrome.
+**Run them alone, and not at the same time as each other** — a second headless Chrome against the
+same profile will hang the run. There is no `timeout` binary on macOS; both use explicit kill timers.
+
+`width-check` exists because the other gates are blind to layout: `render-check` never passes
+`--window-size`, so it runs at Chrome's 800×600 default and only ever sees one width. The header
+reflow bug of 2026-08-17 was invisible to a fully green suite.
 
 ## Design system
 

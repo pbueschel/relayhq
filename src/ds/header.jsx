@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { Search, X, SlidersHorizontal, ChevronDown, Check } from 'lucide-react';
+import React, { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
+import { Search, X, ChevronDown, Check } from 'lucide-react';
 import { useTheme, cx, useDismiss } from './ThemeContext.jsx';
-import { ICON, DENSITY, headWash, moduleGradient } from './tokens.js';
+import { ICON, headWash, moduleGradient } from './tokens.js';
 import { IconTile } from './primitives.jsx';
 
 /* ====================================================================== *
@@ -18,17 +18,39 @@ import { IconTile } from './primitives.jsx';
  *   - the stat strip and the lens bar printed the same numbers in two shapes
  *   - five control radii at three heights
  *
- * The arrangement now: ONE title band carrying identity, the primary action
- * beside its title, and on the right the lens, a scoped in-page search and a
- * filter toggle. Filters live in a tray that only exists when it is doing
- * something. Every control is CONTROL_H tall with one radius.
+ * THE SHAPE IS FIXED. This is the rule the second pass added, and it is the
+ * one that matters most. The band used to be a single `flex-wrap` row holding
+ * identity, primary action and every control at once, so it reflowed as the
+ * window changed width — 56px at 1728px, 103px at 1400px, 141px at 1024px on
+ * Workspace. Worse, it reflowed WITHOUT the window moving: `subsetLabel()`
+ * swaps a long resting subtitle for "20 of 118 shown" the moment a filter is
+ * set, and because `truncate` implies `white-space: nowrap`, flexbox breaks
+ * lines against the FULL string. Typing in the search box could unwrap the
+ * header; clearing it could wrap it again. A header that changes shape while
+ * you use it reads as broken.
  *
- * The stat strip is gone on purpose: the lens already carries the counts.
+ * So there are now two bands of FIXED height and neither may wrap:
+ *
+ *   ROW 1  identity (left) · the view control (centred) · actions + primary (right)
+ *   ROW 2  the filter bar: in-page search, then the filters, then Clear all
+ *
+ * Row 1 is a three-column grid rather than a flex row with spacers, because a
+ * spacer centres against the CONTENT either side of it — so the view control
+ * would slide sideways every time the subtitle changed length, which is the
+ * same bug in a quieter form. Equal `minmax(0,1fr)` side tracks hold the
+ * centre still no matter what flanks it.
+ *
+ * Row 2 shrinks by SCROLLING, never by wrapping — the condensing rule
+ * `nav.jsx` already documents for the lens bar.
  * ====================================================================== */
 
 /** One height, one radius, everywhere in a header. */
 export const CONTROL_H = 'h-[30px]';
-const CONTROL_R = 'rounded-lg';
+export const CONTROL_R = 'rounded-lg';
+
+/** The two bands. Fixed, never `min-h-` — a floor is what let the row grow. */
+const ROW1_H = 'h-[52px]';
+const ROW2_H = 'h-[44px]';
 
 export function ModuleHeader({
   module: moduleKey,
@@ -37,7 +59,13 @@ export function ModuleHeader({
   accent = 'purple',
   title,
   subtitle,
-  /** The primary action. Sits BESIDE the title, not across the pane from it. */
+  /**
+   * The view control — a LensBar, SubTabs or ViewSwitcher. Centred in row 1,
+   * because it is the one control that says which slice of the module you are
+   * looking at, and centring it stops it competing with either edge.
+   */
+  nav,
+  /** The primary action. Sits at the right end of row 1. */
   primary,
   /**
    * Trailing band content: status indicators and secondary actions — a progress
@@ -46,40 +74,43 @@ export function ModuleHeader({
    * actions-only led a module to file a progress bar under it as if it were one.
    */
   actions,
-  /** Right-hand cluster: lens, scoped search, filter toggle. */
-  tools,
-  /** The filter tray, rendered as its own band when open. */
-  tray,
+  /** Row 2. Pass a <FilterBar>; omit it and the header is one band tall. */
+  filterBar,
   className,
 }) {
   const { t, dark } = useTheme();
   const tile = gradient || (moduleKey ? moduleGradient(moduleKey, 'tile') : null);
 
   return (
-    <div className="flex-shrink-0">
-      <div className={cx('px-4 flex items-center gap-3 flex-wrap py-2.5 min-h-[56px]',
-        tray ? '' : 'border-b', t.border, headWash(dark), className)}>
-        {Icon && (
-          tile
-            ? <span className={cx('w-[30px] h-[30px] rounded-lg flex items-center justify-center shadow-md flex-shrink-0', tile)}>
-                <Icon size={ICON.md} className="text-white" />
-              </span>
-            : <IconTile icon={Icon} accent={accent} />
-        )}
-
-        <div className="min-w-0">
-          <h2 className={cx('text-[15px] font-semibold leading-tight truncate', t.text)}>{title}</h2>
-          {subtitle && <p className={cx('text-[11px] leading-tight truncate', t.textMuted)}>{subtitle}</p>}
+    /* `data-module-header` is the hook test/width-check.js measures. Finding the
+     * band by walking up from the <h2> stops at the first full-width ancestor —
+     * which is row 1 — so the gate silently measured only half the header and
+     * would have passed a filter bar that wrapped. */
+    <div data-module-header="" className={cx('flex-shrink-0 border-b', t.border, headWash(dark), className)}>
+      <div className={cx('px-4 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3', ROW1_H)}>
+        <div className="flex items-center gap-3 min-w-0">
+          {Icon && (
+            tile
+              ? <span className={cx('w-[30px] h-[30px] rounded-lg flex items-center justify-center shadow-md flex-shrink-0', tile)}>
+                  <Icon size={ICON.md} className="text-white" />
+                </span>
+              : <IconTile icon={Icon} accent={accent} />
+          )}
+          <div className="min-w-0">
+            <h2 className={cx('text-[15px] font-semibold leading-tight truncate', t.text)}>{title}</h2>
+            {subtitle && <p className={cx('text-[11px] leading-tight truncate', t.textMuted)}>{subtitle}</p>}
+          </div>
         </div>
 
-        {primary && <div className="flex-shrink-0 ml-1">{primary}</div>}
+        <div className="flex items-center justify-center min-w-0">{nav}</div>
 
-        <div className="flex-1 min-w-[8px]" />
-
-        {tools && <div className="flex items-center gap-2 flex-wrap">{tools}</div>}
-        {actions && <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>}
+        <div className="flex items-center justify-end gap-2 min-w-0">
+          {actions}
+          {primary}
+        </div>
       </div>
-      {tray}
+
+      {filterBar}
     </div>
   );
 }
@@ -91,13 +122,17 @@ export function ModuleHeader({
  * which, so this one NAMES ITS OWN SCOPE in the placeholder: "Search 20 items…"
  * becomes "Search 5 tickets…" when the lens changes. The global field keeps ⌘K
  * in the bar above and searches everything.
+ *
+ * It lives on the filter bar rather than up beside the title, because it and
+ * the filters do the same job — they narrow the list — and a control that has
+ * been separated from its siblings has to be re-found every time.
  * ====================================================================== */
 
 export function ScopedSearch({ value, onChange, scope, width = 'w-[190px]', accent = 'purple' }) {
   const { t, a } = useTheme();
   const c = a(accent);
   return (
-    <div className={cx('flex items-center gap-2 px-2.5 border transition-colors',
+    <div className={cx('flex items-center gap-2 px-2.5 border transition-colors flex-shrink-0',
       CONTROL_H, CONTROL_R, t.bgInput, value ? c.borderStrong : t.borderLight, width)}>
       <Search size={ICON.base} className={cx('flex-shrink-0', value ? c.fg : t.textMuted)} />
       <input
@@ -119,57 +154,51 @@ export function ScopedSearch({ value, onChange, scope, width = 'w-[190px]', acce
 }
 
 /* ====================================================================== *
- * FilterToggle — opens the tray. Carries a count so a collapsed tray never
- * hides the fact that something is filtered.
+ * FilterBar — row 2, and always present.
+ *
+ * It replaces the old FilterTray, which only rendered when something was
+ * active. That was a good idea for a band of filters and a fatal one once the
+ * search field moved down here: the filter button's own handler cleared the
+ * values AND closed the tray, so a single click would have unmounted the
+ * search field and thrown away whatever had been typed into it. A control you
+ * are typing in cannot live in a container that another control can dismiss.
+ *
+ * So the band is permanent, and the filter toggle that used to open it is
+ * gone — there is nothing left to open.
+ *
+ * It scrolls rather than wraps, which is what keeps the header's height fixed.
+ * That makes it a clipping context, so every menu opened from it is positioned
+ * `fixed` (see MultiSelectFilter) instead of `absolute`.
  * ====================================================================== */
 
-export function FilterToggle({ open, onClick, count = 0, accent = 'purple' }) {
+export function FilterBar({
+  search, filters = [], value = {}, onChange, onClearAll, accent = 'purple', children,
+}) {
   const { t, a } = useTheme();
   const c = a(accent);
-  const on = open || count > 0;
-  return (
-    <button
-      onClick={onClick}
-      aria-expanded={!!open}
-      aria-label={count ? `Filters, ${count} active` : 'Filters'}
-      className={cx('flex items-center gap-1.5 px-2.5 border transition-colors',
-        CONTROL_H, CONTROL_R, t.bgInput, on ? cx(c.borderStrong, t.text) : cx(t.borderLight, t.textSecondary))}
-    >
-      <SlidersHorizontal size={ICON.base} className={on ? c.fg : t.textMuted} />
-      {count > 0 && (
-        <span className={cx('text-[10px] font-bold px-1.5 rounded-full tabular-nums text-white', c.solid)}>
-          {count}
-        </span>
-      )}
-    </button>
-  );
-}
-
-/* ====================================================================== *
- * FilterTray — the band that only exists when it is doing something.
- * ====================================================================== */
-
-export function FilterTray({ open, filters = [], value = {}, onChange, onClearAll, children }) {
-  const { t, a } = useTheme();
-  const c = a('purple');
-  if (!open) return null;
-
   const activeCount = countActive(value);
 
   return (
-    <div className={cx('px-4 py-2 border-b flex items-center gap-2 flex-wrap', t.border, t.bgSubtle)}>
-      {filters.map(f => (
-        <MultiSelectFilter
-          key={f.id}
-          filter={f}
-          selected={value[f.id] || []}
-          onChange={(next) => onChange({ ...value, [f.id]: next })}
-        />
-      ))}
-      {children}
-      <div className="flex-1 min-w-[8px]" />
+    <div className={cx('px-4 flex items-center gap-2 border-t', ROW2_H, t.borderLight, t.bgSubtle)}>
+      {/* The controls scroll; Clear all does NOT. A narrow window used to push it
+        * off the end of the row, which meant a list could be filtered with no
+        * visible way to unfilter it — the same class of fault as a filter whose
+        * control is hidden. The way out of a state has to stay on screen. */}
+      <div className="flex items-center gap-2 min-w-0 flex-1 overflow-x-auto">
+        {search}
+        {filters.map(f => (
+          <MultiSelectFilter
+            key={f.id}
+            filter={f}
+            accent={accent}
+            selected={value[f.id] || []}
+            onChange={(next) => onChange({ ...value, [f.id]: next })}
+          />
+        ))}
+        {children}
+      </div>
       {activeCount > 0 && (
-        <button onClick={onClearAll} className={cx('text-xs font-medium', c.fg)}>
+        <button onClick={onClearAll} className={cx('text-xs font-medium flex-shrink-0', c.fg)}>
           Clear all
         </button>
       )}
@@ -187,6 +216,12 @@ export function FilterTray({ open, filters = [], value = {}, onChange, onClearAl
  *   - options carry COUNTS, so you can see what a choice costs before making it
  *   - a set filter shows its VALUES ("Queue · Customer Support +1"), never a
  *     bare category name. Same rule the chips follow.
+ *
+ * The panel is `fixed`, not `absolute`. Its row scrolls horizontally, and an
+ * `overflow-x: auto` box clips its children in BOTH axes — an absolute panel
+ * would be sliced off at the band's bottom edge. A fixed element escapes that
+ * clip (no ancestor here establishes a containing block for it), while staying
+ * a DOM descendant, so the existing outside-click ref still covers it.
  * ====================================================================== */
 
 export function MultiSelectFilter({ filter, selected = [], onChange, accent = 'purple' }) {
@@ -194,6 +229,35 @@ export function MultiSelectFilter({ filter, selected = [], onChange, accent = 'p
   const c = a(accent);
   const [open, setOpen] = useState(false);
   const ref = useDismiss(open, () => setOpen(false));
+  const btnRef = useRef(null);
+  const [pos, setPos] = useState(null);
+
+  /* A fixed panel does not follow its anchor, so re-measure whenever anything
+   * that could move the button happens. `true` on the scroll listener catches
+   * the filter bar's own horizontal scroll, which does not bubble. */
+  const place = useCallback(() => {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const W = 240; // w-60
+    setPos({
+      left: Math.round(Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - W - 8))),
+      top: Math.round(r.bottom + 6),
+    });
+  }, []);
+
+  useLayoutEffect(() => { if (open) place(); }, [open, place]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const on = () => place();
+    window.addEventListener('resize', on);
+    window.addEventListener('scroll', on, true);
+    return () => {
+      window.removeEventListener('resize', on);
+      window.removeEventListener('scroll', on, true);
+    };
+  }, [open, place]);
 
   const options = filter.options || [];
   const chosen = options.filter(o => selected.includes(o.value));
@@ -208,8 +272,9 @@ export function MultiSelectFilter({ filter, selected = [], onChange, accent = 'p
   };
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative flex-shrink-0" ref={ref}>
       <button
+        ref={btnRef}
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         className={cx('flex items-center gap-1.5 px-2.5 border transition-colors max-w-[15rem]',
@@ -220,9 +285,11 @@ export function MultiSelectFilter({ filter, selected = [], onChange, accent = 'p
         <ChevronDown size={ICON.sm} className={cx('flex-shrink-0', t.textMuted, open && 'rotate-180')} />
       </button>
 
-      {open && (
-        <div className={cx('absolute left-0 top-full mt-1.5 w-60 rounded-xl border shadow-2xl overflow-hidden z-50',
-          t.modal, t.borderLight)}>
+      {open && pos && (
+        <div
+          style={{ left: pos.left, top: pos.top }}
+          className={cx('fixed w-60 rounded-xl border shadow-2xl overflow-hidden z-50', t.modal, t.borderLight)}
+        >
           <div className={cx('flex items-center justify-between px-3 py-2 border-b', t.borderLight)}>
             <span className={cx('text-[10px] font-semibold uppercase tracking-wider', t.textMuted)}>
               {filter.label}
@@ -276,24 +343,23 @@ export function countActive(value = {}) {
 }
 
 /**
- * Header filter state: the multi-select values, the tray's open flag, and the
- * in-page query. The tray opens itself whenever something is active, so a
- * filter can never be on while its control is hidden.
+ * Header filter state: the multi-select values and the in-page query.
+ *
+ * There is no tray flag any more. The filter bar is always rendered, so there
+ * is no state in which a filter is active while its control is hidden — which
+ * is the invariant the old `trayOpen || activeCount > 0` was there to protect.
  */
 export function useHeaderFilters(initial = {}) {
   const [values, setValues] = useState(initial);
   const [query, setQuery] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
 
   const activeCount = useMemo(() => countActive(values), [values]);
-  const clearAll = useCallback(() => setValues({}), []);
+  const clearAll = useCallback(() => { setValues({}); setQuery(''); }, []);
 
   return {
     values, setValues, query, setQuery,
     activeCount,
-    trayOpen: trayOpen || activeCount > 0,
-    toggleTray: () => setTrayOpen(o => !o),
-    clearAll: () => { clearAll(); setTrayOpen(false); },
+    clearAll,
     /** True when nothing narrows the list — lets a view skip filtering entirely. */
     isClean: activeCount === 0 && query.trim() === '',
   };

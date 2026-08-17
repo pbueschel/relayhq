@@ -16,7 +16,8 @@ import {
   Field, Input, Textarea, Checkbox, TileGroup, SearchInput,
   Modal, Menu, MenuItem, MenuLabel, FilterPill,
   LensBar, SubTabs, PageBody,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
+  CONTROL_H, CONTROL_R,
 } from '@/ds';
 import { useStore, patchIn, addTo, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -574,6 +575,46 @@ const BUCKET_LABEL = {
 };
 const BUCKET_ORDER = ['overdue', 'today', 'week', 'later', 'nodate'];
 
+/**
+ * How the list is sectioned. DUE DATE IS THE DEFAULT.
+ *
+ * It used to be neither a choice nor a default: grouping was derived from the
+ * lens alone, so "Everything" sectioned by record type and every other lens
+ * sectioned by due date. That made the one view meant to answer "what do I do
+ * next?" the only view that answered "what kind of thing is it?" instead — a
+ * ticket due today sat below a lesson due next month because they were filed
+ * under different headings.
+ *
+ * Grouping is now its own state, so both readings survive and neither is
+ * implied by which lens you happen to be on.
+ */
+const GROUP_MODES = [
+  { value: 'due',  label: 'Due date', icon: Clock },
+  { value: 'kind', label: 'Type',     icon: Layers },
+];
+
+function GroupByToggle({ value, onChange, accent = 'teal' }) {
+  const { t, a } = useTheme();
+  const c = a(accent);
+  const i = Math.max(0, GROUP_MODES.findIndex(m => m.value === value));
+  const mode = GROUP_MODES[i];
+  const next = GROUP_MODES[(i + 1) % GROUP_MODES.length];
+  const Icon = mode.icon;
+  return (
+    <button
+      onClick={() => onChange(next.value)}
+      title={`Grouped by ${mode.label.toLowerCase()} — switch to ${next.label.toLowerCase()}`}
+      aria-label={`Grouping: ${mode.label}. Switch to ${next.label}.`}
+      className={cx('flex items-center gap-1.5 px-2.5 border transition-colors flex-shrink-0',
+        CONTROL_H, CONTROL_R, t.bgInput, t.borderLight, t.textSecondary)}
+    >
+      <Icon size={ICON.base} className={c.fg} />
+      {/* Shows its VALUE, not a bare category — same rule the filters follow. */}
+      <span className="text-xs whitespace-nowrap">Group · {mode.label}</span>
+    </button>
+  );
+}
+
 function sortItems(a, b) {
   if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
   if (a.done !== b.done) return a.done ? 1 : -1;
@@ -616,15 +657,14 @@ export default function Workspace({ route }) {
   const [lens, setLens] = useState('all');
   const [creating, setCreating] = useState(null);
 
-  /* One header state: the multi-select values, the in-page query, and whether the
-   * tray is showing. The tray forces itself open whenever something is active, so
-   * a filter can never be on while its control is hidden. */
+  /* One header state: the multi-select values and the in-page query. There is no
+   * tray flag any more — the filter bar is always on screen, so a filter can
+   * never be active while its control is hidden. */
   const [filters, setFilters] = useState({ assignment: ['mine'] });
   const [search, setSearch] = useState('');
-  const [trayOpen, setTrayOpen] = useState(false);
+  const [groupBy, setGroupBy] = useState('due');
 
   const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
 
   const items = useMemo(() => {
     const out = [];
@@ -675,8 +715,11 @@ export default function Workspace({ route }) {
     };
   }, [items, data.approvals, meId]);
 
+  /* Sectioning follows the group-by control, never the lens. `sortItems` has
+   * always ordered overdue-first then by due date, so the rows inside a section
+   * were already right — only the section boundaries were wrong. */
   const groups = useMemo(() => {
-    if (lens === 'all') {
+    if (groupBy === 'kind') {
       return KIND_ORDER
         .map(kind => ({ id: kind, label: KIND_META[kind].plural, rows: visible.filter(i => i.kind === kind) }))
         .filter(g => g.rows.length);
@@ -684,7 +727,7 @@ export default function Workspace({ route }) {
     return BUCKET_ORDER
       .map(bucket => ({ id: bucket, label: BUCKET_LABEL[bucket], rows: visible.filter(i => dueBucket(i, now) === bucket) }))
       .filter(g => g.rows.length);
-  }, [visible, lens, now]);
+  }, [visible, groupBy, now]);
 
   const filterCount = activeFilters;
 
@@ -708,7 +751,7 @@ export default function Workspace({ route }) {
     navigate('learning', 'my');
   };
 
-  const clearFilters = () => { setFilters({}); setSearch(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setSearch(''); };
 
   /* Built from the records on screen, so a project's own columns appear here
    * under their real labels rather than as raw ids. */
@@ -771,34 +814,32 @@ export default function Workspace({ route }) {
           items.length,
           joinDots([data.currentUser?.name, data.currentUser?.title, `${stats.total} assigned to you`]),
         )}
+        /* The lens is centred in row 1, between the module identity and the
+         * primary action, so it holds still while either of them changes width. */
+        nav={<LensBar items={lensItems} value={lens} onChange={setLens} inline />}
         primary={<NewMenu onCreate={setCreating} />}
-        tools={<>
-          <LensBar items={lensItems} value={lens} onChange={setLens} inline />
-          <ScopedSearch
-            value={search}
-            onChange={setSearch}
-            /* Names its own scope, so it can never be mistaken for the global
-             * field in the bar above: "Search 20 items…" becomes
-             * "Search 5 tickets…" when the lens changes. */
-            scope={`${lensItems.find(l => l.value === lens)?.count ?? items.length} ${activeLens.scopeNoun || 'items'}`}
+        filterBar={
+          <FilterBar
             accent="teal"
-          />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
-            accent="teal"
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-          />
-        </>}
-        tray={showTray ? (
-          <FilterTray
-            open
             filters={FILTER_DEFS}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
-          />
-        ) : null}
+            search={
+              <ScopedSearch
+                value={search}
+                onChange={setSearch}
+                /* Names its own scope, so it can never be mistaken for the global
+                 * field in the bar above: "Search 20 items…" becomes
+                 * "Search 5 tickets…" when the lens changes. */
+                scope={`${lensItems.find(l => l.value === lens)?.count ?? items.length} ${activeLens.scopeNoun || 'items'}`}
+                accent="teal"
+              />
+            }
+          >
+            <GroupByToggle value={groupBy} onChange={setGroupBy} accent="teal" />
+          </FilterBar>
+        }
       />
 
       <PageBody>

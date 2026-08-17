@@ -13,7 +13,7 @@ import {
   Field, Textarea, SearchInput,
   Modal, Menu, MenuItem, MenuLabel, MenuDivider,
   LensBar, PageBody,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, setCollection, patchIn, NOW } from '@/store/store.js';
 import {
@@ -533,14 +533,15 @@ export default function Approvals({ route }) {
   const [flash, setFlash] = useState(null);
   const bootstrapped = useRef(false);
 
-  /* One header state: the multi-select values, the in-page query, and whether
-   * the tray is showing. The tray forces itself open whenever something is
-   * active, so a filter can never be on while its control is hidden. */
+  /* One header state: the multi-select values and the in-page query. The filter
+   * bar is always on screen now, so there is no state in which a filter is
+   * active while its control is hidden — which is the invariant the old
+   * force-the-tray-open flag existed to protect. `activeFilters` survives it
+   * because the empty state still has to say whether a filter is why the list
+   * is empty. */
   const [filters, setFilters] = useState({});
-  const [trayOpen, setTrayOpen] = useState(false);
   const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   const meId = actingId || currentUser?.id || USR.ADMIN;
   // The demo clock, not the wall clock. Every seeded due time, decision and
@@ -795,34 +796,31 @@ export default function Approvals({ route }) {
             onPick={(id) => setActingId(id === currentUser?.id ? null : id)}
           />
         }
-        tools={<>
-          {/* `inline` is not optional here: the container-query shell contains
-              the inline axis, so without it the pills overflow the search box. */}
-          <LensBar items={lensItems} value={lens} onChange={goLens} inline />
-          <ScopedSearch
-            value={query}
-            onChange={setQuery}
-            /* Names its own scope so it can never be mistaken for the global
-               field in the bar above. */
-            scope={`${lensItems.find(l => l.value === lens)?.count ?? all.length} approvals`}
+        /* The lens is centred in row 1, between the module identity and the
+         * acting-as control, so it holds still while either of them changes
+         * width. `inline` is not optional here: the container-query shell
+         * contains the inline axis, so without it the pills clip against the
+         * centre track instead of scrolling inside it. */
+        nav={<LensBar items={lensItems} value={lens} onChange={goLens} inline />}
+        filterBar={
+          <FilterBar
             accent="amber"
-          />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
-            accent="amber"
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-          />
-        </>}
-        tray={showTray ? (
-          <FilterTray
-            open
             filters={FILTER_DEFS}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
+            search={
+              <ScopedSearch
+                value={query}
+                onChange={setQuery}
+                /* Names its own scope so it can never be mistaken for the global
+                   field in the bar above. */
+                scope={`${lensItems.find(l => l.value === lens)?.count ?? all.length} approvals`}
+                accent="amber"
+              />
+            }
           />
-        ) : null}
+        }
       />
 
       <PageBody>

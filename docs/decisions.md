@@ -270,3 +270,178 @@ Everything") rather than an animation.
 **Rejected.** Leaving the filter control on its own line (Phil: "doesn't feel right"). A
 timer-driven carousel in the portal guide viewer — reverted to user-driven paging on Phil's
 instruction, because an auto-advancing how-to takes control away from someone following steps.
+
+---
+
+## 2026-08-17 — The module header's shape is fixed, and that is now a rule
+
+**Context.** The header was one `flex-wrap` row carrying identity, the primary action and every
+control. It measured 56px at a 1728px window, 103px at 1400px and 141px at 1024px on Workspace — and
+144px / 106px / 61px on Assets, which only reached its compact state above 1728px, meaning it was
+permanently wrapped on every laptop.
+
+**Decision.** Two bands of FIXED height (`h-[52px]` + `h-[44px]`), neither of which may wrap. Row 2
+shrinks by scrolling. `min-h-` is banned in the header — a floor is what let the row grow.
+
+**Why.** The width-driven reflow was only half the fault. The other half is invisible from a
+screenshot: the wrap threshold MOVES WHILE YOU TYPE. `subsetLabel()` swaps a long resting subtitle for
+"20 of 118 shown" whenever a filter is active, and because `truncate` implies `white-space: nowrap`,
+flexbox breaks lines against the FULL untruncated string. So at one fixed window width the header
+could unwrap when you started filtering and wrap again when you cleared it. A header that changes
+shape while you use it reads as broken, and no amount of responsive tuning fixes that class of bug —
+only a fixed shape does.
+
+**Rejected.** Keeping one band and letting it scroll (loses the search and filters off the right edge
+at common widths). Container queries (they tighten continuously, which is the right idiom for a lens
+bar but still yields a height that depends on width). Shortening the subtitle (treats the symptom;
+the next long subtitle brings it back).
+
+---
+
+## 2026-08-17 — The view control is centred with a grid, never a flex spacer
+
+**Context.** Phil asked for the New button on the left and the view lens "in the middle". The obvious
+implementation is `<identity/> <spacer/> <lens/> <spacer/> <primary/>`.
+
+**Decision.** Row 1 is `grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]` with the lens in the centre track.
+
+**Why.** A flex spacer centres the lens against its NEIGHBOURS, not against the pane — so the lens
+would drift sideways every time the subtitle changed length, which is the same `subsetLabel` swing
+that caused the original bounce, just expressed horizontally instead of vertically. Equal side tracks
+hold the centre still regardless of what flanks it. The cost is that the module title truncates earlier
+at narrow widths; that is the right thing to give up, because the title is also the highlighted sidebar
+item and the breadcrumb, while the lens is the module's primary navigation.
+
+---
+
+## 2026-08-17 — The filter bar is permanent, and the filter toggle is gone
+
+**Context.** Phil: "the search bar should go with the other filter options on the same line." The
+existing filter tray only rendered when something was active (`tray={showTray ? … : null}` plus
+`if (!open) return null` inside `FilterTray`).
+
+**Decision.** The filter bar is always rendered. `FilterToggle` and `FilterTray` are deleted, and
+`useHeaderFilters` no longer carries a tray flag.
+
+**Why.** Putting a text field inside the old tray would have been a hard regression: the filter
+button's own handler called `clearFilters()`, which did `setTrayOpen(false)` AND `setSearch('')`, so
+one click would have unmounted the search field and thrown away what was being typed into it. A
+control you type in cannot live in a container another control can dismiss. Once the band is
+permanent there is nothing left for a toggle to open.
+
+**What this gives up.** "A band that only exists when it is doing something" was the best idea in the
+previous header, and it is now gone. The resting header is 97px rather than 56px. That is the price of
+search and filters sharing a line, and it was paid deliberately.
+
+**Also.** `Clear all` sits OUTSIDE the scrolling region. The first cut scrolled the whole row, which at
+1100px pushed `Clear all` off the end — leaving a filtered list with no visible way to unfilter it,
+which is the same class of fault as a filter whose control is hidden.
+
+---
+
+## 2026-08-17 — Filter menus are positioned `fixed`, not `absolute`
+
+**Context.** Row 2 scrolls horizontally so the header's height can stay fixed. An
+`overflow-x: auto` box clips its children in BOTH axes, so the `absolute` dropdown on every
+`MultiSelectFilter` would have been sliced off at the band's bottom edge.
+
+**Decision.** The panel is `position: fixed`, placed from the button's `getBoundingClientRect()` and
+re-placed on `resize` and on capture-phase `scroll`.
+
+**Why.** A fixed element escapes ancestor overflow clipping, and no ancestor in the app shell
+establishes a containing block for it (no `transform`, `filter`, `backdrop-filter` or `contain` on the
+path from `#root` to the header — checked before committing to this). It also stays a DOM descendant
+of the wrapper, so the existing `useDismiss` outside-click ref still covers it.
+
+**Rejected.** Rendering the menu through a portal (works, but breaks `useDismiss`'s `contains()` check
+and needs a second ref). Letting row 2 wrap instead of scroll (reintroduces the variable height this
+whole change exists to remove).
+
+---
+
+## 2026-08-17 — Standing rule 8 reversed: cap the width, align it LEFT
+
+**Context.** Rule 8 read "Centre the content, cap the width", and the styleguide's Layout section
+argued for it explicitly: "wide viewports should produce balanced margins, not a left-hugging layout
+with a dead right half." Phil asked for everything left-aligned, tickets included.
+
+**Decision.** `PageBody` aligns left by default; `align="centre"` is kept for reading surfaces. The
+rule and the Layout demo on `#/design` were rewritten in the same commit.
+
+**Why.** The header spans the pane at `px-4` while the body centred itself under a cap, so the list sat
+on a different left edge from the module title — 152px apart at a 1600px window, 216px at 1728px. On
+Assets it was worse: three tabs used `max-w-6xl` and two used `max-w-5xl`, so the list edge JUMPED 64px
+sideways when you changed tab within one module. A list that does not share an edge with its own header
+reads as two screens stacked. The old rule was defending against a dead right half; the new one defends
+against the body disagreeing with the chrome, and the chrome is the thing that has to be agreed with.
+
+**Note for whoever reads this next.** This reverses a documented rule that was rendered live in the
+app. It was Phil's call, made with the conflict put in front of him rather than around him.
+
+---
+
+## 2026-08-17 — Workspace grouping is its own state, defaulting to due date
+
+**Context.** Phil asked for the default view to be "items by due date, not by section". Grouping was
+derived from the lens alone: `lens === 'all'` sectioned by record type, every other lens by due bucket.
+So four of five lenses already did what he wanted, and "Everything" — the default — was the exception.
+
+**Decision.** A `groupBy` state defaulting to `'due'`, with a `GroupByToggle` on the filter bar.
+
+**Why.** Simply deleting the `if (lens === 'all')` branch is a four-line change and was tempting, but
+`lens` was the sole grouping input — there is no other code path that renders the "TICKETS 5 /
+APPROVALS 2" view, so deleting it removes from the product the only view that answers "how many
+approvals are on me right now". Since a stable second band was being built anyway, the control cost
+almost nothing. Precedent already existed at `Projects.jsx:1418`.
+
+---
+
+## 2026-08-17 — A gate that cannot fail is not a gate: `test/width-check.js`
+
+**Context.** The header reflow shipped through a fully green suite. smoke.js asserted nothing about
+layout, and `render-check.js` never passes `--window-size`, so it runs at Chrome's 800×600 default —
+permanently BELOW the reflow threshold. The wrapped state was the only state it had ever seen.
+
+**Decision.** A fifth gate that loads four routes at 1024 / 1280 / 1440 / 1728px and fails if the
+header's height or control-row count differs between them. Wired into CI after `render-check`, never
+alongside it. `bun test/engines.js` was also added to CLAUDE.md's gate list, having run in CI unlisted.
+
+**Why.** The bug class is "the app looks wrong at a size nobody tested", and it is invisible to every
+existing gate by construction. The gate was proved by reinstating the old header and confirming it
+exits 1 with the real symptom, then restoring.
+
+**Three things the probe must do**, each of which cost a debugging round and is commented in the file:
+no `setTimeout` polling (under `--virtual-time-budget` a timer chain burns the budget before React
+mounts, and once the budget is spent a pending timer never fires at all); the MutationObserver must
+disconnect around its own write (appending the result node is itself a mutation, and re-entering
+forever starves the event loop so the page never settles); and the result marker must be assembled at
+runtime, because `--dump-dom` echoes the probe's own source back out and a literal marker matches the
+source first. `ModuleHeader` carries `data-module-header` because finding the band by walking up from
+the `<h2>` stops at row 1 and silently measures half the header.
+
+---
+
+## 2026-08-17 — E9's premise was wrong in two ways (investigated, not built)
+
+**Context.** E9 was queued as "add a general subform; ~90 catalog items dead-end", plus "add a
+PRODUCT_ICON entry for `cat-p-applications`". Both were investigated before Phil redirected to the
+header work. Recording the findings so the next session does not re-derive them.
+
+**Finding 1 — the count is 29, not ~90.** Of 192 catalog items, 120 carry both an atom and an intake,
+35 an intake only, 8 an atom only, and 29 neither. 28 of the 29 are in Application & Software, 1 in
+Workplace & Facilities, all `audience: internal`. Eight are "Not listed" escape hatches. No existing
+subform fits any of them — the nearest candidates either book a physical repair (`sf-laptop-repair`)
+or raise a purchase order behind a spend approval (`sf-software-request`) for what is a software fault.
+
+**Finding 2 — the icon fix is moot, because the product never renders.** No FORM lists
+`cat-p-applications` in `productIds`, and `Portal.jsx:618` filters the help tree to `form.productIds`
+whenever that array is non-empty. All three published forms have non-empty arrays, so the fallback
+branch is dead code and the entire 44-item product is unreachable to a portal visitor. It is reachable
+by an admin via the Forms editor, which is why nothing looked broken.
+
+**Root cause of both.** `cat-p-applications` is the only root product declared as a bare string literal
+(`catalog.js:941`), because `ids.js` has no `P_APPLICATIONS` constant — so `forms.js` had nothing to
+reference and the product was never wired up. That is hard rule 6 earning its keep.
+
+**Consequence for the plan.** A new W9.0 is inserted ahead of W9.1 and W9.2, and a smoke guard should
+assert that every root product is reachable from at least one published form — nothing checks that today.

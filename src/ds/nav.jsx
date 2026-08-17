@@ -80,8 +80,52 @@ function Lens({ item, active, onChange, inline = false }) {
  * (Business Rules' Queues/Routing/Workflows, Assets' Hardware/Software/Locations).
  * ==================================================================== */
 
-export function SubTabs({ items = [], value, onChange, className }) {
+export function SubTabs({ items = [], value, onChange, inline = false, className }) {
   const { t, a } = useTheme();
+
+  /**
+   * `inline` — for use as a ModuleHeader's `nav`.
+   *
+   * The standalone bar below is 40px tall and, more importantly, CANNOT SHRINK:
+   * its buttons are `whitespace-nowrap` inside a plain `inline-flex` with no
+   * `min-w-0` and no overflow, so its minimum width equals its maximum. On
+   * Assets that is a ~641px hard floor, and below roughly a 938px viewport the
+   * last tab was simply clipped away by `main`'s `overflow-hidden` — the
+   * Compliance tab vanished with nothing to say it had.
+   *
+   * Inline mode fixes both halves: it sits at CONTROL_H like every other header
+   * control, and it shrinks by SCROLLING, which is the condensing rule the lens
+   * bar already follows.
+   */
+  if (inline) {
+    return (
+      <div className={cx('inline-flex flex-nowrap items-center gap-0.5 p-0.5 rounded-lg border h-[30px] min-w-0 overflow-x-auto',
+        t.bgSubtle, t.borderLight, className)}>
+        {items.map(item => {
+          const active = value === item.value;
+          const c = a(item.accent || 'purple');
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.value}
+              onClick={() => onChange(item.value)}
+              aria-pressed={active}
+              title={item.label}
+              className={cx('px-2.5 h-[24px] rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap flex-shrink-0',
+                active ? cx(t.bgCard, t.text, 'shadow-sm') : cx(t.textSecondary, t.bgHover))}
+            >
+              {Icon && <Icon size={ICON.sm} className={active ? c.fg : t.textMuted} />}
+              {item.label}
+              {item.count != null && (
+                <span className={cx('text-[10px] tabular-nums', t.textMuted)}>{item.count}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div className={cx('inline-flex gap-1 p-1 rounded-lg', t.bgSubtle, className)}>
       {items.map(item => {
@@ -221,11 +265,24 @@ export function Toolbar({ children, className }) {
   );
 }
 
-/** The scrolling body of a module view, width-capped and centred. */
-export function PageBody({ width = 'max-w-5xl', children, className }) {
+/**
+ * The scrolling body of a module view, width-capped.
+ *
+ * `align` decides where the capped column sits. It defaults to `left`, which
+ * reverses what standing rule 8 used to say ("centre the content, cap the
+ * width"). The reason is alignment with the header above it: the header spans
+ * the pane at `px-4`, so a centred body put the list on a different left edge
+ * from the module title — 152px apart at a 1600px window, and on Assets the
+ * edge JUMPED sideways between tabs because they used different caps. A list
+ * that does not share an edge with its own header reads as two screens stacked.
+ *
+ * `align="centre"` is kept, and is still right for a reading surface: a long
+ * article or lesson wants balanced margins rather than to hug the chrome.
+ */
+export function PageBody({ width = 'max-w-5xl', align = 'left', children, className }) {
   return (
     <div className={cx('flex-1 overflow-auto p-4', className)}>
-      <div className={cx(width, 'mx-auto')}>{children}</div>
+      <div className={cx(width, align === 'centre' && 'mx-auto')}>{children}</div>
     </div>
   );
 }

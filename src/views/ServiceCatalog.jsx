@@ -17,7 +17,7 @@ import {
   Field, Input, Textarea, Select, TileGroup, Toggle,
   Modal, ConfirmDelete,
   LensBar, PageBody,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray,
+  ModuleHeader, ScopedSearch, FilterBar,
   subsetLabel, optionCounts, passes, countActive,
 } from '@/ds';
 import { useStore, addTo, patchIn, removeFrom, uid, nowISO } from '@/store/store.js';
@@ -312,7 +312,6 @@ export default function ServiceCatalog({ route }) {
   // Multi-select, because "hardware or software" and "draft or internal" are
   // ordinary questions here and a single-select dropdown cannot express either.
   const [filters, setFilters] = useState({});
-  const [trayOpen, setTrayOpen] = useState(false);
 
   const [editingItem, setEditingItem] = useState(null);        // { item } | { item: null, categoryId }
   const [editingCategory, setEditingCategory] = useState(null); // { category } | { category: null }
@@ -394,8 +393,7 @@ export default function ServiceCatalog({ route }) {
   const groups = useMemo(() => groupByCategory(filtered, cats), [filtered, cats]);
 
   const activeFilters = countActive(filters);
-  const showTray = tab === 'items' && (trayOpen || activeFilters > 0);
-  const clearFilters = useCallback(() => { setFilters({}); setQuery(''); setTrayOpen(false); }, []);
+  const clearFilters = useCallback(() => { setFilters({}); setQuery(''); }, []);
   const filtering = tab === 'items' && (!!query.trim() || activeFilters > 0);
 
   const lensItems = useMemo(() => LENSES.map(l => ({
@@ -512,8 +510,8 @@ export default function ServiceCatalog({ route }) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* ONE band. The gradient lives on the module tile and on the single
-          primary action beside it — nowhere else on this screen. */}
+      {/* The gradient lives on the module tile and on the single primary action
+          beside it — nowhere else on this screen. */}
       <ModuleHeader
         icon={ShoppingCart}
         module="catalog"
@@ -533,6 +531,9 @@ export default function ServiceCatalog({ route }) {
             list.length,
             `${plural(list.length, 'orderable item', 'orderable items')} · ${totals.drafts} in draft`,
           )}
+        /* The lens is centred in row 1, between the module identity and the
+         * primary action, so it holds still while either of them changes width. */
+        nav={<LensBar items={lensItems} value={tab} onChange={setTab} inline />}
         primary={
           tab === 'categories'
             ? (
@@ -551,36 +552,31 @@ export default function ServiceCatalog({ route }) {
               </Button>
             )
         }
-        tools={<>
-          <LensBar items={lensItems} value={tab} onChange={setTab} inline />
-          {/* Names its own scope, so it can never be mistaken for the global
-              field in the bar above. The scope moves with the lens. */}
-          <ScopedSearch
-            value={query}
-            onChange={setQuery}
-            scope={tab === 'categories'
-              ? plural(cats.length, 'category', 'categories')
-              : plural(list.length, 'service item', 'service items')}
+        filterBar={
+          <FilterBar
             accent={CATEGORY_HUE}
-          />
-          {tab === 'items' && (
-            <FilterToggle
-              open={showTray}
-              count={activeFilters}
-              accent={CATEGORY_HUE}
-              onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-            />
-          )}
-        </>}
-        tray={showTray ? (
-          <FilterTray
-            open
-            filters={FILTER_DEFS}
+            /* The three filters narrow the ITEM list, so they are offered only
+             * on the lens they act on — a control that changes nothing on the
+             * screen in front of you is worse than no control. The search field
+             * is on both, which is why the band itself is never conditional. */
+            filters={tab === 'items' ? FILTER_DEFS : []}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
+            search={
+              /* Names its own scope, so it can never be mistaken for the global
+               * field in the bar above. The scope moves with the lens. */
+              <ScopedSearch
+                value={query}
+                onChange={setQuery}
+                scope={tab === 'categories'
+                  ? plural(cats.length, 'category', 'categories')
+                  : plural(list.length, 'service item', 'service items')}
+                accent={CATEGORY_HUE}
+              />
+            }
           />
-        ) : null}
+        }
       />
 
       <PageBody width="max-w-6xl">

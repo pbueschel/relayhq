@@ -13,7 +13,7 @@ import {
   Field, Input, Textarea, Select, Checkbox, TileGroup,
   Modal, ConfirmDelete, Menu, MenuItem, MenuLabel,
   LensBar, ViewSwitcher, PageHeader, PageBody, Breadcrumbs,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, nowISO } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -283,19 +283,17 @@ export default function Knowledge({ route }) {
  * ==================================================================== */
 
 function Library({ atoms, reuseIndex, people, tab, notFound }) {
-  /* One header state: the multi-select filter values, the in-page query, and
-   * whether the tray is showing. The tray forces itself open whenever something
-   * is active, so a filter can never be on while its control is hidden. */
+  /* One header state: the multi-select filter values and the in-page query. There
+   * is no tray flag any more — the filter bar is always on screen, so a filter can
+   * never be active while its control is hidden. */
   const [q, setQ] = useState('');
   const [filters, setFilters] = useState({});
-  const [trayOpen, setTrayOpen] = useState(false);
   const [view, setView] = useState('list');
   const [creating, setCreating] = useState(false);
   const [playing, setPlaying] = useState(null);
 
   const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQ(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQ(''); };
 
   /* Everything except the lens — so the lens counts reflect the other filters. */
   const preLens = useMemo(() => {
@@ -381,29 +379,30 @@ function Library({ atoms, reuseIndex, people, tab, notFound }) {
           atoms.length,
           `${atoms.length} atoms · ${reused} reused across the catalog and courses · one record, three surfaces`,
         )}
+        /* The lens is centred in row 1, between the module identity and the
+         * primary action, so it holds still while either of them changes width. */
+        nav={<LensBar items={lensItems} value={tab} onChange={v => navigate('knowledge', v)} inline />}
         primary={<Button variant="grad" module="knowledge" icon={Plus} onClick={() => setCreating(true)}>New atom</Button>}
-        tools={<>
-          <LensBar items={lensItems} value={tab} onChange={v => navigate('knowledge', v)} inline />
-          {/* Names its own scope, so it can never be mistaken for the global
-              field in the bar above: "Search 41 atoms…" narrows to
-              "Search 6 atoms…" the moment the lens moves to Drafts. */}
-          <ScopedSearch value={q} onChange={setQ} scope={`${lensCount} atoms`} accent="blue" />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
+        filterBar={
+          <FilterBar
             accent="blue"
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-          />
-        </>}
-        tray={showTray ? (
-          <FilterTray
-            open
             filters={FILTER_DEFS}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
+            search={
+              <ScopedSearch
+                value={q}
+                onChange={setQ}
+                /* Names its own scope, so it can never be mistaken for the global
+                 * field in the bar above: "Search 41 atoms…" narrows to
+                 * "Search 6 atoms…" the moment the lens moves to Drafts. */
+                scope={`${lensCount} atoms`}
+                accent="blue"
+              />
+            }
           />
-        ) : null}
+        }
       />
 
       <PageBody width="max-w-6xl">

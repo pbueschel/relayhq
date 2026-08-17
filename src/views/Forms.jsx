@@ -13,7 +13,7 @@ import {
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup,
   Modal, ConfirmDelete,
   LensBar, PageHeader, PageBody, Breadcrumbs,
-  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
+  ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, nowISO } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -252,12 +252,11 @@ export default function Forms({ route }) {
   const [editingForm, setEditingForm] = useState(null);
   const [deletingForm, setDeletingForm] = useState(null);
 
-  /* One header state: the multi-select filter values, the in-page query, and
-   * whether the tray is showing. The tray forces itself open whenever something
-   * is active, so a filter can never be on while its control is hidden. */
+  /* One header state: the multi-select filter values and the in-page query.
+   * There is no tray flag any more — the filter bar is always on screen, so a
+   * filter can never be on while its control is hidden. */
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState({});
-  const [trayOpen, setTrayOpen] = useState(false);
 
   const products = useMemo(() => (catalog || []).filter(n => n.type === 'product'), [catalog]);
 
@@ -324,9 +323,7 @@ export default function Forms({ route }) {
     );
   }
 
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-  const showTray = trayOpen || activeFilters > 0;
-  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const clearFilters = () => { setFilters({}); setQuery(''); };
 
   const lensItems = LENSES.map(l => ({ ...l, count: preLens.filter(it => it.kind === l.value).length }));
   const activeLens = LENSES.find(l => l.value === lens) || LENSES[0];
@@ -384,38 +381,36 @@ export default function Forms({ route }) {
           ? <Button variant="grad" module="forms" icon={Plus} onClick={createForm}>New form</Button>
           : <Button variant="grad" module="forms" icon={Plus} onClick={createSubform}>New request form</Button>}
         actions={<Button variant="outline" icon={ExternalLink} onClick={() => navigate('portal')}>Open portal</Button>}
-        tools={<>
+        /* The lens is centred in row 1, between the module identity and the
+         * primary action, so it holds still while either of them changes width. */
+        nav={
           <LensBar
             items={lensItems}
             value={lens}
             onChange={(v) => navigate('forms', v === 'requests' ? 'requests' : 'portal')}
             inline
           />
-          {/* Names its own scope, so it can never be mistaken for the global
-              field in the bar above: "Search 4 forms…" becomes
-              "Search 18 request forms…" when the lens moves. */}
-          <ScopedSearch
-            value={query}
-            onChange={setQuery}
-            scope={`${lensCount} ${activeLens.scopeNoun}`}
+        }
+        filterBar={
+          <FilterBar
             accent="purple"
-          />
-          <FilterToggle
-            open={showTray}
-            count={activeFilters}
-            accent="purple"
-            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
-          />
-        </>}
-        tray={showTray ? (
-          <FilterTray
-            open
             filters={FILTER_DEFS}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
+            search={
+              <ScopedSearch
+                value={query}
+                onChange={setQuery}
+                /* Names its own scope, so it can never be mistaken for the global
+                 * field in the bar above: "Search 4 forms…" becomes
+                 * "Search 18 request forms…" when the lens moves. */
+                scope={`${lensCount} ${activeLens.scopeNoun}`}
+                accent="purple"
+              />
+            }
           />
-        ) : null}
+        }
       />
 
       <PageBody width="max-w-6xl">
