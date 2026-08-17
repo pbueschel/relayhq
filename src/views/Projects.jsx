@@ -1043,7 +1043,6 @@ function ProjectCard({ project, tasks, people }) {
   const c = a(hue);
   const rows = tasksOfProject(tasks, project.id);
   const prog = progressOf(project, rows);
-  const overdue = rows.filter(ts => isOverdue(project, ts)).length;
   const memberNames = (project.memberIds || []).map(id => people.find(p => p.id === id)?.name).filter(Boolean);
   const milestones = rows.filter(ts => ts.milestone);
 
@@ -1068,11 +1067,12 @@ function ProjectCard({ project, tasks, people }) {
         <ProgressBar pct={prog.pct} hue={hue} />
       </div>
 
+      {/* Chips carry values, never counts: the overdue chip names the task that is
+          late, and the overflow badge does the counting. */}
       <div className="flex items-center flex-wrap gap-1.5">
-        {overdue > 0 && <Chip accent="red" icon={TriangleAlert}>{overdue} overdue</Chip>}
-        {milestones.length > 0 && (
-          <ChipGroup accent={HUE_MILESTONE} icon={Flag} max={1} items={milestones} render={(m) => m.title} />
-        )}
+        <ChipGroup accent="red" icon={TriangleAlert} max={1} render={(x) => x.title}
+          items={rows.filter(ts => isOverdue(project, ts))} />
+        <ChipGroup accent={HUE_MILESTONE} icon={Flag} max={1} items={milestones} render={(m) => m.title} />
       </div>
 
       <div className="flex items-center justify-between gap-2 mt-auto">

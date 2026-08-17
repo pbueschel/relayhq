@@ -5,7 +5,7 @@ import {
   GraduationCap, Building2, Globe, Users, Check, X, Star, Clock, Search,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, ENTITIES,
+  useTheme, cx, ICON, DENSITY, ENTITIES, entityHue,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag, Avatar,
   EmptyState, Card, Panel, GroupLabel, Stat, Banner, Divider,
   Field, Input, Select, SearchInput, TileGroup,
@@ -646,13 +646,13 @@ function DetailHeader({ node, trail, onSelect, editingInPane, setEditingInPane, 
         className="mb-2"
       />
       <div className="flex items-start gap-3">
-        <IconTile icon={Icon} accent={ENTITIES[node.type].hue} size="lg" />
+        <IconTile icon={Icon} accent={entityHue(node.type)} size="lg" />
         <div className="flex-1 min-w-0">
           {editing ? (
             <div className="flex items-center gap-2">
               <Input
                 autoFocus
-                accent={ENTITIES[node.type].hue}
+                accent={entityHue(node.type)}
                 value={editingInPane.value}
                 onChange={(ev) => setEditingInPane({ id: node.id, value: ev.target.value })}
                 onKeyDown={(ev) => {
@@ -788,7 +788,6 @@ function ChildRow({ node, knowledge, subforms, onSelect }) {
   const { t, e } = useTheme();
   const c = e(node.type);
   const Icon = NODE_ICON[node.type] || Circle;
-  const counts = countTree(node);
   const aud = audienceMeta(node.audience);
   const kb = (node.knowledgeIds || []).map(id => (knowledge || []).find(k => k.id === id)).filter(Boolean);
   const sf = (node.subformIds || []).map(id => (subforms || []).find(s => s.id === id)).filter(Boolean);
@@ -816,7 +815,9 @@ function ChildRow({ node, knowledge, subforms, onSelect }) {
               empty={<Chip accent="gray">No form</Chip>} />
           </>
         ) : (
-          <Chip accent="emerald" icon={Circle}>{counts.items} items</Chip>
+          // Values, not a count: the item names themselves, with an overflow badge.
+          <ChipGroup accent="emerald" icon={Circle} max={1} items={node.children || []}
+            render={(n) => n.name} empty={<Chip accent="gray">No items</Chip>} />
         )}
         <Chip accent={aud.hue} icon={aud.icon}>{aud.label}</Chip>
       </div>
@@ -952,7 +953,7 @@ function KnowledgeRow({ id, record, courses, onDetach }) {
   const { t, a } = useTheme();
   const missing = !record;
   const format = record?.format === 'guide' ? 'guide' : 'article';
-  const hue = ENTITIES[format].hue;
+  const hue = entityHue(format);
   const c = a(hue);
   const Icon = format === 'guide' ? LayoutGrid : BookOpen;
   const usedIn = missing ? [] : coursesUsing(courses, id);
@@ -968,23 +969,17 @@ function KnowledgeRow({ id, record, courses, onDetach }) {
             <Chip accent="red" icon={AlertCircle}>Atom not found</Chip>
           ) : (
             <>
-              <Chip accent={hue} icon={Icon}>{ENTITIES[format].label}</Chip>
+              <Chip accent={hue} icon={Icon}>{ENTITIES[format]?.label || format}</Chip>
               {record.status && <StatusPill status={record.status} />}
               {record.minutes ? <Chip accent="gray" icon={Clock}>{record.minutes} min</Chip> : null}
-              {usedIn.length > 0 && (
-                <ChipGroup accent="indigo" icon={GraduationCap} max={1} items={usedIn} render={(x) => x} />
-              )}
+              {/* The product thesis, made visible where the author works: this atom is
+                  not only a help article, it is teaching someone a job right now.
+                  Course TITLES, never "used in 3 courses" — chips carry values. */}
+              <ChipGroup accent="indigo" icon={GraduationCap} max={2} items={usedIn} render={(x) => x} />
             </>
           )}
         </div>
       </div>
-      {/* The product thesis, made visible where the author works: this atom is
-          not only a help article, it is teaching someone a job right now. */}
-      {usedIn.length > 0 && (
-        <Chip accent="indigo" icon={GraduationCap} title={usedIn.join(', ')}>
-          Used in {usedIn.length} course{usedIn.length === 1 ? '' : 's'}
-        </Chip>
-      )}
       <IconButton icon={X} label="Detach from this item" onClick={onDetach} />
     </div>
   );
@@ -993,7 +988,7 @@ function KnowledgeRow({ id, record, courses, onDetach }) {
 function SubformRow({ id, record, queues, onDetach }) {
   const { t, a } = useTheme();
   const missing = !record;
-  const c = a(ENTITIES.subform.hue);
+  const c = a(entityHue('subform'));
   const queueId = record?.routing?.queueId;
   const queue = (queues || []).find(q => q.id === queueId);
   const fieldCount = (record?.fields || []).length;
@@ -1011,7 +1006,10 @@ function SubformRow({ id, record, queues, onDetach }) {
       {missing ? (
         <Chip accent="red" icon={AlertCircle}>Form not found</Chip>
       ) : queueId ? (
-        <Chip accent="blue" icon={Inbox} title={`Routes to ${labelOf(queue, queueId)}`}>{labelOf(queue, queueId)}</Chip>
+        // A queue owns its hue (rules.js) — borrow it so the colour means the same
+        // thing here as it does in Business Rules and the workspace.
+        <Chip accent={queue?.hue || entityHue('queue')} icon={Inbox}
+          title={`Routes to ${labelOf(queue, queueId)}`}>{labelOf(queue, queueId)}</Chip>
       ) : (
         <Chip accent="amber" icon={AlertCircle} title="No routing rule — tickets fall to the General queue">
           General (unrouted)
@@ -1164,11 +1162,14 @@ function ImportModal({ catalog, initial, onClose, onConfirm }) {
           <Card className={cx(DENSITY.cardPad, 'space-y-2')}>
             <GroupLabel>What gets created</GroupLabel>
             <div className="flex items-center gap-2 flex-wrap">
-              <Chip accent={ENTITIES[source.type].hue} icon={NODE_ICON[source.type]}>{source.name} (Copy)</Chip>
-              {counts.items > 0 && <Chip accent="emerald" icon={Circle}>{counts.items} items</Chip>}
-              {counts.subcategories > 0 && <Chip accent="purple" icon={Layers}>{counts.subcategories} subcategories</Chip>}
-              <Chip accent="blue" icon={BookOpen}>{refs.knowledge.size} atoms referenced</Chip>
-              <Chip accent="purple" icon={FileQuestion}>{refs.subforms.size} forms referenced</Chip>
+              <Chip accent={entityHue(source.type)} icon={NODE_ICON[source.type]}>{source.name} (Copy)</Chip>
+            </div>
+            {/* Counts live in Stat tiles; chips are reserved for values. */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {counts.subcategories > 0 && <Stat label="subcategories" value={counts.subcategories} accent="purple" icon={Layers} />}
+              {counts.items > 0 && <Stat label="items" value={counts.items} accent="emerald" icon={Circle} />}
+              <Stat label="atoms referenced" value={refs.knowledge.size} accent="blue" icon={BookOpen} />
+              <Stat label="forms referenced" value={refs.subforms.size} accent="purple" icon={FileQuestion} />
             </div>
           </Card>
         )}
@@ -1269,7 +1270,7 @@ function AttachModal({ kind, item, knowledge, subforms, queues, courses, onClose
 function AttachRow({ record, isKnowledge, attached, queues, courses, onToggle }) {
   const { t, a } = useTheme();
   const format = record.format === 'guide' ? 'guide' : 'article';
-  const hue = isKnowledge ? ENTITIES[format].hue : ENTITIES.subform.hue;
+  const hue = entityHue(isKnowledge ? format : 'subform');
   const c = a(hue);
   const Icon = isKnowledge ? (format === 'guide' ? LayoutGrid : BookOpen) : FileQuestion;
   const queue = isKnowledge ? null : (queues || []).find(q => q.id === record.routing?.queueId);
@@ -1299,15 +1300,11 @@ function AttachRow({ record, isKnowledge, attached, queues, courses, onToggle })
         {isKnowledge ? (
           <>
             {record.status && <StatusPill status={record.status} />}
-            {usedIn.length > 0 && (
-              <Chip accent="indigo" icon={GraduationCap} title={usedIn.join(', ')}>
-                Used in {usedIn.length} course{usedIn.length === 1 ? '' : 's'}
-              </Chip>
-            )}
+            <ChipGroup accent="indigo" icon={GraduationCap} max={1} items={usedIn} render={(x) => x} />
           </>
         ) : (
           queue
-            ? <Chip accent="blue" icon={Inbox}>{labelOf(queue, queue.id)}</Chip>
+            ? <Chip accent={queue.hue || entityHue('queue')} icon={Inbox}>{labelOf(queue, queue.id)}</Chip>
             : <Chip accent="amber" icon={AlertCircle}>General (unrouted)</Chip>
         )}
       </div>

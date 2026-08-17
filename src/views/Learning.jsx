@@ -5,7 +5,7 @@ import {
   CircleCheck, CircleAlert, TriangleAlert, Info, Play, Pause, Users, Target,
   Link2, Lock, GripVertical, Video, RotateCcw, ShieldCheck, CalendarClock,
   Package, Eye, Settings2, User, Building2, Repeat2, Image as ImageGlyph,
-  ArrowLeft, ArrowRight, Sparkles,
+  ArrowLeft, ArrowRight,
 } from 'lucide-react';
 import {
   useTheme, cx, ICON, DENSITY, ENTITIES,
@@ -13,11 +13,12 @@ import {
   Avatar, AvatarStack, EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat,
   Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
-  Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, MenuDivider, FilterPill,
+  Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, FilterPill,
   SubTabs, PageHeader, Toolbar, PageBody, Breadcrumbs,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
+import { USR } from '@/store/seed/ids.js';
 
 /**
  * Learning — the module that proves the thesis.
@@ -293,9 +294,11 @@ function relocateLesson(course, fromModuleId, lessonId, toModuleId, toIndex) {
   if (!from || !to) return;
   const li = from.lessonIds.indexOf(lessonId);
   if (li < 0) return;
+  // Guard BEFORE mutating: dropping onto a module that already holds this atom
+  // must be a no-op, not a removal.
+  if (fromModuleId !== toModuleId && to.lessonIds.includes(lessonId)) return;
   from.lessonIds.splice(li, 1);
   const at = toIndex == null || toIndex > to.lessonIds.length ? to.lessonIds.length : toIndex;
-  if (to.lessonIds.includes(lessonId)) return;
   to.lessonIds.splice(at, 0, lessonId);
   writeModules(course, modules);
 }
@@ -707,7 +710,7 @@ function CurriculumDetail({
         <div className={DENSITY.rowGap}>
           {totals.courses.map((course, i) => (
             <CurriculumCourseRow key={course.id} index={i} course={course} curriculum={curriculum} kb={kb}
-              enrollments={enrollments} last={i === totals.courses.length - 1} />
+              enrollments={enrollments} />
           ))}
           {!totals.courses.length && (
             <EmptyState icon={BookMarked} title="No courses in this curriculum yet"
@@ -747,7 +750,7 @@ function CurriculumDetail({
   );
 }
 
-function CurriculumCourseRow({ index, course, curriculum, kb, enrollments, last }) {
+function CurriculumCourseRow({ index, course, curriculum, kb, enrollments }) {
   const { t } = useTheme();
   const mins = minutesOf(course, kb);
   const enrolled = enrollments.filter(e => e.courseId === course.id);
@@ -778,7 +781,6 @@ function CurriculumCourseRow({ index, course, curriculum, kb, enrollments, last 
             }} />
         </>
       }
-      className={last ? '' : ''}
     />
   );
 }
@@ -796,7 +798,6 @@ function moveCourseInCurriculum(curriculum, courseId, dir) {
 function CoverageMatrix({ curriculum, courses }) {
   const { t, a } = useTheme();
   const ok = a('emerald');
-  const gap = a('red');
   const competencies = curriculum.competencies || [];
   const uncovered = competencies.filter(cmp => !(cmp.courseIds || []).some(id => courses.some(c => c.id === id)));
 
@@ -829,7 +830,10 @@ function CoverageMatrix({ curriculum, courses }) {
               return (
                 <tr key={cmp.id} className={cx('border-b last:border-0', t.borderLight)}>
                   <td className={cx('px-3 py-2 sticky left-0', t.bgCard)}>
-                    <span className={cx('block font-medium', t.text)}>{cmp.label}</span>
+                    <span className={cx('flex items-center gap-1.5 font-medium', t.text)}>
+                      {cmp.label}
+                      {!covered.length && <Chip accent="red" icon={TriangleAlert}>no course covers this</Chip>}
+                    </span>
                     <span className={cx('block text-[11px]', t.textMuted)}>{cmp.detail}</span>
                   </td>
                   {courses.map(c => {
@@ -844,11 +848,6 @@ function CoverageMatrix({ curriculum, courses }) {
                       </td>
                     );
                   })}
-                  {!covered.length && (
-                    <td className="px-3 py-2">
-                      <span className={cx('text-[11px] font-medium', gap.fg)}>gap</span>
-                    </td>
-                  )}
                 </tr>
               );
             })}
@@ -1802,7 +1801,8 @@ function PickerRow({ atom, inCourse, picked, onToggle, usage }) {
           : picked ? cx(c.soft, c.borderStrong, 'cursor-pointer')
             : cx(t.bgCard, t.borderLight, t.bgHover, 'cursor-pointer'))}
     >
-      <span className="mt-0.5">
+      {/* stopPropagation so the checkbox and the row do not both toggle. */}
+      <span className="mt-0.5" onClick={(e) => e.stopPropagation()}>
         <Checkbox accent="blue" checked={picked || inCourse} onChange={() => !inCourse && onToggle()} />
       </span>
       <meta.icon size={ICON.md} className={cx('flex-shrink-0 mt-0.5', a(meta.hue).fg)} />
@@ -1848,15 +1848,19 @@ function QuestionModal({ open, onClose, course, moduleId }) {
     { id: 'o3', label: '', correct: false },
   ]);
   const [explanation, setExplanation] = useState('');
+  const [boolCorrect, setBoolCorrect] = useState('o1');
 
   useEffect(() => {
     if (!open) return;
-    setType('single'); setPrompt(''); setExplanation('');
+    setType('single'); setPrompt(''); setExplanation(''); setBoolCorrect('o1');
     setOptions([{ id: 'o1', label: '', correct: true }, { id: 'o2', label: '', correct: false }, { id: 'o3', label: '', correct: false }]);
   }, [open, moduleId]);
 
   const module = (course.modules || []).find(m => m.id === moduleId);
-  const boolOptions = [{ id: 'o1', label: 'True', correct: true }, { id: 'o2', label: 'False', correct: false }];
+  const boolOptions = [
+    { id: 'o1', label: 'True', correct: boolCorrect === 'o1' },
+    { id: 'o2', label: 'False', correct: boolCorrect === 'o2' },
+  ];
   const effective = type === 'boolean' ? boolOptions : options;
   const valid = prompt.trim() && effective.some(o => o.correct) && effective.every(o => o.label.trim());
 
@@ -1929,10 +1933,10 @@ function QuestionModal({ open, onClose, course, moduleId }) {
         {type === 'boolean' && (
           <Field label="Correct answer">
             <TileGroup
-              value={boolOptions.find(o => o.correct)?.id || 'o1'}
-              onChange={(v) => setOptions([{ id: 'o1', label: 'True', correct: v === 'o1' }, { id: 'o2', label: 'False', correct: v === 'o2' }])}
+              value={boolCorrect}
+              onChange={setBoolCorrect}
               columns={2} accent="amber"
-              options={[{ value: 'o1', label: 'True' }, { value: 'o2', label: 'False' }]}
+              options={[{ value: 'o1', label: 'True', icon: Check }, { value: 'o2', label: 'False', icon: CircleAlert }]}
             />
           </Field>
         )}
@@ -1949,9 +1953,13 @@ function NewCourseModal({ open, onClose, jobFunctions }) {
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
   const [audience, setAudience] = useState('internal');
-  const [jf, setJf] = useState('support-agent');
+  const [jf, setJf] = useState('');
 
-  useEffect(() => { if (open) { setTitle(''); setSummary(''); setAudience('internal'); } }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    setTitle(''); setSummary(''); setAudience('internal');
+    setJf(jobFunctions[0]?.id || '');
+  }, [open, jobFunctions]);
 
   const create = () => {
     const id = uid('crs');
@@ -2212,7 +2220,7 @@ function MyLearning({
   // The demo's live learner is Sam, twelve days into the Support Agent
   // curriculum. That is a deliberate default and the banner below says so —
   // switching back to the signed-in user is one click.
-  const demoLearnerId = 'usr-sam';
+  const demoLearnerId = USR.SAM;
   const [viewerId, setViewerId] = useState(demoLearnerId);
   const [menu, setMenu] = useState(false);
   const [player, setPlayer] = useState(null);   // { enrollmentId, stepIndex }
@@ -2474,7 +2482,15 @@ function LessonPlayer({ open, onClose, course, enrollment, kb, startStepIndex })
     return () => clearTimeout(id);
   }, [open, playing, phase, slide, slides, stepIndex]);
 
-  if (!step) return null;
+  if (!step) {
+    return (
+      <Modal open={open} onClose={onClose} accent={ENTITIES.course.hue} size="modalMd" icon={BookMarked}
+        title={course.title} subtitle="Nothing to play yet">
+        <EmptyState icon={BookOpen} title="This course has no lessons"
+          hint="Add lessons to a module from the outline — every one of them is an atom that already exists in Knowledge." />
+      </Modal>
+    );
+  }
 
   const goStep = (next) => {
     if (next < 0 || next >= steps.length) return;
@@ -2515,7 +2531,8 @@ function LessonPlayer({ open, onClose, course, enrollment, kb, startStepIndex })
       footer={
         <>
           <div className="flex items-center gap-2 min-w-0">
-            <Button variant="outline" size="sm" icon={ArrowLeft} disabled={stepIndex === 0 && slide === 0}
+            <Button variant="outline" size="sm" icon={ArrowLeft}
+              disabled={phase === 'content' && stepIndex === 0 && slide === 0}
               onClick={() => {
                 if (phase === 'check') { setPhase('content'); setResult(null); return; }
                 if (slide > 0) { setSlide(i => i - 1); return; }
@@ -2537,29 +2554,37 @@ function LessonPlayer({ open, onClose, course, enrollment, kb, startStepIndex })
                 Next frame
               </Button>
             )}
-            {phase === 'content' && (slides.length === 0 || slide + 1 >= slides.length) && questions.length > 0 && (
+            {/* Locked steps are GATED, not shown disabled: the completing actions
+                are replaced by the jump that actually helps. */}
+            {locked && (
+              <Button variant="soft" accent="amber" size="sm" iconRight={ArrowRight}
+                onClick={() => goStep(Math.max(0, steps.findIndex(sx => !stepDone(sx, enrollment))))}>
+                Go to my next open step
+              </Button>
+            )}
+            {!locked && phase === 'content' && (slides.length === 0 || slide + 1 >= slides.length) && questions.length > 0 && (
               <Button variant="solid" accent={ENTITIES.quiz.hue} size="sm" icon={ListChecks} onClick={() => setPhase('check')}>
                 Knowledge check ({questions.length})
               </Button>
             )}
-            {phase === 'content' && (slides.length === 0 || slide + 1 >= slides.length) && questions.length === 0 && (
+            {!locked && phase === 'content' && (slides.length === 0 || slide + 1 >= slides.length) && questions.length === 0 && (
               <Button variant="solid" accent="emerald" size="sm" icon={Check} onClick={() => commit(null)}>
                 Mark complete
               </Button>
             )}
-            {phase === 'check' && !result && (
+            {!locked && phase === 'check' && !result && (
               <Button variant="solid" accent={ENTITIES.quiz.hue} size="sm" icon={Check}
                 disabled={questions.some(q => !(answers[q.id] || []).length)} onClick={submit}>
                 Submit answers
               </Button>
             )}
-            {phase === 'check' && result && !result.passed && (
+            {!locked && phase === 'check' && result && !result.passed && (
               <Button variant="solid" accent="amber" size="sm" icon={RotateCcw}
                 onClick={() => { setAnswers({}); setResult(null); }}>
                 Try again
               </Button>
             )}
-            {phase === 'check' && result?.passed && (
+            {!locked && phase === 'check' && result?.passed && (
               <Button variant="solid" accent="emerald" size="sm" icon={Check} onClick={() => commit(result.score)}>
                 {stepIndex + 1 < steps.length ? 'Mark complete & continue' : 'Mark complete & finish'}
               </Button>
@@ -2570,9 +2595,14 @@ function LessonPlayer({ open, onClose, course, enrollment, kb, startStepIndex })
     >
       <div className="space-y-3">
         {locked && (
-          <Banner accent="amber" icon={Lock} title="This step is locked for the learner">
-            {locked} You can still read it here, but marking it complete out of order is not offered.
+          <Banner accent="amber" icon={Lock} title="This step is locked">
+            {locked} You can read ahead, but it cannot be marked complete out of order — use the jump in the footer.
           </Banner>
+        )}
+
+        {phase === 'content' && step.kind === 'lesson' && !atom && (
+          <EmptyState icon={CircleAlert} title="This lesson points at an atom that no longer exists"
+            hint={`The reference is ${step.lessonId}. Remove the lesson from the outline, or restore the atom in Knowledge.`} />
         )}
 
         {phase === 'content' && step.kind === 'lesson' && atom && (

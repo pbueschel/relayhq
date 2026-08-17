@@ -251,6 +251,15 @@ function slaFor(ticket, slaPolicies, organizations, now) {
   return { policy, basis, org, target, first, resolution, paused, stopped, breached, atRisk };
 }
 
+/** The one word that describes where a ticket stands against its clock. */
+function slaOverall(sla) {
+  if (!sla) return 'ok';
+  if (sla.breached) return 'breached';
+  if (sla.paused) return 'paused';
+  if (sla.atRisk) return 'at_risk';
+  return 'ok';
+}
+
 function slaBasisNote(sla) {
   if (!sla) return '';
   if (sla.basis === 'plan' && sla.org) return `from ${sla.org.name}'s ${sla.org.plan} plan`;
@@ -383,10 +392,11 @@ function taskItem(task, data, now) {
   const kind = projectId ? 'projectTask' : 'task';
   const due = task.dueAt || task.dueDate || task.due || null;
   const status = task.status || 'todo';
-  const group = statusMeta(status).group;
-  const done = DONE_GROUPS.includes(group);
+  const info = statusInfoFor(status, project);
+  const done = DONE_GROUPS.includes(info.group);
   const dueDate = parseDate(due);
   const assigneeId = task.assigneeId || task.assignee || null;
+  const parent = task.parentId ? (data.tasks || []).find(x => x.id === task.parentId) : null;
   return {
     kind,
     id: task.id,
@@ -394,10 +404,12 @@ function taskItem(task, data, now) {
     keyLabel: task.key || (kind === 'projectTask' ? 'Project task' : 'Task'),
     subtitle: joinDots([
       project ? (project.name || project.title) : 'Personal',
+      parent ? `subtask of ${parent.title || parent.name}` : null,
       personName(data, assigneeId),
-      task.listName || task.section || null,
+      task.milestone ? 'Milestone' : null,
     ]),
     status,
+    statusInfo: info,
     priority: task.priority || 'medium',
     queueId: null,
     assigneeId,
@@ -414,10 +426,13 @@ function taskItem(task, data, now) {
 }
 
 function approvalItem(request, data, now) {
-  const stage = request.stages?.[request.currentStage] || null;
+  const stages = request.stages || [];
+  const stage = stages[request.currentStage] || null;
   const dueAt = parseDate(stage?.dueAt);
   const live = request.state === 'awaiting';
-  const p = progress(request);
+  // A request with no stages is a configuration fault, not a reason to crash
+  // the workspace — surface it as "0 of 0" and let the Approvals inbox explain.
+  const p = stages.length ? progress(request) : { stageNumber: 0, totalStages: 0, approvals: 0, need: 0 };
   return {
     kind: 'approval',
     id: request.id,
@@ -430,6 +445,7 @@ function approvalItem(request, data, now) {
       personName(data, request.requesterId) ? `raised by ${personName(data, request.requesterId)}` : null,
     ]),
     status: request.state,
+    statusInfo: statusInfoFor(request.state, null),
     priority: 'medium',
     queueId: null,
     assigneeId: null,
@@ -455,8 +471,17 @@ function learningItem(enrollment, data, now) {
   const dueDate = parseDate(due);
   const status = enrollment.status || 'enrolled';
   const done = ['passed', 'certified', 'completed'].includes(status);
-  const pct = Number(enrollment.progress);
   const learnerId = enrollment.userId || enrollment.learnerId || enrollment.assigneeId || null;
+
+  // Progress is derived from the lessons actually completed rather than stored
+  // twice — the enrollment already knows which knowledge atoms the learner has
+  // finished, and a second `progress` number would only drift from it.
+  const totalLessons = (course?.modules || []).reduce((n, m) => n + (m.lessonIds || []).length, 0);
+  const doneLessons = (enrollment.completedLessonIds || []).length;
+  const pct = Number.isFinite(Number(enrollment.progress))
+    ? Number(enrollment.progress)
+    : (totalLessons > 0 ? (doneLessons / totalLessons) * 100 : null);
+
   return {
     kind: 'learning',
     id: enrollment.id,
@@ -464,10 +489,12 @@ function learningItem(enrollment, data, now) {
     keyLabel: curriculum ? (curriculum.title || curriculum.name || 'Curriculum') : 'Course',
     subtitle: joinDots([
       curriculum ? (curriculum.title || curriculum.name) : null,
-      Number.isFinite(pct) ? `${Math.round(pct)}% complete` : null,
+      totalLessons > 0 ? `${doneLessons} of ${totalLessons} lessons` : null,
+      pct != null && Number.isFinite(pct) ? `${Math.round(pct)}%` : null,
       personName(data, learnerId),
     ]),
     status,
+    statusInfo: statusInfoFor(status, null),
     priority: 'medium',
     queueId: null,
     assigneeId: learnerId,
@@ -488,6 +515,12 @@ function learningItem(enrollment, data, now) {
  * Search does not replace the others; it narrows whatever they left.
  * ==================================================================== */
 
+/** canDecide() assumes a well-formed request; a half-built one must not crash a list. */
+function isDecidable(request, userId) {
+  if (!request || !Array.isArray(request.stages) || !request.stages.length) return false;
+  return canDecide(request, userId);
+}
+
 /** Tickets and tasks are "work in flight"; approvals and courses are not. */
 function isWorkKind(item) {
   return item.kind === 'ticket' || item.kind === 'task' || item.kind === 'projectTask';
@@ -507,8 +540,8 @@ function passesView(item, view, meId) {
 function passesQuick(item, quick, meId) {
   switch (quick) {
     case 'open': return item.kind === 'ticket' && statusMeta(item.status).group === 'open';
-    case 'in_progress': return isWorkKind(item) && statusMeta(item.status).group === 'active' && !item.done;
-    case 'my_approval': return item.kind === 'approval' && canDecide(item.record, meId);
+    case 'in_progress': return isWorkKind(item) && item.statusInfo.group === 'active' && !item.done;
+    case 'my_approval': return item.kind === 'approval' && isDecidable(item.record, meId);
     case 'open_tasks': return (item.kind === 'task' || item.kind === 'projectTask') && !item.done;
     case 'overdue': return item.overdue;
     case 'total': return true;
@@ -622,9 +655,9 @@ export default function Workspace({ route }) {
   const stats = useMemo(() => {
     const mine = items.filter(item => passesView(item, 'mine', meId));
     return {
-      open: mine.filter(i => i.kind === 'ticket' && statusMeta(i.status).group === 'open').length,
-      in_progress: mine.filter(i => isWorkKind(i) && statusMeta(i.status).group === 'active' && !i.done).length,
-      my_approval: (data.approvals || []).filter(r => canDecide(r, meId)).length,
+      open: mine.filter(i => i.kind === 'ticket' && i.statusInfo.group === 'open').length,
+      in_progress: mine.filter(i => isWorkKind(i) && i.statusInfo.group === 'active' && !i.done).length,
+      my_approval: (data.approvals || []).filter(r => isDecidable(r, meId)).length,
       open_tasks: mine.filter(i => (i.kind === 'task' || i.kind === 'projectTask') && !i.done).length,
       overdue: mine.filter(i => i.overdue).length,
       total: mine.length,
@@ -662,10 +695,12 @@ export default function Workspace({ route }) {
     setView('mine'); setQueueIds([]); setStatuses([]); setPriorities([]); setQuick(null); setSearch('');
   };
 
+  /* Built from the records on screen, so a project's own columns appear here
+   * under their real labels rather than as raw ids. */
   const statusOptions = useMemo(() => {
-    const seen = [];
-    for (const item of items) if (!seen.includes(item.status)) seen.push(item.status);
-    return seen.sort((a, b) => statusMeta(a).label.localeCompare(statusMeta(b).label));
+    const map = new Map();
+    for (const item of items) if (!map.has(item.status)) map.set(item.status, item.statusInfo);
+    return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
   }, [items]);
 
   return (
@@ -677,7 +712,7 @@ export default function Workspace({ route }) {
         subtitle={joinDots([
           data.currentUser?.name,
           data.currentUser?.title,
-          `${stats.total} open items`,
+          `${stats.total} assigned to you`,
         ])}
         actions={<NewMenu onCreate={setCreating} />}
       >
@@ -750,7 +785,7 @@ export default function Workspace({ route }) {
               onClose={() => setOpenMenu(null)}
               selected={statuses}
               onChange={setStatuses}
-              options={statusOptions.map(s => ({ value: s, label: statusMeta(s).label, hint: statusMeta(s).group }))}
+              options={statusOptions.map(s => ({ value: s.key, label: s.label, hint: s.group }))}
               emptyLabel="Status"
             />
 
@@ -934,7 +969,7 @@ function WorkRow({ item, data, meId, now, onOpen }) {
   const meta = KIND_META[item.kind];
   const due = relativeDay(item.due, now);
   const assignee = personName(data, item.assigneeId);
-  const decidable = item.kind === 'approval' && canDecide(item.record, meId);
+  const decidable = item.kind === 'approval' && isDecidable(item.record, meId);
 
   return (
     <ListRow
@@ -958,7 +993,7 @@ function WorkRow({ item, data, meId, now, onOpen }) {
               {due}
             </span>
           )}
-          <StatusPill status={item.status} />
+          <StatusBadge info={item.statusInfo} />
           {item.kind !== 'approval' && item.kind !== 'learning' && (
             <PriorityFlag priority={item.priority} withLabel={false} />
           )}
@@ -1137,7 +1172,7 @@ function MetaTabs({ ticket, data, requester, sla, now }) {
             <Chip accent="gray" icon={Inbox}>{queue?.name || 'General'}</Chip>
             <Chip accent={statusMeta(ticket.status).hue}>{statusMeta(ticket.status).label}</Chip>
             <Chip accent={priorityMeta(ticket.priority).hue}>{priorityMeta(ticket.priority).label} priority</Chip>
-            {sla && <Chip accent={SLA_STATE[sla.breached ? 'breached' : sla.paused ? 'paused' : sla.atRisk ? 'at_risk' : 'ok'].hue} icon={Timer}>{sla.policy.name}</Chip>}
+            {sla && <Chip accent={SLA_STATE[slaOverall(sla)].hue} icon={Timer}>{sla.policy.name}</Chip>}
             {(ticket.labels || []).length > 0
               ? <ChipGroup items={ticket.labels} accent="rose" icon={Tag} max={4} />
               : <span className={cx('text-xs', t.textMuted)}>No labels</span>}
@@ -1224,7 +1259,7 @@ function SlaPanel({ sla, status, now }) {
   return (
     <Panel
       icon={Timer}
-      accent={sla.breached ? 'red' : sla.paused ? 'slate' : sla.atRisk ? 'amber' : 'emerald'}
+      accent={SLA_STATE[slaOverall(sla)].hue}
       title={sla.policy.name}
       subtitle={joinDots([slaBasisNote(sla), sla.policy.clock === 'calendar' ? '24×7 calendar clock' : 'business-hours clock'])}
     >
@@ -1444,18 +1479,24 @@ function TicketModal({ ticket, data, meId, now, onClose }) {
   };
 
   const createLinkedTask = () => {
-    const id = uid('task');
+    const id = uid('tsk');
     addTo('tasks', {
       id,
+      projectId: null,
+      parentId: null,
       title: `Follow-up for ${ticket.key || ticket.id}: ${ticket.title}`,
       description: `> Raised from ${ticket.key || ticket.id}\n\n[ ] Reproduce the reported behaviour\n[ ] Agree the fix with the requester`,
       status: 'todo',
       priority: ticket.priority,
       assigneeId: meId,
       createdById: meId,
-      dueAt: null,
-      subtasks: [],
+      watcherIds: [],
+      tags: ['from-ticket'],
+      startDate: null,
+      dueDate: null,
+      completedAt: null,
       checklists: [],
+      dependencies: [],
       links: [{ type: 'ticket', id: ticket.id }],
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -1481,8 +1522,8 @@ function TicketModal({ ticket, data, meId, now, onClose }) {
         <>
           <div className="flex items-center gap-2 min-w-0">
             {sla && (
-              <Chip accent={SLA_STATE[sla.breached ? 'breached' : sla.paused ? 'paused' : sla.atRisk ? 'at_risk' : 'ok'].hue} icon={Timer}>
-                {SLA_STATE[sla.breached ? 'breached' : sla.paused ? 'paused' : sla.atRisk ? 'at_risk' : 'ok'].label}
+              <Chip accent={SLA_STATE[slaOverall(sla)].hue} icon={Timer}>
+                {SLA_STATE[slaOverall(sla)].label}
               </Chip>
             )}
             <span className={cx('text-xs truncate', t.textMuted)}>Updated {fmtStamp(ticket.updatedAt, now)}</span>
@@ -1760,39 +1801,60 @@ function SlashEditor({ value, onChange, accent = 'teal', placeholder, rows = 6 }
  * Task detail — the shared shell, gated to task-only affordances
  * ==================================================================== */
 
-function SubtaskList({ task, accent, now }) {
+/**
+ * Subtasks. A subtask is not a nested object on the parent — it is a real task
+ * with `parentId` set, which is how the Projects module models it. Keeping one
+ * model means a subtask can be assigned, given a due date and rolled up in a
+ * project report, and it means these two screens never disagree about what is
+ * done.
+ */
+function SubtaskList({ task, project, data, accent, meId, now }) {
   const { t } = useTheme();
   const [draft, setDraft] = useState('');
-  const subtasks = task.subtasks || task.subTasks || [];
-  const done = subtasks.filter(s => s.done).length;
+  const children = (data.tasks || []).filter(x => x.parentId === task.id);
+  const info = (child) => statusInfoFor(child.status, project);
+  const done = children.filter(c => DONE_GROUPS.includes(info(c).group)).length;
 
-  const write = (next) => patchIn('tasks', task.id, { subtasks: next, updatedAt: now.toISOString() });
+  const doneStatus = (project?.statuses || []).find(s => s.group === 'done')?.id || 'completed';
+  const openStatus = (project?.statuses || []).find(s => s.group === 'not_started' || s.group === 'open')?.id || 'todo';
 
   return (
     <Panel
       icon={CornerDownRight}
       accent={accent}
       title="Subtasks"
-      subtitle={subtasks.length ? `${done} of ${subtasks.length} done` : 'Break the work into steps you can finish'}
+      subtitle={children.length
+        ? `${done} of ${children.length} done · each one is a real task with its own owner and date`
+        : 'Break the work into steps you can finish'}
     >
       <div className={cx('divide-y', t.borderLight)}>
-        {subtasks.map(sub => (
-          <div key={sub.id} className="flex items-center gap-2 px-4 py-2">
-            <Checkbox
-              accent={accent}
-              checked={!!sub.done}
-              onChange={(v) => write(subtasks.map(s => (s.id === sub.id ? { ...s, done: v } : s)))}
-              label={sub.title || sub.name || 'Untitled step'}
-            />
-            <span className="flex-1" />
-            <IconButton
-              icon={Trash2}
-              label="Remove subtask"
-              accent="red"
-              onClick={() => write(subtasks.filter(s => s.id !== sub.id))}
-            />
-          </div>
-        ))}
+        {children.map(child => {
+          const childInfo = info(child);
+          const isDone = DONE_GROUPS.includes(childInfo.group);
+          return (
+            <div key={child.id} className="flex items-center gap-2 px-4 py-2">
+              <Checkbox
+                accent={accent}
+                checked={isDone}
+                onChange={(v) => patchIn('tasks', child.id, {
+                  status: v ? doneStatus : openStatus,
+                  completedAt: v ? now.toISOString() : null,
+                  updatedAt: now.toISOString(),
+                })}
+                label={child.title || 'Untitled step'}
+                hint={joinDots([personName(data, child.assigneeId), child.dueDate ? `due ${relativeDay(child.dueDate, now)}` : null])}
+              />
+              <span className="flex-1" />
+              <StatusBadge info={childInfo} />
+              <IconButton
+                icon={CornerDownRight}
+                label="Open subtask"
+                accent={accent}
+                onClick={() => navigate('workspace', 'task', child.id)}
+              />
+            </div>
+          );
+        })}
         <div className="flex items-center gap-2 px-4 py-2">
           <Input
             accent={accent}
@@ -1807,7 +1869,28 @@ function SubtaskList({ task, accent, now }) {
             icon={Plus}
             size="sm"
             disabled={!draft.trim()}
-            onClick={() => { write([...subtasks, { id: uid('sub'), title: draft.trim(), done: false }]); setDraft(''); }}
+            onClick={() => {
+              addTo('tasks', {
+                id: uid('tsk'),
+                parentId: task.id,
+                projectId: task.projectId || null,
+                title: draft.trim(),
+                description: '',
+                status: openStatus,
+                priority: task.priority || 'medium',
+                assigneeId: task.assigneeId || meId,
+                watcherIds: [],
+                tags: [],
+                startDate: null,
+                dueDate: task.dueDate || null,
+                completedAt: null,
+                checklists: [],
+                dependencies: [],
+                createdAt: now.toISOString(),
+                updatedAt: now.toISOString(),
+              });
+              setDraft('');
+            }}
           >
             Add
           </Button>
@@ -1817,18 +1900,16 @@ function SubtaskList({ task, accent, now }) {
   );
 }
 
-function ChecklistPanel({ task, accent, now }) {
+function Checklist({ task, list, accent, now }) {
   const { t } = useTheme();
   const [draft, setDraft] = useState('');
-  const lists = task.checklists || (task.checklist ? [task.checklist] : []);
-  const list = lists[0] || { id: 'chk-default', name: 'Checklist', items: [] };
   const items = list.items || [];
   const done = items.filter(i => i.done).length;
 
-  const write = (nextItems) => patchIn('tasks', task.id, {
-    checklists: [{ ...list, items: nextItems }, ...lists.slice(1)],
+  const write = (nextItems) => patchIn('tasks', task.id, (current) => ({
+    checklists: (current.checklists || []).map(l => (l.id === list.id ? { ...l, items: nextItems } : l)),
     updatedAt: now.toISOString(),
-  });
+  }));
 
   return (
     <Panel
@@ -1874,13 +1955,48 @@ function ChecklistPanel({ task, accent, now }) {
             icon={Plus}
             size="sm"
             disabled={!draft.trim()}
-            onClick={() => { write([...items, { id: uid('chk'), text: draft.trim(), done: false }]); setDraft(''); }}
+            onClick={() => { write([...items, { id: uid('ci'), text: draft.trim(), done: false }]); setDraft(''); }}
           >
             Add
           </Button>
         </div>
       </div>
     </Panel>
+  );
+}
+
+function ChecklistSection({ task, accent, now }) {
+  const lists = task.checklists || (task.checklist ? [task.checklist] : []);
+
+  if (!lists.length) {
+    return (
+      <Panel
+        icon={ListChecks}
+        accent={accent}
+        title="Checklists"
+        subtitle="A repeatable list you tick off every time this kind of work comes round"
+        action={
+          <Button
+            variant="soft"
+            accent={accent}
+            size="sm"
+            icon={Plus}
+            onClick={() => patchIn('tasks', task.id, {
+              checklists: [{ id: uid('ck'), name: 'Checklist', items: [] }],
+              updatedAt: now.toISOString(),
+            })}
+          >
+            Start one
+          </Button>
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {lists.map(list => <Checklist key={list.id} task={task} list={list} accent={accent} now={now} />)}
+    </div>
   );
 }
 
@@ -1899,7 +2015,19 @@ function TaskModal({ task, data, meId, now, onClose }) {
   useEffect(() => { setDraft(task.description || ''); }, [task.id, task.description]);
 
   const patch = (fields) => patchIn('tasks', task.id, { ...fields, updatedAt: now.toISOString() });
-  const doneGroup = DONE_GROUPS.includes(statusMeta(task.status || 'todo').group);
+  const info = statusInfoFor(task.status || 'todo', project);
+  const doneGroup = DONE_GROUPS.includes(info.group);
+  const parent = task.parentId ? (data.tasks || []).find(x => x.id === task.parentId) : null;
+
+  /* A project task moves through ITS project's columns, not a generic list.
+   * Offering "In Review" to a board that goes Backlog › Discovery › Build would
+   * quietly create a status the board cannot show. */
+  const statusOptions = (project?.statuses || []).length
+    ? project.statuses.map(st => ({ value: st.id, label: st.label || st.id, accent: st.hue || 'gray', icon: Target }))
+    : ['todo', 'in_progress', 'blocked', 'review', 'completed', 'cancelled'].map(s => ({
+      value: s, label: statusMeta(s).label, accent: statusMeta(s).hue, icon: Target,
+    }));
+  const completeStatus = (project?.statuses || []).find(st => st.group === 'done')?.id || 'completed';
 
   return (
     <Modal
@@ -1912,6 +2040,7 @@ function TaskModal({ task, data, meId, now, onClose }) {
       subtitle={joinDots([
         KIND_META[kind].label,
         project ? (project.name || project.title) : 'Personal',
+        parent ? `subtask of ${parent.title}` : null,
         due ? `due ${relativeDay(due, now)}` : 'no due date',
       ])}
       bodyClassName="p-0"
@@ -1923,7 +2052,12 @@ function TaskModal({ task, data, meId, now, onClose }) {
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Close</Button>
             {!doneGroup && (
-              <Button variant="solid" accent="emerald" icon={Check} onClick={() => patch({ status: 'completed' })}>
+              <Button
+                variant="solid"
+                accent="emerald"
+                icon={Check}
+                onClick={() => patch({ status: completeStatus, completedAt: now.toISOString() })}
+              >
                 Mark complete
               </Button>
             )}
@@ -1932,8 +2066,9 @@ function TaskModal({ task, data, meId, now, onClose }) {
       }
     >
       <MiniHeader kind={kind} keyLabel={task.key || KIND_META[kind].label}>
-        <StatusPill status={task.status || 'todo'} />
+        <StatusBadge info={info} />
         <PriorityFlag priority={task.priority || 'medium'} />
+        {task.milestone && <Chip accent="amber" icon={Target}>Milestone</Chip>}
         {project && <Chip accent="violet" icon={Briefcase}>{project.name || project.title}</Chip>}
         <Chip accent={due && parseDate(due) && parseDate(due).getTime() < now.getTime() && !doneGroup ? 'red' : 'gray'} icon={Clock}>
           {due ? relativeDay(due, now) : 'No due date'}
@@ -1955,9 +2090,7 @@ function TaskModal({ task, data, meId, now, onClose }) {
             onChange={(v) => patch({ status: v })}
             columns={3}
             accent={accent}
-            options={['todo', 'in_progress', 'blocked', 'review', 'completed', 'cancelled'].map(s => ({
-              value: s, label: statusMeta(s).label, accent: statusMeta(s).hue, icon: Target,
-            }))}
+            options={statusOptions}
           />
           <TilePicker
             label="Priority"
@@ -2004,9 +2137,9 @@ function TaskModal({ task, data, meId, now, onClose }) {
           </Card>
         </Section>
 
-        {/* GATED: subtasks and checklists exist on tasks only. */}
-        <SubtaskList task={task} accent={accent} now={now} />
-        <ChecklistPanel task={task} accent={accent} now={now} />
+        {/* GATED: subtasks and checklists exist on tasks only — never on tickets. */}
+        <SubtaskList task={task} project={project} data={data} accent={accent} meId={meId} now={now} />
+        <ChecklistSection task={task} accent={accent} now={now} />
 
         <LinkedItems links={task.links} data={data} onOpenTicket={(id) => navigate('workspace', 'ticket', id)} />
 
@@ -2065,18 +2198,24 @@ function NewRecordModal({ kind, data, meId, onClose, onCreated }) {
       onCreated('ticket', id);
       return;
     }
-    const id = uid('task');
+    const id = uid('tsk');
     addTo('tasks', {
       id,
+      projectId: null,
+      parentId: null,
       title: title.trim(),
       description: body,
       status: 'todo',
       priority,
       assigneeId: meId,
       createdById: meId,
-      dueAt: dueAt || null,
-      subtasks: [],
+      watcherIds: [],
+      tags: [],
+      startDate: null,
+      dueDate: dueAt || null,
+      completedAt: null,
       checklists: [],
+      dependencies: [],
       links: [],
       createdAt: at,
       updatedAt: at,

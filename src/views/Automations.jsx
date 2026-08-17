@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 import {
   useTheme, cx, ICON, DENSITY, statusMeta, priorityMeta,
-  Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag, Avatar,
-  EmptyState, Card, Section, GroupLabel, ListRow, Stat, Banner,
+  Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, Avatar,
+  EmptyState, Card, Section, GroupLabel, ListRow, Stat, Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, Toggle, SearchInput,
   Modal, ConfirmDelete, Menu, MenuItem, MenuDivider, MenuLabel,
   SubTabs, PageHeader, Toolbar, PageBody, Breadcrumbs,
@@ -508,6 +508,11 @@ function shortUrl(url) {
   return s.replace(/^https?:\/\//, '').slice(0, 34);
 }
 
+function plural(n, word) {
+  const v = Number(n) || 0;
+  return `${v} ${word}${v === 1 ? '' : 's'}`;
+}
+
 function fmtMs(ms) {
   const n = Number(ms);
   if (!Number.isFinite(n)) return '0ms';
@@ -536,6 +541,21 @@ function clockTime(iso) {
 
 function clamp(n, lo, hi) {
   return Math.min(hi, Math.max(lo, n));
+}
+
+/**
+ * Capture the pointer on the canvas root so a fast drag that leaves the pane
+ * keeps delivering move events. Wrapped because setPointerCapture throws on a
+ * pointer id the browser does not consider active — a synthetic event in a
+ * test, or a pointer already released — and an exception here would abort the
+ * drag before it starts.
+ */
+function capturePointer(el, pointerId) {
+  try {
+    el?.setPointerCapture(pointerId);
+  } catch {
+    /* drag still works while the pointer stays inside the canvas */
+  }
 }
 
 /* ==================================================================== *
@@ -875,9 +895,11 @@ function AutomationRow({ automation, runs, lookup, onDelete }) {
       meta={
         <>
           <span className={cx('text-xs tabular-nums hidden sm:inline', errors ? 'text-red-500' : t.textMuted)}>
-            {rate}% ok · {total} runs
+            {rate}% ok · {plural(total, 'run')}
           </span>
-          <StatusPill status={automation.active ? 'published' : 'draft'} />
+          <Chip accent={automation.active ? 'emerald' : 'gray'} icon={automation.active ? Zap : Power}>
+            {automation.active ? 'Active' : 'Paused'}
+          </Chip>
           <Avatar name={lookup.person(automation.ownerId)} size="sm" />
         </>
       }
@@ -905,7 +927,7 @@ function AutomationRow({ automation, runs, lookup, onDelete }) {
         {trigger && <Chip accent="amber" icon={nodeMeta(trigger).icon}>{describeNode(trigger, lookup) || nodeMeta(trigger).label}</Chip>}
         <ChipGroup accent="sky" max={3} items={nodes.filter(n => categoryOf(n) !== 'trigger').map(n => n.name)} />
         <span className={cx('text-[11px]', t.textMuted)}>
-          {nodes.length} nodes · {(automation.connections || []).length} connections · last run {relTime(last?.startedAt || automation.stats?.lastRunAt)}
+          {plural(nodes.length, 'node')} · {plural((automation.connections || []).length, 'connection')} · last run {relTime(last?.startedAt || automation.stats?.lastRunAt)}
         </span>
       </div>
     </ListRow>
@@ -923,7 +945,7 @@ function RunLine({ run, automations }) {
         <p className={cx('text-xs truncate', t.textMuted)}>{run.trigger}</p>
       </div>
       <Chip accent="gray">{run.mode}</Chip>
-      <span className={cx('text-xs tabular-nums', t.textMuted)}>{run.items} items</span>
+      <span className={cx('text-xs tabular-nums', t.textMuted)}>{plural(run.items, 'item')}</span>
       <span className={cx('text-xs tabular-nums', t.textMuted)}>{fmtMs(run.durationMs)}</span>
       <span className={cx('text-xs tabular-nums w-20 text-right', t.textMuted)}>{relTime(run.startedAt)}</span>
     </div>
@@ -1093,8 +1115,16 @@ function AutomationEditor({ automation, runs, lookup }) {
     setNodes(list => list.map(n => (n.id === id ? { ...n, x, y } : n)));
   }, []);
 
-  const endDrag = useCallback(() => {
-    patchIn('automations', automation.id, { nodes: nodesRef.current, updatedAt: new Date().toISOString() });
+  /**
+   * The canvas hands back the final position rather than us reading it out of
+   * state. Pointer move and pointer up can land in the same task, and React has
+   * not committed the move's setState by the time the up handler runs — trusting
+   * the ref there persists the position the node had one frame ago.
+   */
+  const endDrag = useCallback((id, x, y) => {
+    const next = nodesRef.current.map(n => (n.id === id ? { ...n, x, y } : n));
+    setNodes(next);
+    patchIn('automations', automation.id, { nodes: next, updatedAt: new Date().toISOString() });
   }, [automation.id]);
 
   const deleteNode = useCallback((id) => {
@@ -1237,12 +1267,6 @@ function AutomationEditor({ automation, runs, lookup }) {
         subtitle={automation.description}
         actions={
           <>
-            <Toggle
-              accent="emerald"
-              checked={!!automation.active}
-              label={automation.active ? 'Active' : 'Paused'}
-              onChange={(v) => patchIn('automations', automation.id, { active: v })}
-            />
             <Button variant="soft" accent="sky" icon={Plus} onClick={() => { setPendingLink(null); setPanel('palette'); }}>
               Add node
             </Button>
@@ -1267,12 +1291,18 @@ function AutomationEditor({ automation, runs, lookup }) {
             items={[{ id: 'root', name: 'Automations' }, { id: automation.id, name: automation.name }]}
             onNavigate={() => navigate('automations')}
           />
-          <div className="flex items-center gap-2">
-            <EntityTag kind="automation" />
-            <ChipGroup accent="sky" max={3} items={automation.tags || []} />
+          <div className="flex items-center justify-end gap-2.5 flex-wrap min-w-0">
+            <ChipGroup accent="sky" max={2} items={automation.tags || []} />
             <span className={cx('text-xs', t.textMuted)}>
-              {nodes.filter(n => n.type !== 'util.sticky').length} nodes · updated {relTime(automation.updatedAt)}
+              {plural(nodes.filter(n => n.type !== 'util.sticky').length, 'node')} · updated {relTime(automation.updatedAt)}
             </span>
+            <Divider vertical className="h-5" />
+            <Toggle
+              accent="emerald"
+              checked={!!automation.active}
+              label={automation.active ? 'Active' : 'Paused'}
+              onChange={(v) => patchIn('automations', automation.id, { active: v })}
+            />
           </div>
         </div>
       </PageHeader>
@@ -1427,14 +1457,14 @@ function Canvas({
     if (!hit) return;
     onSelect({ kind: null, id: null });
     dragRef.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
-    rootRef.current?.setPointerCapture(e.pointerId);
+    capturePointer(rootRef.current, e.pointerId);
   };
 
   const beginNodeDrag = (e, node) => {
     e.stopPropagation();
     onSelect({ kind: 'node', id: node.id });
     dragRef.current = { kind: 'node', id: node.id, sx: e.clientX, sy: e.clientY, nx: node.x, ny: node.y, moved: false };
-    rootRef.current?.setPointerCapture(e.pointerId);
+    capturePointer(rootRef.current, e.pointerId);
   };
 
   const beginLink = (e, node, portId) => {
@@ -1442,7 +1472,7 @@ function Canvas({
     const from = outPoint(node, portId);
     dragRef.current = { kind: 'link', from: node.id, port: portId, origin: from };
     setGhost({ from, to: from });
-    rootRef.current?.setPointerCapture(e.pointerId);
+    capturePointer(rootRef.current, e.pointerId);
   };
 
   const onPointerMove = (e) => {
@@ -1454,9 +1484,11 @@ function Canvas({
       const dx = (e.clientX - d.sx) / view.z;
       const dy = (e.clientY - d.sy) / view.z;
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) d.moved = true;
-      const x = Math.round((d.nx + dx) / SNAP) * SNAP;
-      const y = Math.round((d.ny + dy) / SNAP) * SNAP;
-      onDragNode(d.id, Math.max(0, x), Math.max(0, y));
+      const x = Math.max(0, Math.round((d.nx + dx) / SNAP) * SNAP);
+      const y = Math.max(0, Math.round((d.ny + dy) / SNAP) * SNAP);
+      d.lastX = x;
+      d.lastY = y;
+      onDragNode(d.id, x, y);
     } else if (d.kind === 'link') {
       const pt = toCanvas(e.clientX, e.clientY);
       setGhost({ from: d.origin, to: pt });
@@ -1470,7 +1502,7 @@ function Canvas({
     const d = dragRef.current;
     dragRef.current = null;
     if (!d) return;
-    if (d.kind === 'node' && d.moved) onDragEnd();
+    if (d.kind === 'node' && d.moved) onDragEnd(d.id, d.lastX, d.lastY);
     if (d.kind === 'link') {
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const target = el && el.closest ? el.closest('[data-in-node]') : null;
@@ -1787,7 +1819,7 @@ function NodeRunBadge({ runState }) {
       <span className={cx('w-1.5 h-1.5 rounded-full', c.dot)} />
       {meta.label}
       {detailed && (
-        <span className={t.textMuted}>· {runState.items} items · {fmtMs(runState.ms)}</span>
+        <span className={t.textMuted}>· {plural(runState.items, 'item')} · {fmtMs(runState.ms)}</span>
       )}
     </span>
   );
@@ -1991,7 +2023,7 @@ function NodeOutput({ step }) {
     <div>
       <div className="flex items-center justify-between mb-1.5">
         <GroupLabel>Last output</GroupLabel>
-        <span className={cx('text-[10px] tabular-nums', t.textMuted)}>{step.items} items · {fmtMs(step.ms)}</span>
+        <span className={cx('text-[10px] tabular-nums', t.textMuted)}>{plural(step.items, 'item')} · {fmtMs(step.ms)}</span>
       </div>
       {step.error && (
         <Banner accent="red" icon={AlertCircle} className="mb-2">{step.error}</Banner>
@@ -2461,7 +2493,7 @@ function ExecutionLog({ open, onToggle, tab, onTab, run, history, onSelectNode }
           <div className="flex items-center gap-2">
             <StatusPill status={run.playing ? 'running' : summary.errors ? 'error' : 'success'} />
             <span className={cx('text-xs tabular-nums', t.textMuted)}>
-              {summary.done}/{summary.total} nodes · {summary.items} items · {fmtMs(summary.ms)}
+              {summary.done}/{summary.total} nodes · {plural(summary.items, 'item')} · {fmtMs(summary.ms)}
             </span>
           </div>
         )}
@@ -2547,7 +2579,7 @@ function RunBreakdown({ run, onSelectNode }) {
               <span className={cx('text-xs flex-1 min-w-0 truncate', t.text)}>{s.name}</span>
               {s.branch && <Chip accent="violet">{s.branch}</Chip>}
               <span className={cx('text-[10px] tabular-nums w-16 text-right', t.textMuted)}>
-                {s.live === 'waiting' ? '—' : `${s.items} items`}
+                {s.live === 'waiting' ? '—' : plural(s.items, 'item')}
               </span>
               <span className={cx('text-[10px] tabular-nums w-14 text-right', t.textMuted)}>
                 {s.live === 'waiting' ? '—' : fmtMs(s.ms)}
@@ -2602,7 +2634,7 @@ function PastRunSteps({ run, onSelectNode }) {
             <StatusPill status={s.status} />
             <span className={cx('text-xs flex-1 min-w-0 truncate', t.text)}>{s.name}</span>
             {s.error && <span className="text-[10px] text-red-500 truncate max-w-[16rem]">{s.error}</span>}
-            <span className={cx('text-[10px] tabular-nums w-16 text-right', t.textMuted)}>{s.items} items</span>
+            <span className={cx('text-[10px] tabular-nums w-16 text-right', t.textMuted)}>{plural(s.items, 'item')}</span>
             <span className={cx('text-[10px] tabular-nums w-14 text-right', t.textMuted)}>{fmtMs(s.ms)}</span>
           </button>
         ))}
