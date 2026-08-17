@@ -154,7 +154,8 @@ function firstError(err) {
  * blank screen.
  */
 const ROUTES = [
-  ['#/',            'The service desk that'],
+  // The audience word rotates, so assert on the half that never changes.
+  ['#/',            'Service Management'],
   ['#/workspace',   'My Workspace'],
   ['#/projects',    'Projects'],
   ['#/approvals',   'Approvals'],

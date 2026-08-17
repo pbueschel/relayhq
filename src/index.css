@@ -60,6 +60,16 @@
 }
 
 /* ------------------------------------------------------------------ *
+ * The landing headline's rotating audience word. Decorative motion that
+ * updates text, so the component stops it entirely under reduced-motion
+ * rather than merely shortening it.
+ * ------------------------------------------------------------------ */
+@keyframes rhqWordIn {
+  from { opacity: 0; transform: translateY(0.32em); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ------------------------------------------------------------------ *
  * Stories progress bar — the segmented timer on Instagram-style guides.
  * ------------------------------------------------------------------ */
 @keyframes rhq-story-fill { from { width: 0%; } to { width: 100%; } }
