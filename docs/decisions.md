@@ -112,3 +112,75 @@ same hue as `article`.
 makes the reuse visible in the interface itself: you can see the same atom keeping its identity as
 it moves between the help centre and a course. `test/smoke.js` asserts this equality so it cannot
 be "tidied up" later.
+
+---
+
+## 2026-08-16 — The claim is "the article is the lesson's *body*", not "the KB becomes a course"
+
+**Context.** `docs/research/2026-08-16-customer-service-and-training.md` tested the author-once
+thesis against DITA, the LMS market and the customer-education market. Verdict: the architecture
+buys **distribution** of content across three surfaces for free, and buys **no pedagogy**. Five
+named failure modes — voice/isolation, missing motivation, granularity (a lesson is usually several
+atoms, never 1:1), assessment cannot be inferred from a procedure, and sequence.
+
+**Decision.** A `Lesson` is a **placement**, not content: `{ knowledgeId, role, framing }` with **no
+body field at all**. The atom keeps its reference voice; a thin authored framing block on the
+placement — intro, why-it-matters, check-yourself, skip-if-known — supplies the teaching voice.
+`prerequisiteIds` therefore belongs on the placement too, not on the atom: a prerequisite is a
+property of a position in a sequence, not of an article.
+
+**Why.** This is DITA's map/topic split, and it is what "author once" honestly means. The pitch
+"our knowledge base automatically becomes a course" fails on first contact with a buyer who has an
+L&D function. "The article is the lesson's body, and the wrapper is thin" survives a skeptic.
+
+**Guard rails.** A lesson cannot publish unless its atom has an objective and an estimated time.
+Author-time lint rejects isolation-breaking phrases ("as described above", "in the previous step"),
+because that is exactly what breaks when an atom moves surfaces.
+
+---
+
+## 2026-08-16 — Completion is recorded against the atom, not the course placement
+
+**Decision.** `LessonRecord` is keyed by `knowledgeId`, carries
+`source: 'course' | 'deflection' | 'agent_context' | 'manual_admin'`, and survives removal from any
+course. Course progress is **derived, never stored**, counting each required lesson as exactly one
+unit — never weighted by minutes, because an unpredictable progress bar is worse than none.
+
+**Why.** An agent who opened a runbook while working a ticket has demonstrably consumed that
+content, so the lesson is already satisfied when onboarding is assigned. No competitor's help centre
+and LMS share a record store, so none of them can do this. Render it green **with provenance**
+("Completed 12 Mar · read while working TKT-4471") and a "Review anyway" link — never silently skip,
+because a learner who cannot see why a lesson is green will not trust the score.
+
+---
+
+## 2026-08-16 — Call it "assisted resolution", never "tickets deflected"
+
+**Context.** Four research passes found **no disinterested third-party statistic** on self-service
+deflection. Zendesk's own published formula is a population ratio that observes no counterfactual.
+Vendor case studies span 5%–80%, all self-reported and uncontrolled; the 80% (Jamf) links to a case
+study whose Results section renders "No items found". The structural "48% of support inquiries are
+how-to" figure is quoted by Skilljar with no attribution at all.
+
+**Decision.** RelayHQ never displays a borrowed deflection statistic. It instruments its own —
+it owns both the drill path and the form, so it can log the actual sequence of atoms a requester saw
+before submitting or abandoning, which a two-system stack cannot. The metric is labelled **assisted
+resolution**, with its definition printed under the tile and an explicit note that no system can
+observe a request that was never made.
+
+**Why.** Being the only tool in the category that says that out loud is worth more than a borrowed
+40%. It also keeps us honest in front of exactly the buyer most likely to check.
+
+---
+
+## 2026-08-16 — Keep `format: 'guide'` rather than renaming to `'slides'`
+
+**Context.** The research recommended renaming `KnowledgeItem.format` `'guide'` → `'slides'` on the
+grounds that "guide" collides with container vocabulary in some LMS products.
+
+**Decision.** Keep `'guide'`. Declined.
+
+**Why.** RelayHQ's container nouns are curriculum / course / module / lesson — "guide" names no
+container here, so the collision is theoretical for this product. It is also the word Phil used when
+specifying the feature ("Instagram-style how-to guides"), and matching the vocabulary the product
+owner actually uses beats matching a competitor's schema. Recorded rather than silently ignored.
