@@ -154,6 +154,7 @@ function firstError(err) {
  * blank screen.
  */
 const ROUTES = [
+  ['#/',            'The service desk that'],
   ['#/workspace',   'My Workspace'],
   ['#/projects',    'Projects'],
   ['#/approvals',   'Approvals'],

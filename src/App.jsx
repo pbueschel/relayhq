@@ -26,8 +26,10 @@ const Automations   = lazy(() => import('@/views/Automations.jsx'));
 const Assets        = lazy(() => import('@/views/Assets.jsx'));
 const Portal        = lazy(() => import('@/views/Portal.jsx'));
 const DesignSystem  = lazy(() => import('@/views/DesignSystem.jsx'));
+const Landing       = lazy(() => import('@/views/Landing.jsx'));
 
 const VIEWS = {
+  home: Landing,
   workspace: Workspace,
   projects: Projects,
   changes: Changes,
@@ -116,6 +118,18 @@ export default function App() {
       <Suspense fallback={<Loading />}>
         <Portal />
       </Suspense>
+    );
+  }
+
+  // The landing page is the front door, so it gets the whole viewport with no
+  // sidebar and no admin top bar — a visitor should see the pitch, not the desk.
+  if (route.section === 'home') {
+    return (
+      <div className={cx('h-screen flex flex-col overflow-hidden', t.bg, t.text)}>
+        <Suspense fallback={<Loading />}>
+          <Landing />
+        </Suspense>
+      </div>
     );
   }
 

@@ -20,7 +20,9 @@ function read() {
     for (const [k, v] of new URLSearchParams(queryPart)) params[k] = v;
   }
   return {
-    section: segments[0] || 'workspace',
+    // The empty hash is the LANDING page. The bare URL is the pitch; the app
+    // starts one click away at #/workspace. No second site, no deploy change.
+    section: segments[0] || 'home',
     sub: segments[1] || null,
     id: segments[2] || null,
     segments,
