@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import {
   ArrowRight, Inbox, Stamp, GitBranch, Package, BookOpen, GraduationCap,
   Workflow, Server, Briefcase, AlertOctagon, FileText, ShoppingBag,
-  CircleCheck, Sparkles, Search, ChevronRight,
+  CircleCheck, Search, ChevronRight,
 } from 'lucide-react';
 import { useTheme, cx, GRADIENT, ICON, entityHue } from '@/ds';
 import { useStore } from '@/store/store.js';
@@ -27,7 +27,12 @@ import { navigate } from '@/lib/router.js';
  * the product is that they are one system. The headline makes that argument
  * before the copy does. */
 const AUDIENCES = ['Customer', 'HR', 'IT', 'Finance', 'Everything'];
-const ROTATE_MS = 2200;
+/* One second a word, run once, and STOP on "Everything" — the word that covers
+ * the rest. A headline that cycles forever is a thing the eye keeps returning
+ * to; one that resolves makes its point and then lets the page be read. It also
+ * means the page carries no perpetually-updating text, which is the WCAG 2.2.2
+ * concern rather than the animation itself. */
+const ROTATE_MS = 1000;
 
 const NAV = [
   { label: 'Portal', to: ['portal'] },
@@ -186,47 +191,48 @@ function usePrefersReducedMotion() {
 }
 
 /**
- * The rotating audience word.
+ * The rotating audience word — the biggest thing on the page.
  *
- * ACCESSIBILITY, deliberately: this is decorative motion that changes TEXT, so
- *   - it stops entirely under prefers-reduced-motion, settling on "Everything",
- *     the one word that covers the rest — not merely slowed down
- *   - it pauses on hover and on keyboard focus, so a reader can hold it still
- *   - the cycling spans are aria-hidden and the full list is exposed once as
- *     static text. A live region here would re-announce every two seconds,
- *     which is unusable.
+ * It runs ONCE, a second a word, and settles on "Everything". Resolving rather
+ * than looping is the whole point: the cycle says the category has four names,
+ * and the last word says they are one product. A permanent loop would keep
+ * pulling the eye back and would leave auto-updating text on the page forever,
+ * which is the actual WCAG 2.2.2 concern.
+ *
+ * ACCESSIBILITY, deliberately:
+ *   - under prefers-reduced-motion it never animates at all: "Everything" is
+ *     there from the first paint
+ *   - the cycling span is aria-hidden and the list is exposed once as a static
+ *     label, because a live region would re-announce five times in four seconds
  *   - the longest word reserves the width, so the headline never reflows
- *     mid-sentence.
+ *     mid-sentence
  */
 function RotatingWord() {
   const reduced = usePrefersReducedMotion();
   const [i, setI] = useState(0);
-  const [paused, setPaused] = useState(false);
+  const settled = i >= AUDIENCES.length - 1;
 
   useEffect(() => {
-    if (reduced || paused) return undefined;
-    const id = setInterval(() => setI(x => (x + 1) % AUDIENCES.length), ROTATE_MS);
-    return () => clearInterval(id);
-  }, [reduced, paused]);
+    if (reduced || settled) return undefined;
+    const id = setTimeout(() => setI(x => x + 1), ROTATE_MS);
+    return () => clearTimeout(id);
+  }, [reduced, settled, i]);
 
   const word = reduced ? 'Everything' : AUDIENCES[i];
+  const animate = !reduced && !settled;
 
   return (
     <span
-      className="relative inline-block align-baseline rounded"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
-      tabIndex={0}
+      className="relative inline-block align-baseline leading-[0.95]"
       aria-label="Customer, HR, IT, Finance — everything"
     >
+      {/* Reserves the width of the longest word so the line never jumps. */}
       <span aria-hidden="true" className="invisible">Everything</span>
       <span
         key={word}
         aria-hidden="true"
         className={cx('absolute inset-0 whitespace-nowrap bg-clip-text text-transparent',
-          GRADIENT.brandBar, !reduced && 'animate-[rhqWordIn_.42s_ease-out]')}
+          GRADIENT.brandBar, animate && 'animate-[rhqWordIn_.34s_ease-out]')}
       >
         {word}
       </span>
@@ -235,7 +241,7 @@ function RotatingWord() {
 }
 
 function Hero() {
-  const { t, a, dark } = useTheme();
+  const { t, dark } = useTheme();
   return (
     <section className="relative overflow-hidden">
       <div aria-hidden="true"
@@ -244,16 +250,19 @@ function Hero() {
                : 'bg-gradient-to-b from-purple-200/60 via-amber-100/45 to-transparent')} />
 
       <div className="relative max-w-6xl mx-auto px-6 pt-16 pb-16 text-center">
-        <span className={cx('inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs border mb-7',
-          t.bgCard, t.borderLight, t.textSecondary)}>
-          <Sparkles size={ICON.sm} className={a('purple').fg} />
-          A working prototype, not a mock-up
-        </span>
-
-        <h1 className={cx('font-bold tracking-[-0.035em] leading-[1.05] mx-auto max-w-[16ch]',
-          'text-[clamp(2.1rem,5.6vw,4rem)]', t.text)}>
-          <RotatingWord />
-          <br />Service Management
+        {/* The audience word is the headline; "Service Management" is what it
+            qualifies, so it sits a full step smaller. */}
+        {/* No ch-based max-width here. The font-size now lives on the CHILDREN,
+            so `ch` would resolve against this element's inherited 16px and clamp
+            the headline to ~144px — the line wrapped and the big word overflowed
+            its own centred box. The two lines size themselves. */}
+        <h1 className={cx('font-bold tracking-[-0.04em]', t.text)}>
+          <span className="block text-[clamp(3rem,8.4vw,6.5rem)] leading-[0.98]">
+            <RotatingWord />
+          </span>
+          <span className="block text-[clamp(1.7rem,4.2vw,3rem)] leading-[1.08] mt-1 whitespace-nowrap">
+            Service Management
+          </span>
         </h1>
 
         <p className={cx('mt-6 mx-auto max-w-[50ch] text-[15.5px] leading-relaxed', t.textSecondary)}>
