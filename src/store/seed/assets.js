@@ -57,8 +57,8 @@ const CTR = {
  * it would start from, so a ticket traces back to the physical or licensed
  * thing behind it. */
 const CI_LAPTOP = [CAT.I_LAPTOP_ISSUE, CAT.I_NEW_LAPTOP];
-const CI_DEVICE = [CAT.P_DEVICES];
-const CI_SOFTWARE = [CAT.I_SOFTWARE_REQ, CAT.P_SOFTWARE];
+const CI_DEVICE = ['cat-i-monitor', 'cat-i-desk-accessories'];
+const CI_SOFTWARE = [CAT.I_SOFTWARE_REQ, 'cat-i-new-license'];
 
 /* ------------------------------------------------------------------ *
  * Locations — region > site

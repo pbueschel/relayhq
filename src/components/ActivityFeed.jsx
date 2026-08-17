@@ -99,14 +99,34 @@ const TARGET_ALIAS = {
   module: 'courseModule',
 };
 
-/** Where clicking a target chip goes. Absent = the chip is not a link. */
+/**
+ * Where clicking a target chip goes, as `[section, sub]` for
+ * `navigate(section, sub, targetId)`. Absent = the chip is not a link.
+ *
+ * THE SUB SEGMENT IS LOAD-BEARING, and this is the easy thing to get wrong.
+ * `buildHref` drops falsy segments, so `[section, null]` puts the id in the
+ * SECOND slot — the view reads it as `route.sub`, not `route.id`. That is
+ * correct for the views that resolve both shapes (Problems, Knowledge,
+ * Approvals, Projects) and silently WRONG for the views that only read
+ * `route.id`: the link lands on the list and the record never opens.
+ *
+ * So every entry below is the same call the owning view makes to open its own
+ * record, checked against that view:
+ *   Workspace  route.sub is the record KIND — 'ticket' / 'task', singular
+ *   Changes    route.sub is the view, so the id needs a real one ('list')
+ *   Catalog    reads route.id after 'node'
+ *   Automations opens only under 'flow'
+ *   Forms      opens a request builder only under 'requests'
+ *
+ * A kind with no screen to land on is left out on purpose — see ActivityTarget.
+ */
 const TARGET_ROUTE = {
-  ticket:       ['workspace', 'tickets'],
-  conversation: ['workspace', 'tickets'],
-  task:         ['workspace', 'tasks'],
-  contact:      ['workspace', 'contacts'],
+  ticket:       ['workspace', 'ticket'],
+  conversation: ['workspace', 'ticket'],
+  task:         ['workspace', 'task'],
+  projectTask:  ['workspace', 'task'],   // one collection, two hues — same modal
   problem:      ['problems', null],
-  change:       ['changes', null],
+  change:       ['changes', 'list'],
   approval:     ['approvals', null],
   project:      ['projects', null],
   article:      ['knowledge', null],
@@ -114,16 +134,17 @@ const TARGET_ROUTE = {
   lesson:       ['knowledge', null],
   course:       ['learning', 'courses'],
   curriculum:   ['learning', 'curricula'],
+  enrollment:   ['learning', 'learners'],
   hardware:     ['assets', 'hardware'],
   software:     ['assets', 'software'],
   location:     ['assets', 'locations'],
   contract:     ['assets', 'contracts'],
-  automation:   ['automations', null],
-  form:         ['forms', null],
-  subform:      ['forms', null],
-  item:         ['catalog', null],
-  product:      ['catalog', null],
-  subcategory:  ['catalog', null],
+  automation:   ['automations', 'flow'],
+  form:         ['forms', 'portal'],
+  subform:      ['forms', 'requests'],
+  item:         ['catalog', 'node'],
+  product:      ['catalog', 'node'],
+  subcategory:  ['catalog', 'node'],
 };
 
 /* An unregistered type keeps its own name: entityHue() answers grey for it and
@@ -229,6 +250,9 @@ function resolveActor(id, actors) {
  * Grouping
  * ------------------------------------------------------------------ */
 
+/** One shared empty array, so "no activity" is a stable reference. */
+const EMPTY = [];
+
 function groupByDay(entries, now) {
   const out = [];
   let current = null;
@@ -267,7 +291,9 @@ export function ActivityFeed({ entries, limit, compact = false, title, now = NOW
     [directory, contacts, automations],
   );
 
-  const source = entries || stored || [];
+  // `entries || stored || []` inline would mint a fresh [] on every render when
+  // both are absent, which invalidates every memo below it for nothing.
+  const source = useMemo(() => entries || stored || EMPTY, [entries, stored]);
 
   // Newest first. The store holds the log append-only (oldest first), which is
   // the right storage order and the wrong reading order.
@@ -341,9 +367,9 @@ function ActivityDay({ day, actors, compact, now }) {
           className={cx('absolute top-3 bottom-3 w-px', compact ? 'left-[14px]' : 'left-4', t.rule)}
         />
         <div className={compact ? 'space-y-0' : 'space-y-0.5'}>
-          {day.entries.map(entry => (
+          {day.entries.map((entry, i) => (
             <ActivityRow
-              key={entry.id}
+              key={entry.id || `${entry.at}-${i}`}
               entry={entry}
               actor={resolveActor(entry.actorId, actors)}
               compact={compact}

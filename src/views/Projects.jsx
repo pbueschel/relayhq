@@ -217,6 +217,17 @@ function firstStatusOfGroup(project, group) {
   return list.find(s => s.group === group) || list[0];
 }
 
+/**
+ * Where a status's tasks land if that status is deleted: the next status in the
+ * same group, or failing that the first surviving status. Null only when the
+ * status being removed is the last one the project has.
+ */
+function statusAfterRemoval(project, status) {
+  if (!status) return null;
+  const rest = (project?.statuses || []).filter(s => s.id !== status.id);
+  return rest.find(s => s.group === status.group) || rest[0] || null;
+}
+
 function isOverdue(project, task) {
   if (!task.dueDate || isComplete(project, task)) return false;
   const d = toDay(task.dueDate);
@@ -1000,7 +1011,7 @@ function ProjectTaskGroups({ project, rows, people, onOpenTask }) {
 }
 
 function ExpandedTaskRow({ project, task, rows, people, onOpenTask, depth }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
   const kids = childrenOf(rows, task.id).sort(sortTasks);
   const assignee = people.find(p => p.id === task.assigneeId);
   const done = isComplete(project, task);
@@ -1012,7 +1023,7 @@ function ExpandedTaskRow({ project, task, rows, people, onOpenTask, depth }) {
         <button
           onClick={() => toggleComplete(project, task)}
           aria-label={done ? 'Mark not complete' : 'Mark complete'}
-          className={cx('p-0.5 rounded-full flex-shrink-0', t.bgHover, done ? 'text-emerald-500' : t.textMuted)}
+          className={cx('p-0.5 rounded-full flex-shrink-0', t.bgHover, done ? a('emerald').fg : t.textMuted)}
         >
           {done ? <CircleCheck size={ICON.base} /> : <Circle size={ICON.base} />}
         </button>
@@ -1370,7 +1381,7 @@ function GroupHeaderLabel({ group, people }) {
 }
 
 function TaskListRow({ project, task, rows, people, columns, template, depth, showSubtasks, onOpenTask }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
   const kids = showSubtasks ? childrenOf(rows, task.id).sort(sortTasks) : [];
   const done = isComplete(project, task);
   const blocked = openBlockers(project, task, rows).length > 0;
@@ -1384,7 +1395,7 @@ function TaskListRow({ project, task, rows, people, columns, template, depth, sh
           <button
             onClick={() => toggleComplete(project, task)}
             aria-label={done ? 'Mark not complete' : 'Mark complete'}
-            className={cx('p-0.5 rounded-full flex-shrink-0', t.bgHover, done ? 'text-emerald-500' : t.textMuted)}
+            className={cx('p-0.5 rounded-full flex-shrink-0', t.bgHover, done ? a('emerald').fg : t.textMuted)}
           >
             {done ? <CircleCheck size={ICON.base} /> : <Circle size={ICON.base} />}
           </button>
@@ -1949,9 +1960,10 @@ function TaskModal({ taskId, onClose, onOpenTask }) {
   const { t, a } = useTheme();
   const tasks = useStore(s => s.tasks);
   const projects = useStore(s => s.projects);
-  const people = useStore(s => s.directory);
+  const directory = useStore(s => s.directory);
   const courses = useStore(s => s.courses);
   const currentUser = useStore(s => s.currentUser);
+  const people = directory || [];
 
   const task = (tasks || []).find(x => x.id === taskId);
   const project = task?.projectId
@@ -2023,7 +2035,10 @@ function TaskModal({ taskId, onClose, onOpenTask }) {
           </>
         }
       >
-        <div className="space-y-4">
+        {/* @container: the modal is a nested pane, so its grids size off the
+            modal's own width. sm:/lg: would fire on the WINDOW and give a
+            three-up grid inside a 48rem dialog. */}
+        <div className="space-y-4 @container">
           {/* quick chip row — counts above the title, ClickUp's own arrangement */}
           <div className="flex flex-wrap items-center gap-1.5">
             <EntityTag kind={task.milestone ? 'milestone' : (task.projectId ? 'projectTask' : 'task')} />
@@ -2045,7 +2060,7 @@ function TaskModal({ taskId, onClose, onOpenTask }) {
             <Input accent={hue} value={task.title} onChange={(e) => patchTask(task.id, { title: e.target.value })} />
           </Field>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid @md:grid-cols-2 @2xl:grid-cols-3 gap-3">
             <Field label="Status">
               <Select accent={hue} value={task.status} onChange={(e) => setStatus(project, task, e.target.value)}
                 options={(project.statuses || PERSONAL_STATUSES).map(s => ({ value: s.id, label: s.label }))} />
@@ -2101,7 +2116,7 @@ function TaskModal({ taskId, onClose, onOpenTask }) {
           {!project.personal && (project.fields || []).length > 0 && (
             <div>
               <GroupLabel className="mb-1.5">Custom fields</GroupLabel>
-              <Card className="p-3 grid sm:grid-cols-2 gap-3">
+              <Card className="p-3 grid @md:grid-cols-2 gap-3">
                 {(project.fields || []).map(f => (
                   <Field key={f.id} label={f.label} hint={f.type === 'currency' ? 'USD' : undefined}>
                     <CustomFieldInput field={f} task={task} people={people} memberIds={memberIds} accent={hue} />
@@ -2215,10 +2230,17 @@ function WatcherMenu({ task, people, memberIds }) {
 function DependencySection({ project, task, siblings, picker, setPicker, onOpenTask }) {
   const { t, a } = useTheme();
   const rel = relationsOf(task, siblings);
-  const candidates = siblings.filter(s => s.id !== task.id && s.parentId !== task.id);
+  // Anything already related — in either direction — is off the menu. Adding the
+  // same link twice would render two identical rows and store a second copy of a
+  // relationship that is supposed to live in exactly one place.
+  const related = new Set([...rel.blockers, ...rel.blocking].map(x => x.id));
+  const candidates = siblings.filter(s => s.id !== task.id && s.parentId !== task.id && !related.has(s.id));
 
   const add = (type, id) => {
-    patchTask(task.id, { dependencies: [...(task.dependencies || []), { type, taskId: id }] });
+    const existing = task.dependencies || [];
+    if (!existing.some(d => d.taskId === id)) {
+      patchTask(task.id, { dependencies: [...existing, { type, taskId: id }] });
+    }
     setPicker(null);
   };
   const drop = (id) => {
@@ -2295,8 +2317,11 @@ function DependencySection({ project, task, siblings, picker, setPicker, onOpenT
 }
 
 function SubtaskSection({ project, task, kids, people, onOpenTask }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
   const hue = taskHue(task);
+  // Deleting a subtask is destructive, so it earns the same friction as every
+  // other delete in the app — the DS ConfirmDelete, not a bare trash button.
+  const [confirm, setConfirm] = useState(null);
 
   const addSubtask = (title) => {
     addTo('tasks', {
@@ -2312,13 +2337,13 @@ function SubtaskSection({ project, task, kids, people, onOpenTask }) {
         <span className={cx('text-xs tabular-nums', t.textMuted)}>{kids.length}</span>
       </div>
       <Card className="p-2">
-        {kids.sort(sortTasks).map(k => {
+        {[...kids].sort(sortTasks).map(k => {
           const done = isComplete(project, k);
           const assignee = people.find(p => p.id === k.assigneeId);
           return (
             <div key={k.id} className="flex items-center gap-2 py-1">
               <button onClick={() => toggleComplete(project, k)} aria-label="Toggle subtask"
-                className={cx('p-0.5 rounded-full flex-shrink-0', t.bgHover, done ? 'text-emerald-500' : t.textMuted)}>
+                className={cx('p-0.5 rounded-full flex-shrink-0', t.bgHover, done ? a('emerald').fg : t.textMuted)}>
                 {done ? <CircleCheck size={ICON.base} /> : <Circle size={ICON.base} />}
               </button>
               <button onClick={() => onOpenTask(k.id)}
@@ -2328,12 +2353,21 @@ function SubtaskSection({ project, task, kids, people, onOpenTask }) {
               </button>
               <DueDateLabel value={k.dueDate} overdue={isOverdue(project, k)} />
               {assignee && <Avatar name={assignee.name} size="sm" />}
-              <IconButton icon={Trash2} label="Delete subtask" accent="red" onClick={() => removeFrom('tasks', k.id)} />
+              <IconButton icon={Trash2} label="Delete subtask" accent="red" onClick={() => setConfirm(k)} />
             </div>
           );
         })}
         <InlineAdd accent={hue} placeholder="Add a subtask — it appears nested everywhere this task appears…" onAdd={addSubtask} />
       </Card>
+
+      <ConfirmDelete
+        open={!!confirm}
+        name={confirm?.title || ''}
+        kind="subtask"
+        cascadeNote="Its checklists and dependency links go with it."
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => { removeFrom('tasks', confirm.id); setConfirm(null); }}
+      />
     </div>
   );
 }
@@ -2490,6 +2524,7 @@ function ProjectSettingsModal({ project, people, tasks, onClose }) {
   const { t, a } = useTheme();
   const [tab, setTab] = useState('statuses');
   const [confirmField, setConfirmField] = useState(null);
+  const [confirmStatus, setConfirmStatus] = useState(null);
   const [confirmProject, setConfirmProject] = useState(false);
 
   const patchProject = (patch) => {
@@ -2530,7 +2565,8 @@ function ProjectSettingsModal({ project, people, tasks, onClose }) {
           />
 
           {tab === 'statuses' && (
-            <StatusSettings project={project} usage={usedStatuses} onPatch={patchProject} />
+            <StatusSettings project={project} usage={usedStatuses} onPatch={patchProject}
+              onDelete={setConfirmStatus} />
           )}
 
           {tab === 'fields' && (
@@ -2567,6 +2603,31 @@ function ProjectSettingsModal({ project, people, tasks, onClose }) {
         </div>
       </Modal>
 
+      {/* A status is not just a label: every task carries its id. Deleting one
+          without rehoming its tasks would leave them pointing at a status the
+          project no longer has, and buildGroups would silently drop them from
+          List and Board — the task would look deleted. So the confirm names the
+          status the work moves to, and the tasks are moved with it. */}
+      <ConfirmDelete
+        open={!!confirmStatus}
+        name={confirmStatus?.label || ''}
+        kind="status"
+        cascadeNote={confirmStatus && (usedStatuses[confirmStatus.id]
+          ? `${usedStatuses[confirmStatus.id]} task${usedStatuses[confirmStatus.id] === 1 ? '' : 's'} move to “${statusAfterRemoval(project, confirmStatus)?.label || '—'}”.`
+          : 'No task uses this status.')}
+        onCancel={() => setConfirmStatus(null)}
+        onConfirm={() => {
+          const fallback = statusAfterRemoval(project, confirmStatus);
+          if (fallback) {
+            for (const ts of tasksOfProject(tasks, project.id)) {
+              if (ts.status === confirmStatus.id) patchTask(ts.id, { status: fallback.id });
+            }
+          }
+          patchProject({ statuses: (project.statuses || []).filter(s => s.id !== confirmStatus.id) });
+          setConfirmStatus(null);
+        }}
+      />
+
       <ConfirmDelete
         open={!!confirmField}
         name={confirmField?.label || ''}
@@ -2599,12 +2660,11 @@ function ProjectSettingsModal({ project, people, tasks, onClose }) {
   );
 }
 
-function StatusSettings({ project, usage, onPatch }) {
+function StatusSettings({ project, usage, onPatch, onDelete }) {
   const { t, a } = useTheme();
   const statuses = project.statuses || [];
 
   const update = (id, patch) => onPatch({ statuses: statuses.map(s => s.id === id ? { ...s, ...patch } : s) });
-  const remove = (id) => onPatch({ statuses: statuses.filter(s => s.id !== id) });
   const add = (group) => onPatch({
     statuses: [...statuses, { id: uid('st'), label: 'New status', hue: 'gray', group }],
   });
@@ -2648,8 +2708,11 @@ function StatusSettings({ project, usage, onPatch }) {
                   <span className={cx('text-[11px] tabular-nums w-14 text-right flex-shrink-0', t.textMuted)}>
                     {usage[s.id] || 0} tasks
                   </span>
-                  <IconButton icon={Trash2} label="Delete status" accent="red"
-                    onClick={() => remove(s.id)} />
+                  <IconButton icon={Trash2} accent="red"
+                    label={statuses.length > 1 ? 'Delete status' : 'A project needs at least one status'}
+                    disabled={statuses.length <= 1}
+                    className={statuses.length <= 1 ? 'opacity-40 pointer-events-none' : undefined}
+                    onClick={() => onDelete(s)} />
                 </div>
               ))}
             </Card>
@@ -2829,7 +2892,7 @@ function NewProjectModal({ open, people, currentUser, onClose }) {
         </>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-4 @container">
         <Field label="Project name" required>
           <Input accent={HUE_PROJECT} value={name} onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Warehouse Automation Pilot" />
@@ -2843,7 +2906,7 @@ function NewProjectModal({ open, people, currentUser, onClose }) {
         </Field>
 
         <Field label="Workflow" hint="Sets the project's custom statuses. Every template has a Done and a Closed group.">
-          <div className="grid sm:grid-cols-3 gap-2">
+          <div className="grid @lg:grid-cols-3 gap-2">
             {WORKFLOW_TEMPLATES.map(tpl => (
               <TemplateTile key={tpl.id} template={tpl} selected={tpl.id === template} onSelect={() => setTemplate(tpl.id)} />
             ))}

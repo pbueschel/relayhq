@@ -809,6 +809,9 @@ export const AUTOMATION_RUNS = [
       { nodeId: 'brc-filter', name: 'SLA at risk (under 30 min)', status: 'success', ms: 119, items: 0 },
       { nodeId: 'brc-notify', name: 'Alert the queue channel', status: 'skipped', ms: 0, items: 0 },
       { nodeId: 'brc-approval', name: 'Out-of-hours override', status: 'skipped', ms: 0, items: 0 },
+      { nodeId: 'brc-priority', name: 'Raise to urgent', status: 'skipped', ms: 0, items: 0 },
+      { nodeId: 'brc-page', name: 'Page duty engineer (PagerDuty)', status: 'skipped', ms: 0, items: 0 },
+      { nodeId: 'brc-comment', name: 'Log the escalation', status: 'skipped', ms: 0, items: 0 },
     ],
   },
   {
@@ -883,6 +886,8 @@ export const AUTOMATION_RUNS = [
       { nodeId: 'brc-notify', name: 'Alert the queue channel', status: 'success', ms: 371, items: 2 },
       { nodeId: 'brc-approval', name: 'Out-of-hours override', status: 'success', ms: 498, items: 2 },
       { nodeId: 'brc-priority', name: 'Raise to urgent', status: 'success', ms: 95, items: 2 },
+      { nodeId: 'brc-page', name: 'Page duty engineer (PagerDuty)', status: 'success', ms: 540, items: 2 },
+      { nodeId: 'brc-comment', name: 'Log the escalation', status: 'success', ms: 88, items: 2 },
     ],
   },
 ];

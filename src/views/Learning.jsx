@@ -648,7 +648,9 @@ function CurriculumDetail({
         onNavigate={() => navigate('learning', 'curricula')}
       />
 
-      <Card className={cx(DENSITY.cardPad, 'flex items-start gap-3')}>
+      {/* The @container lives on the CARD, never on the grid that queries it —
+          an element cannot answer its own container query. */}
+      <Card className={cx(DENSITY.cardPad, 'flex items-start gap-3 @container')}>
         <span className={cx('w-1 self-stretch min-h-16 rounded-full flex-shrink-0', c.rail)} />
         <IconTile icon={GraduationCap} accent={ENTITIES.curriculum.hue} size="lg" />
         <div className="flex-1 min-w-0">
@@ -661,7 +663,7 @@ function CurriculumDetail({
             )}
           </div>
           <p className={cx('text-sm mt-1', t.textSecondary)}>{curriculum.summary}</p>
-          <div className="mt-3 grid grid-cols-2 gap-3 @xl:grid-cols-6 @container">
+          <div className="mt-3 grid grid-cols-2 gap-3 @xl:grid-cols-6">
             <Fact label="Job function" value={jf?.label || '—'} hint={jf?.description} />
             <Fact label="Courses" value={totals.courses.length} />
             <Fact label="Modules" value={totals.modules} />
@@ -729,7 +731,7 @@ function CurriculumDetail({
           ? `${plural(team.length, 'customer contact', 'customer contacts')} in the academy roster`
           : `${plural(team.length, 'person holds', 'people hold')} the ${jf?.label || 'role'} job function`}
       >
-        <Card className={cx(DENSITY.cardPad, 'space-y-3')}>
+        <Card className={cx(DENSITY.cardPad, 'space-y-3 @container')}>
           <div className="flex items-center gap-3 flex-wrap">
             <Stat label="fully complete" value={`${team.length ? Math.round((completeCount / team.length) * 100) : 0}%`}
               accent="emerald" icon={ShieldCheck} active />
@@ -1142,8 +1144,10 @@ function CourseBuilder({ course, courses, kb, knowledge, items, curricula, jobFu
             </div>
           </Card>
 
-          {/* ---------------- EDITOR ---------------- */}
-          <div className="space-y-3">
+          {/* ---------------- EDITOR ----------------
+              Its own container, so the field grids inside condense off the
+              PANE's width rather than the whole builder's. */}
+          <div className="space-y-3 @container">
             <AuthorOncePanel course={course} stats={stats} kb={kb} items={items} courses={courses} />
 
             {selection.kind === 'lesson' && selectedAtom && (
@@ -1244,10 +1248,11 @@ function ModuleGroup({
       onDrop={(e) => { e.preventDefault(); onDropLesson(module.id, null); }}
     >
       <div className="flex items-center gap-1 px-2 py-1.5">
-        <button onClick={onToggle} className={cx('p-1 rounded', t.bgHover, t.textMuted)}
-          aria-label={collapsed ? 'Expand module' : 'Collapse module'}>
-          {collapsed ? <ChevronRight size={ICON.base} /> : <ChevronDown size={ICON.base} />}
-        </button>
+        <IconButton
+          icon={collapsed ? ChevronRight : ChevronDown}
+          label={collapsed ? 'Expand module' : 'Collapse module'}
+          onClick={onToggle}
+        />
         <button
           onClick={() => onSelect({ kind: 'module', moduleId: module.id, lessonId: null })}
           className="flex-1 min-w-0 text-left"
@@ -2044,9 +2049,9 @@ function Learners({
   const certCount = rows.reduce((n, r) => n + r.enrollments.filter(e => e.certified).length, 0);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 @container">
       <Section title="Curriculum readiness" hint="The manager's question: can this team do the job yet?">
-        <div className="grid gap-3 @container @2xl:grid-cols-3">
+        <div className="grid gap-3 @2xl:grid-cols-3">
           {curricula.map(cur => (
             <RollupCard key={cur.id} curriculum={cur} courseIndex={courseIndex} enrollments={enrollments}
               directory={directory} contacts={contacts} jobFunctions={jobFunctions} />
@@ -2525,6 +2530,7 @@ function LessonPlayer({ open, onClose, course, enrollment, kb, startStepIndex })
       onClose={onClose}
       accent={accent}
       size="modalXl"
+      className="@container"
       icon={step.kind === 'quiz' ? ListChecks : (atom?.format === 'guide' ? Layers : BookOpen)}
       title={headerTitle}
       subtitle={`${course.title} · ${stepLabel}${atom ? ` · ${atom.minutes || 0} min` : ''}`}
@@ -2668,7 +2674,7 @@ function StoryFrame({ atom, slide, onSlide, playing, onPlaying }) {
         ))}
       </div>
 
-      <div className="grid gap-3 @2xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)] @container">
+      <div className="grid gap-3 @2xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className={cx('relative rounded-2xl overflow-hidden border aspect-[9/16] flex items-center justify-center',
           t.borderLight, t.bgSubtle)}>
           {s.type === 'image' && (

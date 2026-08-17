@@ -7,7 +7,7 @@ import {
   FileQuestion, Folder, Gauge, Send,
 } from 'lucide-react';
 import {
-  useTheme, cx, ACCENT_HUES, ICON, DENSITY, GRADIENT, PRIORITY, priorityMeta,
+  useTheme, cx, ACCENT_HUES, ICON, DENSITY, GRADIENT, PRIORITY, priorityMeta, ENTITIES,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, PriorityFlag,
   Avatar, AvatarStack, EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat,
   Banner, Divider,
@@ -45,11 +45,13 @@ import { Q, USR, SF, CAT } from '@/store/seed/ids.js';
  * Constants
  * ==================================================================== */
 
+/* Entity accents come from the ENTITIES registry, never restated as literals —
+ * a queue is the same colour here as it is in the sidebar and on a ticket. */
 const TABS = [
-  { value: 'queues',    label: 'Queues',            icon: Inbox,  accent: 'gray' },
-  { value: 'routing',   label: 'Routing',           icon: Route,  accent: 'purple' },
-  { value: 'rules',     label: 'Rules',             icon: Filter, accent: 'rose' },
-  { value: 'approvals', label: 'Approval policies', icon: Stamp,  accent: 'amber' },
+  { value: 'queues',    label: 'Queues',            icon: Inbox,  accent: ENTITIES.queue.hue },
+  { value: 'routing',   label: 'Routing',           icon: Route,  accent: ENTITIES.subform.hue },
+  { value: 'rules',     label: 'Rules',             icon: Filter, accent: ENTITIES.rule.hue },
+  { value: 'approvals', label: 'Approval policies', icon: Stamp,  accent: ENTITIES.approval.hue },
   { value: 'sla',       label: 'SLA',               icon: Timer,  accent: 'emerald' },
 ];
 
@@ -63,14 +65,14 @@ const TRIGGERS = [
 const TRIGGER_BY_VALUE = TRIGGERS.reduce((acc, t) => { acc[t.value] = t; return acc; }, {});
 
 const ACTION_TYPES = [
-  { value: 'set_priority',   label: 'Set priority',    icon: Flag,      accent: 'orange' },
-  { value: 'assign_queue',   label: 'Assign queue',    icon: Inbox,     accent: 'blue' },
-  { value: 'assign_user',    label: 'Assign person',   icon: UserPlus,  accent: 'violet' },
-  { value: 'add_label',      label: 'Add label',       icon: Tag,       accent: 'teal' },
-  { value: 'notify',         label: 'Notify',          icon: Bell,      accent: 'amber' },
-  { value: 'start_approval', label: 'Start approval',  icon: Stamp,     accent: 'amber' },
-  { value: 'create_task',    label: 'Create task',     icon: ListChecks, accent: 'teal' },
-  { value: 'run_automation', label: 'Run automation',  icon: Workflow,  accent: 'sky' },
+  { value: 'set_priority',   label: 'Set priority',    icon: Flag,       accent: 'orange' },
+  { value: 'assign_queue',   label: 'Assign queue',    icon: Inbox,      accent: ENTITIES.queue.hue },
+  { value: 'assign_user',    label: 'Assign person',   icon: UserPlus,   accent: 'violet' },
+  { value: 'add_label',      label: 'Add label',       icon: Tag,        accent: 'teal' },
+  { value: 'notify',         label: 'Notify',          icon: Bell,       accent: 'amber' },
+  { value: 'start_approval', label: 'Start approval',  icon: Stamp,      accent: ENTITIES.approval.hue },
+  { value: 'create_task',    label: 'Create task',     icon: ListChecks, accent: ENTITIES.task.hue },
+  { value: 'run_automation', label: 'Run automation',  icon: Workflow,   accent: ENTITIES.automation.hue },
 ];
 
 const ACTION_BY_TYPE = ACTION_TYPES.reduce((acc, a) => { acc[a.value] = a; return acc; }, {});
@@ -360,20 +362,30 @@ function QueuesTab({ data, routing }) {
   const [deleting, setDeleting] = useState(null);
   const [search, setSearch] = useState('');
 
-  const formCount = useMemo(() => {
+  /* Chips show VALUES, not counts — so these carry the actual form and rule
+   * names and ChipGroup collapses the overflow. "4 forms" told you a queue was
+   * busy; the names tell you what it is FOR, which is the question you had. */
+  const formsByQueue = useMemo(() => {
     const map = {};
-    for (const r of routing.rows) if (r.queueId) map[r.queueId] = (map[r.queueId] || 0) + 1;
+    for (const r of routing.rows) {
+      if (!r.queueId) continue;
+      (map[r.queueId] || (map[r.queueId] = [])).push(r.subform?.name || r.subformId);
+    }
     return map;
   }, [routing.rows]);
 
-  const ruleCount = useMemo(() => {
+  const rulesByQueue = useMemo(() => {
     const map = {};
+    // A rule that both assigns a queue AND notifies it is ONE rule touching it.
+    const add = (queueId, name) => {
+      if (!queueId) return;
+      const list = map[queueId] || (map[queueId] = []);
+      if (!list.includes(name)) list.push(name);
+    };
     for (const rule of rules) {
       for (const a of rule.actions || []) {
-        if (a.type === 'assign_queue' && a.queueId) map[a.queueId] = (map[a.queueId] || 0) + 1;
-        if (a.type === 'notify' && a.target?.kind === 'queue' && a.target.queueId) {
-          map[a.target.queueId] = (map[a.target.queueId] || 0) + 1;
-        }
+        if (a.type === 'assign_queue') add(a.queueId, rule.name);
+        if (a.type === 'notify' && a.target?.kind === 'queue') add(a.target.queueId, rule.name);
       }
     }
     return map;
@@ -423,7 +435,7 @@ function QueuesTab({ data, routing }) {
             return (
               <ListRow
                 key={q.id}
-                accent={q.hue || 'gray'}
+                accent={q.hue || ENTITIES.queue.hue}
                 icon={Inbox}
                 title={q.name}
                 subtitle={q.description}
@@ -431,8 +443,6 @@ function QueuesTab({ data, routing }) {
                 meta={
                   <>
                     {q.isDefault && <Chip accent="amber" icon={Target}>Default queue</Chip>}
-                    <Chip accent="purple" icon={Route}>{formCount[q.id] || 0} forms</Chip>
-                    <Chip accent="rose" icon={Filter}>{ruleCount[q.id] || 0} rules</Chip>
                     <AvatarStack names={members} max={4} size="sm" />
                   </>
                 }
@@ -448,8 +458,10 @@ function QueuesTab({ data, routing }) {
                 }
               >
                 <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                  <ChipGroup items={members} max={3} accent={q.hue || 'gray'} icon={User}
+                  <ChipGroup items={members} max={3} accent={q.hue || ENTITIES.queue.hue} icon={User}
                     empty={<span className={cx('text-xs', t.textMuted)}>No members — work here has no owner</span>} />
+                  <ChipGroup items={formsByQueue[q.id] || []} max={2} accent={ENTITIES.subform.hue} icon={Route} />
+                  <ChipGroup items={rulesByQueue[q.id] || []} max={1} accent={ENTITIES.rule.hue} icon={Filter} />
                   {q.inbox && <span className={cx('text-[11px] font-mono', t.textMuted)}>{q.inbox}</span>}
                 </div>
               </ListRow>
@@ -903,9 +915,10 @@ function RulesTab({ data }) {
                   {(rule.actions || []).map((a, k) => {
                     const meta = ACTION_BY_TYPE[a.type];
                     if (!meta) return null;
+                    const text = describeAction(a, { queues, options, directory });
                     return (
-                      <Chip key={k} accent={meta.accent} icon={meta.icon} title={describeAction(a, { queues, options, directory })}>
-                        {describeAction(a, { queues, options, directory })}
+                      <Chip key={k} accent={actionAccent(a, { queues })} icon={meta.icon} title={text}>
+                        {text}
                       </Chip>
                     );
                   })}
@@ -964,6 +977,24 @@ function describeAction(action, { queues, options, directory }) {
     case 'create_task': return `Task: ${action.title || 'untitled'}`;
     case 'run_automation': return `Run ${labelIn(options.automations, action.automationId, action.automationId)}`;
     default: return action.type;
+  }
+}
+
+/**
+ * Chip hue for a CONFIGURED action. Where the action names a specific record the
+ * chip wears that record's colour — an "urgent" chip is red like every other
+ * urgent, and a queue chip is that queue's hue, exactly as it is in Routing and
+ * in the outcome panel. Only the generic action-type tile uses the type accent.
+ */
+function actionAccent(action, { queues }) {
+  switch (action.type) {
+    case 'set_priority': return priorityMeta(action.priority).hue;
+    case 'assign_queue': return queues.find((q) => q.id === action.queueId)?.hue || ENTITIES.queue.hue;
+    case 'notify':
+      return action.target?.kind === 'queue'
+        ? queues.find((q) => q.id === action.target.queueId)?.hue || ACTION_BY_TYPE.notify.accent
+        : ACTION_BY_TYPE.notify.accent;
+    default: return ACTION_BY_TYPE[action.type]?.accent || 'gray';
   }
 }
 
@@ -1885,7 +1916,11 @@ function TesterResultRow({ index, result, open, onToggle, data }) {
               {(rule.actions || []).map((act, i) => {
                 const am = ACTION_BY_TYPE[act.type];
                 if (!am) return null;
-                return <Chip key={i} accent={am.accent} icon={am.icon}>{describeAction(act, data)}</Chip>;
+                return (
+                  <Chip key={i} accent={actionAccent(act, data)} icon={am.icon}>
+                    {describeAction(act, data)}
+                  </Chip>
+                );
               })}
             </div>
           )}

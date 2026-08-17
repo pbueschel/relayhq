@@ -94,6 +94,16 @@ const LICENSE_MODEL = {
   site:       { label: 'Site',       hint: 'Unlimited within the organisation' },
 };
 
+/** How the licence is bought. Never render the raw enum — it leaks lowercase. */
+const LICENSE_TERM = {
+  subscription: 'Subscription',
+  perpetual:    'Perpetual',
+};
+
+function licenseTerm(key) {
+  return LICENSE_TERM[key] || key;
+}
+
 const ACTION = {
   received: { label: 'Received into stock', icon: PackageOpen,     hue: 'blue' },
   checkout: { label: 'Checked out',         icon: LogOut,          hue: 'emerald' },
@@ -325,7 +335,7 @@ function Facts({ items, columns = 2 }) {
     <div className="grid gap-x-6 gap-y-2.5" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
       {items.filter(Boolean).map(item => (
         <div key={item.label} className="min-w-0">
-          <p className={cx('text-[11px] font-semibold uppercase tracking-wider', t.textMuted)}>{item.label}</p>
+          <GroupLabel>{item.label}</GroupLabel>
           <div className={cx('text-sm mt-0.5 flex items-center gap-1.5 flex-wrap', t.text)}>{item.value}</div>
           {item.hint && <p className={cx('text-[11px] mt-0.5', t.textMuted)}>{item.hint}</p>}
         </div>
@@ -1070,17 +1080,27 @@ function SoftwareTab({ licenses, locations, contracts, directory, openId }) {
       .sort((a, b) => b.pos.exposure - a.pos.exposure);
   }, [licenses, q, position]);
 
+  /**
+   * A site licence has no seat position — its allocations are recorded for
+   * visibility only. Counting those allocations in `assigned` while its
+   * unbounded entitlement contributes nothing to `owned` made the strip read
+   * as if the whole estate were over-deployed (1,136 allocated against 1,032
+   * owned) when nothing of the sort is true. Site licences are excluded from
+   * BOTH seat figures, which is exactly what the compliance screen says
+   * happens. Their spend still counts, because that money is real.
+   */
   const totals = useMemo(() => {
-    let owned = 0, assigned = 0, over = 0, under = 0, spend = 0;
+    let owned = 0, assigned = 0, over = 0, under = 0, spend = 0, site = 0;
     for (const lic of licenses) {
       const pos = licensePosition(lic);
+      spend += annualSpend(lic);
+      if (pos.key === 'site') { site += 1; continue; }
       owned += lic.seatsOwned || 0;
       assigned += pos.assigned;
-      spend += annualSpend(lic);
       if (pos.key === 'over') over += 1;
       if (pos.key === 'under') under += 1;
     }
-    return { owned, assigned, over, under, spend };
+    return { owned, assigned, over, under, spend, site };
   }, [licenses]);
 
   return (
@@ -1102,6 +1122,11 @@ function SoftwareTab({ licenses, locations, contracts, directory, openId }) {
           A licence's assigned count is the sum of its allocations — people and places that actually hold a
           seat. There is no field to type it into, so the entitlement and the deployment cannot quietly
           disagree the way they do in a spreadsheet.
+          {totals.site > 0 && (
+            <> The {totals.site === 1 ? 'one site licence' : `${totals.site} site licences`} above{' '}
+            {totals.site === 1 ? 'is' : 'are'} left out of both seat totals — everyone is covered, so there is
+            no position to count.</>
+          )}
         </Banner>
 
         <Toolbar>
@@ -1155,7 +1180,7 @@ function LicenseRow({ license, position, contracts, onOpen }) {
       onClick={onOpen}
       alert={position.key === 'over'}
       title={`${license.product} · ${license.vendor}`}
-      subtitle={`${LICENSE_MODEL[license.licenseModel]?.label || license.licenseModel} · ${license.contractType} · ${contract ? contract.name : 'no contract on file'}`}
+      subtitle={`${LICENSE_MODEL[license.licenseModel]?.label || license.licenseModel} · ${licenseTerm(license.contractType)} · ${contract ? contract.name : 'no contract on file'}`}
       meta={
         <>
           <span className="hidden md:block w-28">
@@ -1211,7 +1236,7 @@ function LicenseDetail({ license, position, locations, contracts, directory, onC
           <EntityTag kind="software" />
           <PositionChip position={position} />
           <Chip accent="violet">{LICENSE_MODEL[license.licenseModel]?.label}</Chip>
-          <Chip accent="blue">{license.contractType === 'perpetual' ? 'Perpetual' : 'Subscription'}</Chip>
+          <Chip accent="blue">{licenseTerm(license.contractType)}</Chip>
           {renewal != null && <DaysChip days={renewal} label={`Renews ${fmtDate(license.renewalDate)}`} />}
         </div>
 
@@ -1822,7 +1847,9 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations }) {
 
   const rows = useMemo(() => licenses
     .map(lic => ({ lic, pos: licensePosition(lic), contract: byId(contracts, lic.contractId) }))
-    .sort((a, b) => b.pos.exposure - a.pos.exposure), [licenses, contracts]);
+    // Sorted worst-first. Named x/y so the accent accessor `a` from useTheme
+    // is not shadowed inside the comparator.
+    .sort((x, y) => y.pos.exposure - x.pos.exposure), [licenses, contracts]);
 
   const totals = useMemo(() => {
     let risk = 0, reclaim = 0, spend = 0, unpapered = 0;
@@ -1940,6 +1967,12 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations }) {
                     <Chip accent="red">{Math.abs(daysUntil(asset.warrantyExpires))}d over</Chip>
                   </button>
                 ))}
+                {outOfWarranty.length > 6 && (
+                  <p className={cx('px-4 py-2 text-xs', t.textMuted)}>
+                    +{outOfWarranty.length - 6} more out of warranty — open the Hardware tab and filter on
+                    warranty to see them all.
+                  </p>
+                )}
                 {outOfWarranty.length === 0 && (
                   <p className={cx('px-4 py-3 text-sm', t.textMuted)}>Everything in service is inside its warranty.</p>
                 )}
@@ -1959,6 +1992,11 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations }) {
                     <Chip accent="gray">{locationName(locations, asset.locationId)}</Chip>
                   </button>
                 ))}
+                {uncovered.length > 6 && (
+                  <p className={cx('px-4 py-2 text-xs', t.textMuted)}>
+                    +{uncovered.length - 6} more with no agreement linked.
+                  </p>
+                )}
                 {uncovered.length === 0 && (
                   <p className={cx('px-4 py-3 text-sm', t.textMuted)}>Every unit is covered by an agreement.</p>
                 )}

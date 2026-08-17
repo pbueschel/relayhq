@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   LayoutGrid, Inbox, CheckSquare, Stamp, GraduationCap, Layers, Plus, Filter,
-  AlertTriangle, AlertCircle, Clock, ChevronDown, MessageSquare, Lock, Globe,
+  AlertTriangle, AlertCircle, Clock, ChevronDown, ChevronUp, MessageSquare, Lock, Globe,
   User, Building2, Mail, Phone, MessageCircle, GitBranch, AlertOctagon,
   Timer, Send, ListChecks, Heading1, List, ListOrdered, Quote, Minus, Users,
   Tag, Play, Crown, MapPin, ShieldCheck, Check, CornerDownRight, Briefcase,
@@ -117,6 +117,20 @@ const SLASH_BLOCKS = [
 
 const DONE_GROUPS = ['done', 'closed'];
 const PAUSED_STATUSES = ['pending', 'on_hold'];
+
+/**
+ * Deep links into this view arrive in three shapes, because three different
+ * places in the app build them:
+ *   #/workspace/ticket/<id>   — this view's own links and the approval targets
+ *   #/workspace/tickets/<id>  — ⌘K search, the activity feed, the portal receipt
+ *   #/workspace/<id>          — anything that links a record without naming a tab,
+ *                               which the router reads into `sub`
+ * Accepting only the first spelling meant a link that exists in the shipped app
+ * opened an empty desk. All three are accepted here rather than renamed in five
+ * other modules, because this view is the one that has to be right.
+ */
+const TICKET_SUBS = ['ticket', 'tickets'];
+const TASK_SUBS = ['task', 'tasks'];
 
 /* ==================================================================== *
  * Time helpers — every timestamp in the app is 12-hour AM/PM.
@@ -678,17 +692,24 @@ export default function Workspace({ route }) {
   const filterCount = (view !== 'mine' ? 1 : 0) + (queueIds.length ? 1 : 0)
     + (statuses.length ? 1 : 0) + (priorities.length ? 1 : 0) + (quick ? 1 : 0);
 
-  const openKind = route?.sub || null;
-  const openId = route?.id || null;
-  const openTicket = openKind === 'ticket' ? (data.tickets || []).find(x => x.id === openId) : null;
-  const openTask = openKind === 'task' ? (data.tasks || []).find(x => x.id === openId) : null;
+  const openSub = route?.sub || null;
+  const namedSub = TICKET_SUBS.includes(openSub) || TASK_SUBS.includes(openSub);
+  const openId = route?.id || (namedSub ? null : openSub) || null;
+  const ticketMatch = openId
+    ? (data.tickets || []).find(x => x.id === openId || x.key === openId) || null
+    : null;
+  const taskMatch = openId ? (data.tasks || []).find(x => x.id === openId) || null : null;
+  const openTicket = TASK_SUBS.includes(openSub) ? null : ticketMatch;
+  const openTask = (openTicket || TICKET_SUBS.includes(openSub)) ? null : taskMatch;
 
   const openRecord = (item) => {
     if (item.kind === 'ticket') { navigate('workspace', 'ticket', item.id); return; }
     if (item.kind === 'task' || item.kind === 'projectTask') { navigate('workspace', 'task', item.id); return; }
     if (item.kind === 'approval') { navigate('approvals', 'request', item.id); return; }
-    if (item.kind === 'learning' && item.courseId) { navigate('learning', 'course', item.courseId); return; }
-    navigate('learning');
+    // Learning's course detail only opens on its `courses` tab — the singular
+    // spelling landed the reader on Curricula with nothing selected.
+    if (item.kind === 'learning' && item.courseId) { navigate('learning', 'courses', item.courseId); return; }
+    navigate('learning', 'my');
   };
 
   const clearFilters = () => {
@@ -908,7 +929,7 @@ function MultiFilter({ icon, label, open, onToggle, onClose, selected, onChange,
       <Menu open={open} onClose={onClose} width="w-64">
         <MenuLabel
           action={selected.length > 0 && (
-            <button onClick={() => onChange([])} className="text-[11px] underline">Clear</button>
+            <Button variant="ghost" size="xs" icon={X} onClick={() => onChange([])}>Clear</Button>
           )}
         >
           {label}
@@ -982,7 +1003,8 @@ function WorkRow({ item, data, meId, now, onOpen }) {
       meta={
         <>
           {item.overdue && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-red-500" title="Past its target">
+            <span className={cx('inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap', a('red').fg)}
+              title="Past its target">
               <AlertTriangle size={ICON.sm} />
               {due || 'Overdue'}
             </span>
@@ -997,9 +1019,7 @@ function WorkRow({ item, data, meId, now, onOpen }) {
           {item.kind !== 'approval' && item.kind !== 'learning' && (
             <PriorityFlag priority={item.priority} withLabel={false} />
           )}
-          {assignee ? <Avatar name={assignee} size="sm" /> : (
-            <span className={cx('text-[10px] px-1.5 py-0.5 rounded-full', t.bgSubtle, t.textMuted)}>Unassigned</span>
-          )}
+          {assignee ? <Avatar name={assignee} size="sm" /> : <Chip accent="gray">Unassigned</Chip>}
         </>
       }
       actions={decidable ? (
@@ -1098,14 +1118,16 @@ function PartyRow({ requester, ticket, now }) {
             ])}
           </p>
         </div>
-        <button
+        <Button
+          variant="ghost"
+          size="xs"
+          iconRight={open ? ChevronUp : ChevronDown}
           onClick={() => setOpen(o => !o)}
           aria-expanded={open}
-          className={cx('flex items-center gap-1 text-xs px-2 py-1 rounded-lg', t.bgHover, t.textSecondary)}
+          className="flex-shrink-0"
         >
           Details
-          <ChevronDown size={ICON.sm} className={cx('transition-transform', open && 'rotate-180')} />
-        </button>
+        </Button>
       </div>
 
       {open && (

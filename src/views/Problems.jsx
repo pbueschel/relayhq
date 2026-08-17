@@ -3,7 +3,7 @@ import {
   OctagonAlert, Inbox, GitBranch, BookOpen, Plus, Link2, Unlink, TriangleAlert,
   Lightbulb, Microscope, Stethoscope, ShieldCheck, Archive, Building2, Users,
   CalendarDays, Check, Trash2, ArrowRight, Layers, CircleDot, ExternalLink,
-  Wrench, ListFilter, FileText,
+  Wrench, ListFilter, LayoutGrid, Server,
 } from 'lucide-react';
 import {
   useTheme, cx, ICON, DENSITY, LAYOUT, ENTITIES, PRIORITY, priorityMeta, statusMeta,
@@ -46,6 +46,19 @@ const HUE = ENTITIES.problem.hue;              // fuchsia — the problem colour
 const TICKET_HUE = ENTITIES.ticket.hue;        // rose
 const CHANGE_HUE = ENTITIES.change.hue;        // orange
 const KB_HUE = ENTITIES.article.hue;           // blue
+const GUIDE_HUE = ENTITIES.guide.hue;          // purple
+
+/**
+ * A knowledge atom is drawn with the registry's own colour and icon for its
+ * format, so an atom looks the same here as it does in the Knowledge library.
+ */
+function atomHue(atom) {
+  return atom?.format === 'guide' ? GUIDE_HUE : KB_HUE;
+}
+
+function atomIcon(atom) {
+  return atom?.format === 'guide' ? LayoutGrid : BookOpen;
+}
 
 /* ==================================================================== *
  * Lifecycle
@@ -124,6 +137,29 @@ const PRIORITY_KEYS = ['urgent', 'high', 'medium', 'low'];
  * rather than to a blank panel.
  * ==================================================================== */
 
+/**
+ * The seed writes a problem's workaround as a structured record
+ * (`{ summary, steps[], knowledgeId }`) because that is how one is authored.
+ * The editor below is a single prose field, so the structure is flattened into
+ * the text a support agent would actually read. Editing writes plain text back,
+ * which is why every reader must accept BOTH shapes — a record touched in the
+ * demo and one straight from the seed have to render identically.
+ */
+function workaroundText(w) {
+  if (!w) return '';
+  if (typeof w === 'string') return w;
+  const lines = [];
+  if (w.summary) lines.push(w.summary);
+  (w.steps || []).forEach((s, i) => lines.push(`${i + 1}. ${s}`));
+  return lines.join('\n');
+}
+
+function workaroundAtomIds(p) {
+  if (Array.isArray(p.knowledgeIds)) return p.knowledgeIds;
+  const id = p.workaround && typeof p.workaround === 'object' ? p.workaround.knowledgeId : null;
+  return id ? [id] : [];
+}
+
 function normalize(p) {
   return {
     ...p,
@@ -132,14 +168,35 @@ function normalize(p) {
     description: p.description || '',
     status: LIFECYCLE_KEYS.includes(p.status) ? p.status : 'new',
     priority: PRIORITY[p.priority] ? p.priority : 'medium',
-    symptom: p.symptom || '',
+    // The seed calls the owner `ownerId` and the symptom `symptoms`. Prefer the
+    // edited field when it EXISTS (so clearing an assignee to null sticks rather
+    // than falling back to the seeded owner), otherwise read the seed's name.
+    assigneeId: p.assigneeId !== undefined ? p.assigneeId : (p.ownerId ?? null),
+    symptom: p.symptom || p.symptoms || '',
     rootCause: p.rootCause || '',
-    workaround: p.workaround || '',
+    workaround: workaroundText(p.workaround),
+    workaroundPublished: !!(p.workaround && typeof p.workaround === 'object' && p.workaround.publishedToPortal),
     linkedTicketIds: p.linkedTicketIds || [],
-    knowledgeIds: p.knowledgeIds || [],
+    knowledgeIds: workaroundAtomIds(p),
     resolvedByChangeId: p.resolvedByChangeId || null,
+    // `firstSeenAt` is this view's name for the moment the cause started
+    // producing incidents; the seed records it as `identifiedAt`.
+    firstSeenAt: p.firstSeenAt || p.identifiedAt || p.createdAt || null,
+    impactStatement: typeof p.impact === 'string' ? p.impact : '',
+    affectedServices: p.affectedServices || [],
+    category: p.category || '',
+    labels: p.labels || [],
+    rca: p.rca && Array.isArray(p.rca.statements) ? p.rca : null,
   };
 }
+
+/** Human label for the RCA technique the investigator used. */
+const RCA_TECHNIQUE = {
+  five_whys: 'Five whys',
+  timeline: 'Timeline',
+  fishbone: 'Cause and effect',
+  fault_tree: 'Fault tree',
+};
 
 function hasWorkaround(p) {
   return String(p.workaround || '').trim().length > 0;
@@ -180,13 +237,21 @@ function unique(list) {
  */
 function noop() {}
 
+/**
+ * Continue the workspace's own numbering rather than imposing one. The seed
+ * runs PRB-201…PRB-205, so the width is taken from the records on hand — a new
+ * record numbered PRB-0206 next to PRB-205 reads as a different system.
+ */
 function nextProblemKey(problems) {
-  let max = 30;
+  let max = 200;
+  let width = 3;
   for (const p of problems || []) {
     const m = /PRB-(\d+)/.exec(String(p.key || ''));
-    if (m) max = Math.max(max, Number(m[1]));
+    if (!m) continue;
+    max = Math.max(max, Number(m[1]));
+    width = Math.max(width, m[1].length);
   }
-  return `PRB-${String(max + 1).padStart(4, '0')}`;
+  return `PRB-${String(max + 1).padStart(width, '0')}`;
 }
 
 /* ==================================================================== *
@@ -273,7 +338,6 @@ function impactOf(problem, tickets, people) {
  * ==================================================================== */
 
 export default function Problems({ route }) {
-  const { t } = useTheme();
   const raw = useStore(s => s.problems || []);
   const tickets = useStore(s => s.tickets || []);
   const contacts = useStore(s => s.contacts || []);
@@ -516,7 +580,7 @@ function ProblemRow({ problem, impact, changes, directory, onOpen }) {
         <>
           {impact.tickets.length > 0 && (
             <span className={cx('hidden @md:flex items-center gap-1 text-xs tabular-nums', t.textMuted)}
-              title={`${plural(impact.tickets.length, 'incident', 'incidents')} linked`}>
+              title={`Linked incidents: ${impact.tickets.map(ticketRefOf).join(', ')}`}>
               <Inbox size={ICON.sm} />
               {impact.tickets.length}
             </span>
@@ -808,6 +872,10 @@ function ImpactSummary({ problem, impact }) {
       </div>
 
       <div className={cx('border-t', t.borderLight, DENSITY.sectionPad, 'space-y-3')}>
+        {problem.impactStatement && (
+          <p className={cx('text-xs leading-relaxed', t.textSecondary)}>{problem.impactStatement}</p>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <Stat label={impact.tickets.length === 1 ? 'incident linked' : 'incidents linked'}
             value={impact.tickets.length} accent={TICKET_HUE} icon={Inbox} />
@@ -897,7 +965,23 @@ function RcaSection({ problem, blocked, onPatch, onWorkaroundChange }) {
             placeholder="e.g. Ask the customer to complete the purchase with card entry rather than a saved card; the retry succeeds on the second attempt."
             onChange={onWorkaroundChange}
           />
+          {hasWorkaround(problem) && (
+            <div className="mt-1 flex items-center gap-1.5">
+              <Chip accent={problem.workaroundPublished ? 'emerald' : 'slate'} icon={Building2}>
+                {problem.workaroundPublished ? 'Visible in the customer portal' : 'Internal only'}
+              </Chip>
+            </div>
+          )}
         </div>
+
+        <RcaTrail rca={problem.rca} />
+
+        {problem.affectedServices.length > 0 && (
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <GroupLabel className="w-24 flex-shrink-0">Affected</GroupLabel>
+            <ChipGroup accent={HUE} icon={Server} max={4} items={problem.affectedServices} />
+          </div>
+        )}
 
         <Banner accent={hasWorkaround(problem) ? 'emerald' : 'blue'} icon={hasWorkaround(problem) ? Check : Lightbulb}>
           {hasWorkaround(problem)
@@ -909,15 +993,56 @@ function RcaSection({ problem, blocked, onPatch, onWorkaroundChange }) {
   );
 }
 
+/**
+ * The recorded investigation — five whys or a timeline, plus the contributing
+ * factors. The seed authors this on every problem; showing the chain is the
+ * difference between a root-cause field somebody typed and a cause somebody
+ * can audit.
+ */
+function RcaTrail({ rca }) {
+  const { t, a } = useTheme();
+  const c = a(HUE);
+  if (!rca) return null;
+  const factors = rca.contributingFactors || [];
+
+  return (
+    <div className={cx('rounded-xl border', t.borderLight, DENSITY.rowPad)}>
+      <div className="flex items-center gap-1.5 mb-2">
+        <Layers size={ICON.sm} className={c.fg} />
+        <GroupLabel>{RCA_TECHNIQUE[rca.technique] || 'Investigation'}</GroupLabel>
+      </div>
+      <ol className="space-y-1">
+        {rca.statements.map((s, i) => (
+          <li key={i} className="flex gap-2">
+            <span className={cx('text-[10px] font-semibold tabular-nums mt-0.5 flex-shrink-0', c.fg)}>{i + 1}</span>
+            <span className={cx('text-xs leading-relaxed', t.textSecondary)}>{s}</span>
+          </li>
+        ))}
+      </ol>
+      {factors.length > 0 && (
+        <div className={cx('mt-2 pt-2 border-t', t.borderLight)}>
+          <GroupLabel className="mb-1">Contributing factors</GroupLabel>
+          <ul className="space-y-1">
+            {factors.map((f, i) => (
+              <li key={i} className={cx('text-xs leading-relaxed', t.textMuted)}>· {f}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RcaField({ icon: Icon, accent, label, hint, value, placeholder, required, error, onChange }) {
   const { t, a } = useTheme();
   const c = a(accent);
+  const danger = a('red');
   return (
     <div>
       <div className="flex items-center gap-1.5 mb-1">
         <Icon size={ICON.base} className={c.fg} />
         <span className={cx('text-xs font-semibold uppercase tracking-wider', t.textSecondary)}>{label}</span>
-        {required && <span className="text-red-500 text-xs">*</span>}
+        {required && <span className={cx('text-xs', danger.fg)}>*</span>}
         {!String(value || '').trim() && (
           <span className={cx('text-[10px]', t.textMuted)}>not recorded</span>
         )}
@@ -929,7 +1054,7 @@ function RcaField({ icon: Icon, accent, label, hint, value, placeholder, require
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
-          className={error ? 'border-red-400' : undefined}
+          className={error ? danger.borderStrong : undefined}
         />
       </Field>
     </div>
@@ -941,7 +1066,7 @@ function RcaField({ icon: Icon, accent, label, hint, value, placeholder, require
  * -------------------------------------------------------------------- */
 
 function IncidentsSection({ problem, impact, people, onLink }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
 
   function unlink(id) {
     patchIn('problems', problem.id, (prev) => ({
@@ -966,7 +1091,7 @@ function IncidentsSection({ problem, impact, people, onLink }) {
 
         {impact.dangling.map(id => (
           <div key={id} className={cx('flex items-center gap-3', DENSITY.rowPad)}>
-            <TriangleAlert size={ICON.base} className="text-red-500 flex-shrink-0" />
+            <TriangleAlert size={ICON.base} className={cx('flex-shrink-0', a('red').fg)} />
             <div className="flex-1 min-w-0">
               <p className={cx('text-sm truncate', t.text)}>{id}</p>
               <p className={cx('text-xs', t.textMuted)}>Linked incident is not in this workspace</p>
@@ -1007,8 +1132,10 @@ function IncidentRow({ ticket, people, onUnlink }) {
       {ticket.priority && <PriorityFlag priority={ticket.priority} withLabel={false} />}
       {ticket.status && <StatusPill status={ticket.status} />}
       <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        {/* Workspace reads the record kind from the SECOND segment and it is
+            singular there — `tickets` opens nothing. */}
         <IconButton icon={ExternalLink} label="Open incident" accent={TICKET_HUE}
-          onClick={() => navigate('workspace', 'tickets', ticket.id)} />
+          onClick={() => navigate('workspace', 'ticket', ticket.id)} />
         <IconButton icon={Unlink} label="Unlink incident" accent="red" onClick={onUnlink} />
       </div>
     </div>
@@ -1084,15 +1211,25 @@ function PermanentFixSection({ problem, onLink }) {
  * Linked knowledge — the workaround where agents actually read it
  * -------------------------------------------------------------------- */
 
+/** Format glyph for an atom, dimmed when the atom itself cannot be resolved. */
+function AtomGlyph({ atom }) {
+  const { t, a } = useTheme();
+  const Icon = atomIcon(atom);
+  return <Icon size={ICON.base} className={cx('flex-shrink-0', atom ? a(atomHue(atom)).fg : t.textMuted)} />;
+}
+
 function KnowledgeSection({ problem, impact, onLink }) {
   const { t } = useTheme();
   const knowledge = useStore(s => s.knowledge || []);
   const atoms = (problem.knowledgeIds || []).map(id => ({ id, atom: knowledge.find(k => k.id === id) || null }));
 
+  // Build from the NORMALISED list, not from the raw record: a seeded problem
+  // carries its atom inside `workaround.knowledgeId` and has no `knowledgeIds`
+  // array yet, so patching from `prev` would silently drop it on first edit.
   function unlink(id) {
-    patchIn('problems', problem.id, (prev) => ({
-      knowledgeIds: (prev.knowledgeIds || []).filter(x => x !== id),
-    }));
+    patchIn('problems', problem.id, {
+      knowledgeIds: (problem.knowledgeIds || []).filter(x => x !== id),
+    });
   }
 
   return (
@@ -1106,14 +1243,14 @@ function KnowledgeSection({ problem, impact, onLink }) {
       <div className={cx('divide-y', t.borderLight)}>
         {atoms.map(({ id, atom }) => (
           <div key={id} className={cx('group flex items-center gap-3', DENSITY.rowPad)}>
-            <BookOpen size={ICON.base} className={cx('flex-shrink-0', atom ? '' : 'opacity-40')} />
+            <AtomGlyph atom={atom} />
             <div className="flex-1 min-w-0">
               <p className={cx('text-sm truncate', t.text)}>{atom ? atom.title : id}</p>
               <p className={cx('text-xs truncate', t.textMuted)}>
                 {atom ? (atom.summary || 'No summary') : 'Knowledge atom is not in this workspace'}
               </p>
             </div>
-            {atom?.format && <Chip accent={atom.format === 'guide' ? 'purple' : KB_HUE}>{atom.format}</Chip>}
+            {atom?.format && <Chip accent={atomHue(atom)}>{atom.format}</Chip>}
             {atom?.audience && <Chip accent="slate">{atom.audience}</Chip>}
             {atom?.status && <StatusPill status={atom.status} />}
             <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
@@ -1318,9 +1455,9 @@ function LinkKnowledgeModal({ open, problem, onClose }) {
   }, [knowledge, problem.knowledgeIds, q]);
 
   function link(id) {
-    patchIn('problems', problem.id, (prev) => ({
-      knowledgeIds: unique([...(prev.knowledgeIds || []), id]),
-    }));
+    // Seeded records carry their atom on `workaround.knowledgeId`; `problem` is
+    // already normalised, so starting from it keeps that atom attached.
+    patchIn('problems', problem.id, { knowledgeIds: unique([...(problem.knowledgeIds || []), id]) });
     onClose();
   }
 
@@ -1351,13 +1488,14 @@ function LinkKnowledgeModal({ open, problem, onClose }) {
           {candidates.map(atom => (
             <ListRow
               key={atom.id}
-              accent={atom.format === 'guide' ? 'purple' : KB_HUE}
-              icon={atom.format === 'guide' ? Layers : FileText}
+              accent={atomHue(atom)}
+              icon={atomIcon(atom)}
               onClick={() => link(atom.id)}
               title={atom.title}
               subtitle={atom.summary}
               meta={<>
                 {atom.audience && <Chip accent="slate">{atom.audience}</Chip>}
+                {atom.format && <Chip accent={atomHue(atom)}>{atom.format}</Chip>}
                 {atom.status && <StatusPill status={atom.status} />}
               </>}
             />
@@ -1469,7 +1607,9 @@ function NewProblemModal({ open, onClose, problems }) {
         </div>
       </>}
     >
-      <div className="space-y-4">
+      {/* @container, not a viewport breakpoint: the modal is its own pane, so
+          the two-column row must size off the modal's width. */}
+      <div className="space-y-4 @container">
         <Field label="Title" required error={touched && !title.trim() ? 'A problem needs a title before it can be tracked.' : null}>
           <Input accent={HUE} value={title} onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Saved-card checkouts fail under load on the storefront" />

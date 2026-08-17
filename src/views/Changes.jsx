@@ -16,7 +16,7 @@ import {
   SubTabs, ViewSwitcher, PageHeader, Toolbar, PageBody, Breadcrumbs,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, NOW } from '@/store/store.js';
-import { startApproval, decide, progress } from '@/lib/approvals.js';
+import { startApproval, decide, progress, describeApprover } from '@/lib/approvals.js';
 import { navigate } from '@/lib/router.js';
 import { POL, USR } from '@/store/seed/ids.js';
 
@@ -29,9 +29,15 @@ import { POL, USR } from '@/store/seed/ids.js';
  *   3. Who said yes?                     → a real approval run through @/lib/approvals.js
  *   4. When can it safely happen?        → a calendar with freeze windows and conflict detection
  *
- * `state.changes` is authored in src/store/seed/service.js by another module.
- * Everything here reads that shape defensively — a change with no risk answers,
- * no window and no links still renders, and the UI says what is missing.
+ * `state.changes` is authored in src/store/seed/service.js by another module,
+ * and THAT FILE OWNS THE FIELD NAMES. This view adapts to them in `normalize()`
+ * rather than inventing its own: `ownerId`/`implementerId` are the people,
+ * `affectedCatalogItemIds`/`affectedServices`/`affectedLocationIds` are what a
+ * change touches, `linkedTicketIds`/`linkedProblemIds` are its links, `pir` is
+ * the post-implementation review, and `riskAnswers` carries the eight keys the
+ * seed documents. Everything is read defensively — a change with no risk
+ * answers, no window and no links still renders, and the UI says what is
+ * missing.
  */
 
 const HUE = ENTITIES.change.hue;   // orange — the registered change hue
@@ -118,36 +124,48 @@ function transitionLabel(change, next) {
  * The point of this block: risk is DERIVED and the derivation is shown. A
  * dropdown labelled "risk: high" tells a reader nothing about why, and is the
  * first thing an auditor challenges.
+ *
+ * The question ids ARE the eight `riskAnswers` keys the seed authors on every
+ * change (src/store/seed/service.js). That is deliberate: a questionnaire whose
+ * keys did not match the stored record would score every seeded change as
+ * unanswered, and the derived value would be a fiction.
  * ==================================================================== */
 
 const RISK_QUESTIONS = [
   {
-    id: 'production', prompt: 'Does this affect production systems?', kind: 'yesno', risky: 'yes', weight: 3,
+    id: 'affectsProduction', prompt: 'Does this touch production?', kind: 'yesno', risky: 'yes', weight: 3,
     notes: { yes: 'Production is inside the blast radius', no: 'Confined to non-production' },
   },
   {
-    id: 'rollback', prompt: 'Is there a tested rollback?', kind: 'yesno', risky: 'no', weight: 3,
-    notes: { yes: 'A rehearsed backout exists', no: 'No proven way back' },
+    id: 'hasBackout', prompt: 'Is there a tested backout?', kind: 'yesno', risky: 'no', weight: 5,
+    notes: { yes: 'A rehearsed way back exists', no: 'No proven way back' },
   },
   {
-    id: 'customerData', prompt: 'Does it touch customer data?', kind: 'yesno', risky: 'yes', weight: 2,
-    notes: { yes: 'Customer records are in scope', no: 'No customer data is read or written' },
+    id: 'customerFacing', prompt: 'Is the failure customer-facing?', kind: 'yesno', risky: 'yes', weight: 2,
+    notes: { yes: 'Customers see it if it goes wrong', no: 'Staff-facing only' },
   },
   {
-    id: 'window', prompt: 'Can it be done inside an approved maintenance window?', kind: 'yesno', risky: 'no', weight: 2,
-    notes: { yes: 'Runs inside an agreed window', no: 'Runs while customers are working' },
+    id: 'testedInStaging', prompt: 'Has it been rehearsed in staging?', kind: 'yesno', risky: 'no', weight: 2,
+    notes: { yes: 'Proven against a staging replica', no: 'The production run is the first run' },
   },
   {
-    id: 'rehearsed', prompt: 'Has this exact change been performed successfully before?', kind: 'yesno', risky: 'no', weight: 1,
+    id: 'previouslyExecuted', prompt: 'Has this exact change been performed before?', kind: 'yesno', risky: 'no', weight: 1,
     notes: { yes: 'Done before without incident', no: 'First time in this environment' },
   },
   {
-    id: 'blast', prompt: 'Who is affected if it goes wrong?', kind: 'scale', weight: 1,
+    id: 'requiresDowntime', prompt: 'Does it require downtime?', kind: 'yesno', risky: 'yes', weight: 2,
+    notes: { yes: 'The service is unavailable for part of the window', no: 'No planned interruption' },
+  },
+  {
+    id: 'securityImpact', prompt: 'Does it move a security control?', kind: 'yesno', risky: 'yes', weight: 1,
+    notes: { yes: 'Certificates, access or a control change', no: 'No security control is touched' },
+  },
+  {
+    id: 'peopleAffected', prompt: 'Who is affected if it goes wrong?', kind: 'scale', weight: 1,
     options: [
-      { value: 'few',      label: 'A few people', points: 0, note: 'A handful of users' },
-      { value: 'team',     label: 'One team',     points: 1, note: 'A single team or department' },
-      { value: 'site',     label: 'A whole site', points: 2, note: 'An office or a customer tenant' },
-      { value: 'everyone', label: 'All customers',points: 3, note: 'Every tenant on the platform' },
+      { value: 'few',  label: 'A few people',      points: 0, note: 'A handful of users' },
+      { value: 'some', label: 'One team or site',  points: 1, note: 'A single team, office or customer tenant' },
+      { value: 'many', label: 'Everyone',          points: 3, note: 'Every user, or every tenant on the platform' },
     ],
   },
 ];
@@ -157,9 +175,9 @@ const RISK_MAX = RISK_QUESTIONS.reduce(
 );
 
 const RISK_BANDS = [
-  { key: 'low',      label: 'Low',      hue: 'emerald', min: 0, max: 3 },
-  { key: 'moderate', label: 'Moderate', hue: 'amber',   min: 4, max: 7 },
-  { key: 'high',     label: 'High',     hue: 'red',     min: 8, max: RISK_MAX },
+  { key: 'low',      label: 'Low',      hue: 'emerald', min: 0, max: 4 },
+  { key: 'moderate', label: 'Moderate', hue: 'amber',   min: 5, max: 9 },
+  { key: 'high',     label: 'High',     hue: 'red',     min: 10, max: RISK_MAX },
 ];
 
 function bandFor(points) {
@@ -230,6 +248,17 @@ function normScale(value, fallback) {
   return fallback;
 }
 
+/**
+ * Impact is not stored on a seeded change, but the blast-radius answer already
+ * says who hurts. Read it rather than defaulting every record to "Significant",
+ * which would make the matrix a single column and teach a reader nothing.
+ */
+function impactFromBlast(peopleAffected) {
+  if (peopleAffected === 'many') return 'high';
+  if (peopleAffected === 'few') return 'low';
+  return 'moderate';
+}
+
 /* ==================================================================== *
  * Planning fields — the four documents a change cannot leave assessment
  * without. Named here so the gate, the editor and the blocker message all
@@ -290,9 +319,9 @@ function linkMeta(type) {
 
 const FREEZE_WINDOWS = [
   {
-    id: 'frz-vireo-golive', name: 'Vireo Health go-live freeze', start: '2026-08-24', end: '2026-08-31', hue: 'red',
+    id: 'frz-vireo-golive', name: 'Vireo Health go-live freeze', start: '2026-08-22', end: '2026-08-31', hue: 'red',
     scope: 'All customer-facing services',
-    reason: 'Vireo Health is migrating 1,200 clinicians onto Storefront this week. Shared services are frozen until their hypercare ends on the 31st.',
+    reason: 'Vireo Health cuts 1,200 clinicians over to Storefront on the Saturday night. Shared services are frozen from the cutover until their hypercare ends on the 31st.',
   },
   {
     id: 'frz-storefront-4', name: 'Storefront 4.0 stabilisation', start: '2026-09-14', end: '2026-09-21', hue: 'amber',
@@ -416,7 +445,10 @@ const STANDARD_TEMPLATES = [
     backoutPlan: 'Re-point the listener at the previous certificate, which stays installed for 14 days. Rollback takes under two minutes and is proven on every rotation.',
     testPlan: 'openssl s_client against both nodes, synthetic checkout transaction, and the external uptime monitor for 15 minutes.',
     justification: 'The current certificate expires within 30 days. An expired certificate takes the storefront offline for every tenant.',
-    riskAnswers: { production: 'yes', rollback: 'yes', customerData: 'no', window: 'yes', rehearsed: 'yes', blast: 'team' },
+    riskAnswers: {
+      affectsProduction: true, hasBackout: true, customerFacing: true, testedInStaging: true,
+      previouslyExecuted: true, requiresDowntime: false, securityImpact: true, peopleAffected: 'some',
+    },
   },
   {
     id: 'std-patch-baseline', name: 'Apply the approved OS patch baseline', hours: 3,
@@ -425,7 +457,10 @@ const STANDARD_TEMPLATES = [
     backoutPlan: 'Restore the pre-patch snapshot taken at drain time. Snapshots are kept for 7 days; restore is 12 minutes per node.',
     testPlan: 'Node health endpoint, pool member count, and a synthetic transaction after each node returns.',
     justification: 'Monthly security baseline. Skipping a cycle puts the platform outside the agreed patch SLA with Vireo Health.',
-    riskAnswers: { production: 'yes', rollback: 'yes', customerData: 'no', window: 'yes', rehearsed: 'yes', blast: 'site' },
+    riskAnswers: {
+      affectsProduction: true, hasBackout: true, customerFacing: false, testedInStaging: true,
+      previouslyExecuted: true, requiresDowntime: true, securityImpact: true, peopleAffected: 'some',
+    },
   },
   {
     id: 'std-add-web-node', name: 'Add a node to the Storefront web tier', hours: 2,
@@ -434,7 +469,10 @@ const STANDARD_TEMPLATES = [
     backoutPlan: 'Remove the node from the pool. No customer-visible state lives on it, so removal is immediate.',
     testPlan: 'Pool health, error rate and p95 latency compared with the preceding hour.',
     justification: 'Capacity headroom ahead of the retail peak. Running the tier above 70% utilisation leaves no room for a node loss.',
-    riskAnswers: { production: 'yes', rollback: 'yes', customerData: 'no', window: 'yes', rehearsed: 'yes', blast: 'few' },
+    riskAnswers: {
+      affectsProduction: true, hasBackout: true, customerFacing: true, testedInStaging: true,
+      previouslyExecuted: true, requiresDowntime: false, securityImpact: false, peopleAffected: 'few',
+    },
   },
   {
     id: 'std-read-replica', name: 'Provision a reporting read replica', hours: 4,
@@ -443,7 +481,10 @@ const STANDARD_TEMPLATES = [
     backoutPlan: 'Point reporting back at the primary and destroy the replica. Reporting queries fall back to the primary with no data loss.',
     testPlan: 'Replication lag, a row-count reconciliation against the primary, and three representative reports.',
     justification: 'Reporting queries are contending with transactional load during business hours.',
-    riskAnswers: { production: 'yes', rollback: 'yes', customerData: 'yes', window: 'yes', rehearsed: 'yes', blast: 'team' },
+    riskAnswers: {
+      affectsProduction: true, hasBackout: true, customerFacing: false, testedInStaging: true,
+      previouslyExecuted: true, requiresDowntime: false, securityImpact: false, peopleAffected: 'some',
+    },
   },
   {
     id: 'std-saas-connector', name: 'Deploy an approved SaaS connector', hours: 2,
@@ -452,7 +493,10 @@ const STANDARD_TEMPLATES = [
     backoutPlan: 'Disable the connector and revoke the integration user. No data is migrated during deployment.',
     testPlan: 'Round-trip one record in each direction, then confirm the audit log records both.',
     justification: 'Requested through the catalog and already on the approved connector list.',
-    riskAnswers: { production: 'yes', rollback: 'yes', customerData: 'yes', window: 'yes', rehearsed: 'yes', blast: 'team' },
+    riskAnswers: {
+      affectsProduction: true, hasBackout: true, customerFacing: false, testedInStaging: true,
+      previouslyExecuted: true, requiresDowntime: false, securityImpact: true, peopleAffected: 'some',
+    },
   },
 ];
 
@@ -561,10 +605,37 @@ function defaultWindow() {
  * Normalising a stored change
  * ==================================================================== */
 
+function firstArray(...candidates) {
+  for (const v of candidates) if (Array.isArray(v)) return v;
+  return [];
+}
+
+/**
+ * Links are stored on the seed as two id arrays with the relationship implied
+ * by which array they sit in. Give them their type explicitly, so the panel can
+ * say what the relationship IS — which is the only thing that makes the link
+ * readable six months later.
+ */
+function normalizeLinks(c) {
+  if (Array.isArray(c.links)) return c.links.filter(l => l && l.id);
+  return [
+    ...(c.linkedProblemIds || []).map(id => ({ type: 'caused_by', id })),
+    ...(c.linkedTicketIds || []).map(id => ({ type: 'resolves', id })),
+  ];
+}
+
+/** A seeded PIR records success as a boolean; the review panel speaks outcomes. */
+function outcomeFromPir(pir) {
+  if (!pir || !pir.completed) return null;
+  return pir.successful ? 'successful' : 'failed';
+}
+
 function normalize(raw) {
   const c = raw || {};
   const changeType = CHANGE_TYPES[c.changeType] ? c.changeType : 'normal';
   const status = [...LIFECYCLE_KEYS, 'cancelled'].includes(c.status) ? c.status : 'new';
+  const riskAnswers = c.riskAnswers && typeof c.riskAnswers === 'object' ? c.riskAnswers : {};
+  const pir = c.pir && typeof c.pir === 'object' ? c.pir : null;
   return {
     ...c,
     id: c.id,
@@ -573,18 +644,27 @@ function normalize(raw) {
     description: c.description || '',
     changeType,
     status,
-    impact: normScale(c.impact, 'moderate'),
+    impact: normScale(c.impact, impactFromBlast(riskAnswers.peopleAffected)),
     storedRisk: normScale(c.risk, null),
-    riskAnswers: c.riskAnswers && typeof c.riskAnswers === 'object' ? c.riskAnswers : {},
+    riskAnswers,
     implementationPlan: c.implementationPlan || '',
     backoutPlan: c.backoutPlan || '',
     testPlan: c.testPlan || '',
     justification: c.justification || '',
-    affectedProductIds: Array.isArray(c.affectedProductIds) ? c.affectedProductIds : [],
-    affectedAssetIds: Array.isArray(c.affectedAssetIds) ? c.affectedAssetIds : [],
-    links: Array.isArray(c.links) ? c.links.filter(l => l && l.id) : [],
-    outcome: normOutcome(c.outcome),
-    reviewNotes: c.reviewNotes || '',
+    // People: the seed names an owner and an implementer.
+    requestedById: c.requestedById || c.ownerId || null,
+    assigneeId: c.assigneeId !== undefined ? (c.assigneeId || null) : (c.implementerId || null),
+    // What it touches. Catalog items are the services conflict detection knows
+    // by id; `affectedServices` are the free-text component names the seed also
+    // carries, and they are compared too so a shared component still collides.
+    affectedProductIds: firstArray(c.affectedProductIds, c.affectedCatalogItemIds),
+    affectedAssetIds: firstArray(c.affectedAssetIds),
+    affectedServices: firstArray(c.affectedServices),
+    affectedLocationIds: firstArray(c.affectedLocationIds),
+    links: normalizeLinks(c),
+    outcome: normOutcome(c.outcome) || outcomeFromPir(pir),
+    reviewNotes: c.reviewNotes || pir?.notes || '',
+    followUps: firstArray(c.followUps, pir?.followUps),
   };
 }
 
@@ -623,8 +703,9 @@ function conflictsFor(change, all) {
     if (!rangesOverlap(change.plannedStart, change.plannedEnd, other.plannedStart, other.plannedEnd)) continue;
     const products = change.affectedProductIds.filter(id => other.affectedProductIds.includes(id));
     const assets = change.affectedAssetIds.filter(id => other.affectedAssetIds.includes(id));
-    if (!products.length && !assets.length) continue;
-    out.push({ other, products, assets });
+    const services = change.affectedServices.filter(s => other.affectedServices.includes(s));
+    if (!products.length && !assets.length && !services.length) continue;
+    out.push({ other, products, assets, services });
   }
   return out;
 }
@@ -692,21 +773,34 @@ function blockersFor(change, { approval, freezes }) {
  * Lookups against collections other modules own
  * ==================================================================== */
 
-function flattenCatalog(nodes, out = []) {
+function flattenCatalog(nodes, out = [], trail = []) {
   for (const n of nodes || []) {
-    out.push(n);
-    if (n.children) flattenCatalog(n.children, out);
+    out.push({ ...n, path: trail.join(' › ') });
+    if (n.children) flattenCatalog(n.children, out, [...trail, n.name]);
   }
   return out;
 }
 
-function useCatalogProducts() {
+/**
+ * The catalog is what a change points at when it names a service. A change
+ * records the LEAF — the item — because that is the granularity the rest of the
+ * app routes and deflects on, so `items` is what the picker offers and `all` is
+ * what a stored id is resolved against.
+ */
+function useCatalogServices() {
   const catalog = useStore(s => s.catalog || []);
-  return useMemo(() => flattenCatalog(catalog).filter(n => n.type === 'product'), [catalog]);
+  return useMemo(() => {
+    const all = flattenCatalog(catalog);
+    return { all, items: all.filter(n => n.type === 'item') };
+  }, [catalog]);
 }
 
-function nameOfProduct(id, products) {
-  return products.find(p => p.id === id)?.name || id;
+function nameOfService(id, services) {
+  return services.all.find(n => n.id === id)?.name || id;
+}
+
+function nameOfLocation(id, locations) {
+  return locations.find(l => l.id === id)?.name || id;
 }
 
 function nameOfAsset(id, assets) {
@@ -718,15 +812,21 @@ function personName(id, directory) {
   return directory.find(p => p.id === id)?.name || (id ? String(id) : 'Unassigned');
 }
 
-/** Resolve a typed link's target across the collections it might live in. */
+/**
+ * Resolve a typed link's target across the collections it might live in.
+ *
+ * `to` is [section, sub] and BOTH segments are load-bearing: the router builds
+ * `#/section/sub/id` by dropping falsy segments, so `['workspace']` would put
+ * the ticket id in the `sub` slot and the record would never open.
+ */
 function resolveLink(link, { tickets, problems, changes }) {
   const t = tickets.find(x => x.id === link.id);
-  if (t) return { kind: 'ticket', hue: ENTITIES.ticket.hue, icon: Inbox, label: t.subject || t.title || t.id, ref: t.key || t.id, section: 'workspace' };
+  if (t) return { kind: 'ticket', hue: ENTITIES.ticket.hue, icon: Inbox, label: t.title || t.subject || t.id, ref: t.key || t.id, to: ['workspace', 'ticket'] };
   const p = problems.find(x => x.id === link.id);
-  if (p) return { kind: 'problem', hue: ENTITIES.problem.hue, icon: OctagonAlert, label: p.title || p.id, ref: p.key || p.id, section: 'problems' };
+  if (p) return { kind: 'problem', hue: ENTITIES.problem.hue, icon: OctagonAlert, label: p.title || p.id, ref: p.key || p.id, to: ['problems', null] };
   const c = changes.find(x => x.id === link.id);
-  if (c) return { kind: 'change', hue: HUE, icon: GitBranch, label: c.title || c.id, ref: c.key || c.id, section: 'changes' };
-  return { kind: 'unknown', hue: 'gray', icon: Link2, label: link.id, ref: link.id, section: null };
+  if (c) return { kind: 'change', hue: HUE, icon: GitBranch, label: c.title || c.id, ref: c.key || c.id, to: ['changes', 'list'] };
+  return { kind: 'unknown', hue: 'gray', icon: Link2, label: link.id, ref: link.id, to: null };
 }
 
 function nextChangeKey(changes) {
@@ -1534,7 +1634,6 @@ function TypeBanner({ change: c }) {
  * ------------------------------------------------------------------ */
 
 function DescriptionPanel({ change: c }) {
-  const { t } = useTheme();
   return (
     <Panel icon={GitBranch} accent={HUE} title="What is changing"
       subtitle={`${c.key} · raised ${fmtDate(c.createdAt) === '—' ? 'date not recorded' : fmtDate(c.createdAt)}`}
@@ -1565,10 +1664,8 @@ function RiskPanel({ change: c }) {
   const cell = matrixCell(risk.key, c.impact);
 
   function answer(qid, value) {
-    patchIn('changes', c.id, (prev) => ({
-      riskAnswers: { ...(prev.riskAnswers || {}), [qid]: value },
-      risk: bandFor(assessRisk({ ...(prev.riskAnswers || {}), [qid]: value }).points).key,
-    }));
+    const answers = { ...c.riskAnswers, [qid]: value };
+    patchIn('changes', c.id, { riskAnswers: answers, risk: bandFor(assessRisk(answers).points).key });
   }
 
   return (
@@ -1582,7 +1679,14 @@ function RiskPanel({ change: c }) {
         {risk.source === 'stored' && (
           <Banner accent="amber" icon={CircleAlert} title="This risk value was carried in, not derived">
             The questionnaire has not been answered on this change, so RelayHQ is showing the stored value
-            <strong> {rm.label}</strong>. Answer the six questions and the value becomes derived and auditable.
+            <strong> {rm.label}</strong>. Answer the {scored.total} questions and the value becomes derived and auditable.
+          </Banner>
+        )}
+        {risk.source === 'derived' && c.storedRisk && c.storedRisk !== risk.key && (
+          <Banner accent="amber" icon={CircleAlert} title="The derived value disagrees with the one on the record">
+            The record was raised as <strong>{riskMeta(c.storedRisk).label}</strong>; the answers below score
+            <strong> {rm.label}</strong>. The derivation wins, because it can be checked. If the stored value was
+            right, the answer that is wrong is on this page.
           </Banner>
         )}
         {risk.source === 'partial' && (
@@ -1790,6 +1894,7 @@ function PlanningPanel({ change: c }) {
 function CabPanel({ change: c, approval, policy, onSubmit }) {
   const { t, a } = useTheme();
   const directory = useStore(s => s.directory || []);
+  const queues = useStore(s => s.queues || []);
   const currentUser = useStore(s => s.currentUser);
   const [vote, setVote] = useState(null);     // { approverId }
 
@@ -1806,9 +1911,11 @@ function CabPanel({ change: c, approval, policy, onSubmit }) {
               </span>
             )}
           </Banner>
+          {/* A spec may name a queue or a role rather than a person, so let the
+              approvals engine describe it — `spec.userId` is often undefined. */}
           <div className="flex flex-wrap gap-1.5">
             {(policy?.stages?.[0]?.approvers || []).map((spec, i) => (
-              <Chip key={i} accent="amber" icon={User}>{personName(spec.userId, directory)}</Chip>
+              <Chip key={i} accent="amber" icon={User}>{describeApprover(spec, { directory, queues })}</Chip>
             ))}
           </div>
           <Button variant="soft" accent="amber" icon={Stamp} onClick={onSubmit}>Submit to the CAB</Button>
@@ -1993,6 +2100,7 @@ function VoteModal({ open, approval, approverId, onClose }) {
 function EmergencyPanel({ change: c, approval, policy, onSubmit }) {
   const { t } = useTheme();
   const directory = useStore(s => s.directory || []);
+  const queues = useStore(s => s.queues || []);
   const [vote, setVote] = useState(null);
 
   const stages = safeStages(approval);
@@ -2016,7 +2124,7 @@ function EmergencyPanel({ change: c, approval, policy, onSubmit }) {
           <>
             <div className="flex flex-wrap gap-1.5">
               {(policy?.stages?.[0]?.approvers || []).map((spec, i) => (
-                <Chip key={i} accent="red" icon={User}>{personName(spec.userId, directory)}</Chip>
+                <Chip key={i} accent="red" icon={User}>{describeApprover(spec, { directory, queues })}</Chip>
               ))}
             </div>
             <Button variant="solid" accent="red" icon={Siren} onClick={onSubmit}>Page the on-call authority</Button>
@@ -2145,6 +2253,20 @@ function ReviewPanel({ change: c }) {
           />
         </Field>
 
+        {!!c.followUps.length && (
+          <div>
+            <GroupLabel>Follow-ups this review produced</GroupLabel>
+            <ul className={cx('mt-1.5 space-y-1 text-xs', t.textSecondary)}>
+              {c.followUps.map((f, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <CornerDownRight size={ICON.sm} className={cx(t.textMuted, 'flex-shrink-0 mt-0.5')} />
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className={cx('grid grid-cols-2 gap-2 text-xs', t.textSecondary)}>
           <div><GroupLabel>Actual start</GroupLabel><p className={cx('mt-0.5', t.text)}>{fmtDateTime(c.actualStart)}</p></div>
           <div><GroupLabel>Actual end</GroupLabel><p className={cx('mt-0.5', t.text)}>{fmtDateTime(c.actualEnd)}</p></div>
@@ -2203,7 +2325,7 @@ function SchedulePanel({ change: c, conflicts, freezes, view }) {
         {c.plannedStart && inWindow === false && c.changeType !== 'emergency' && (
           <Banner accent="amber" icon={Clock} title="Outside the approved maintenance windows">
             Northwind's windows are {MAINTENANCE_WINDOWS.map(w => w.label).join(' and ')}. Working outside one is
-            allowed, but it scores against the change in the risk questionnaire and the board will ask why.
+            allowed, but the board will ask why, and the answer has to be better than “it was convenient”.
           </Banner>
         )}
 
@@ -2224,8 +2346,9 @@ function SchedulePanel({ change: c, conflicts, freezes, view }) {
         {!!conflicts.length && (
           <Banner accent="red" icon={TriangleAlert}
             title={`Conflicts with ${conflicts.length} other change${conflicts.length === 1 ? '' : 's'}`}>
-            {conflicts.map(({ other, products, assets }) => (
-              <ConflictLine key={other.id} other={other} products={products} assets={assets} view={view} />
+            {conflicts.map(({ other, products, assets, services }) => (
+              <ConflictLine key={other.id} other={other} products={products} assets={assets}
+                services={services} view={view} />
             ))}
           </Banner>
         )}
@@ -2238,13 +2361,14 @@ function SchedulePanel({ change: c, conflicts, freezes, view }) {
   );
 }
 
-function ConflictLine({ other, products, assets, view }) {
+function ConflictLine({ other, products, assets, services, view }) {
   const { t } = useTheme();
-  const catalogProducts = useCatalogProducts();
+  const catalog = useCatalogServices();
   const assetRecords = useStore(s => s.assets || []);
   const shared = [
-    ...products.map(id => nameOfProduct(id, catalogProducts)),
+    ...products.map(id => nameOfService(id, catalog)),
     ...assets.map(id => nameOfAsset(id, assetRecords)),
+    ...(services || []),
   ];
   return (
     <span className="block mt-1.5">
@@ -2266,30 +2390,40 @@ function ConflictLine({ other, products, assets, view }) {
 
 function AffectedPanel({ change: c }) {
   const { t } = useTheme();
-  const products = useCatalogProducts();
+  const catalog = useCatalogServices();
   const assets = useStore(s => s.assets || []);
+  const locations = useStore(s => s.locations || []);
   const [editing, setEditing] = useState(false);
+  const touched = c.affectedProductIds.length + c.affectedServices.length;
 
   return (
     <Panel
       icon={Boxes} accent="amber" title="Affected"
-      subtitle={`${c.affectedProductIds.length} service${c.affectedProductIds.length === 1 ? '' : 's'} · ${c.affectedAssetIds.length} asset${c.affectedAssetIds.length === 1 ? '' : 's'}`}
+      subtitle={`${touched} service${touched === 1 ? '' : 's'} · ${c.affectedAssetIds.length} asset${c.affectedAssetIds.length === 1 ? '' : 's'}`}
       action={<IconButton icon={Pencil} label="Edit affected items" accent="amber" onClick={() => setEditing(true)} />}
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
         <div>
-          <GroupLabel>Services</GroupLabel>
+          <GroupLabel>Catalog services</GroupLabel>
           <div className="mt-1.5">
             <ChipGroup
               items={c.affectedProductIds}
-              render={(id) => nameOfProduct(id, products)}
+              render={(id) => nameOfService(id, catalog)}
               max={4}
-              accent={ENTITIES.product.hue}
+              accent={ENTITIES.item.hue}
               icon={Package}
-              empty={<p className={cx('text-xs', t.textMuted)}>No service recorded — conflict detection cannot see this change.</p>}
+              empty={<p className={cx('text-xs', t.textMuted)}>No catalog service recorded — conflict detection cannot see this change.</p>}
             />
           </div>
         </div>
+        {!!c.affectedServices.length && (
+          <div>
+            <GroupLabel>Components</GroupLabel>
+            <div className="mt-1.5">
+              <ChipGroup items={c.affectedServices} max={4} accent="slate" icon={Server} />
+            </div>
+          </div>
+        )}
         <div>
           <GroupLabel>Assets</GroupLabel>
           <div className="mt-1.5">
@@ -2303,9 +2437,23 @@ function AffectedPanel({ change: c }) {
             />
           </div>
         </div>
+        {!!c.affectedLocationIds.length && (
+          <div>
+            <GroupLabel>Locations</GroupLabel>
+            <div className="mt-1.5">
+              <ChipGroup
+                items={c.affectedLocationIds}
+                render={(id) => nameOfLocation(id, locations)}
+                max={4}
+                accent={ENTITIES.location.hue}
+                icon={Boxes}
+              />
+            </div>
+          </div>
+        )}
         <Banner accent="blue" icon={Info}>
           Conflict detection compares these lists. Two changes overlapping in time only conflict when they share
-          a service or an asset — which is why leaving them empty makes a change look safer than it is.
+          a service, a component or an asset — which is why leaving them empty makes a change look safer than it is.
         </Banner>
       </div>
 
@@ -2316,14 +2464,24 @@ function AffectedPanel({ change: c }) {
 
 function AffectedModal({ open, change: c, onClose }) {
   const { t } = useTheme();
-  const products = useCatalogProducts();
+  const catalog = useCatalogServices();
   const assets = useStore(s => s.assets || []);
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const item of catalog.items) {
+      const key = item.path || 'Catalog';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(item);
+    }
+    return [...map.entries()];
+  }, [catalog]);
 
+  // Toggle against the RESOLVED list — a seeded change stores its services as
+  // `affectedCatalogItemIds`, so reading `prev.affectedProductIds` would start
+  // from empty and wipe what the record already touches.
   function toggle(field, id) {
-    patchIn('changes', c.id, (prev) => {
-      const list = Array.isArray(prev[field]) ? prev[field] : [];
-      return { [field]: list.includes(id) ? list.filter(x => x !== id) : [...list, id] };
-    });
+    const current = c[field] || [];
+    patchIn('changes', c.id, { [field]: current.includes(id) ? current.filter(x => x !== id) : [...current, id] });
   }
 
   return (
@@ -2335,24 +2493,44 @@ function AffectedModal({ open, change: c, onClose }) {
     >
       <div className="space-y-4">
         <div>
-          <GroupLabel>Services (catalog products)</GroupLabel>
-          {products.length ? (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {products.map(p => {
-                const on = c.affectedProductIds.includes(p.id);
-                return (
-                  <button key={p.id} onClick={() => toggle('affectedProductIds', p.id)}>
-                    <Chip accent={on ? ENTITIES.product.hue : 'gray'} icon={on ? Check : Package}>{p.name}</Chip>
-                  </button>
-                );
-              })}
+          <GroupLabel>Catalog services</GroupLabel>
+          {catalog.items.length ? (
+            <div className="mt-2 space-y-2 max-h-72 overflow-auto">
+              {groups.map(([path, items]) => (
+                <div key={path}>
+                  <p className={cx('text-[10px] uppercase tracking-wider mb-1', t.textMuted)}>{path}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {items.map(p => {
+                      const on = c.affectedProductIds.includes(p.id);
+                      return (
+                        <button key={p.id} onClick={() => toggle('affectedProductIds', p.id)}>
+                          <Chip accent={on ? ENTITIES.item.hue : 'gray'} icon={on ? Check : Package}>{p.name}</Chip>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <p className={cx('text-xs mt-2', t.textMuted)}>
-              No catalog products are configured yet. Services can still be recorded on the change by the catalog module's ids.
+              No catalog services are configured yet. Services can still be recorded on the change by the catalog module's ids.
             </p>
           )}
         </div>
+
+        {!!c.affectedServices.length && (
+          <div>
+            <GroupLabel>Components named on this change</GroupLabel>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {c.affectedServices.map(s => <Chip key={s} accent="slate" icon={Server}>{s}</Chip>)}
+            </div>
+            <p className={cx('text-[11px] mt-1.5', t.textSecondary)}>
+              Free-text components carried on the record. They are compared for conflicts too, but only an exact
+              name matches — the catalog ids above are the reliable half.
+            </p>
+          </div>
+        )}
 
         <Divider />
 
@@ -2413,16 +2591,17 @@ function LinksPanel({ change: c }) {
               <Chip accent={lm.hue} icon={lm.icon}>{lm.label}</Chip>
               <target.icon size={ICON.base} className={cx(acc.fg, 'flex-shrink-0')} />
               <button
-                className={cx('flex-1 min-w-0 text-left', target.section ? 'hover:underline' : 'cursor-default')}
-                onClick={() => target.section && navigate(target.section, null, link.id)}
+                className={cx('flex-1 min-w-0 text-left', target.to ? 'hover:underline' : 'cursor-default')}
+                onClick={() => target.to && navigate(target.to[0], target.to[1], link.id)}
               >
                 <span className={cx('text-xs block truncate', t.text)}>{target.label}</span>
                 <span className={cx('text-[10px] font-mono', t.textMuted)}>{target.ref}</span>
               </button>
+              {/* Write the resolved list, not `prev.links`: a seeded change
+                  carries its links as two id arrays, and patching a field it
+                  does not have yet would silently drop the rest. */}
               <IconButton icon={X} label="Remove link" accent="red"
-                onClick={() => patchIn('changes', c.id, (prev) => ({
-                  links: (prev.links || []).filter((l, idx) => idx !== i),
-                }))} />
+                onClick={() => patchIn('changes', c.id, { links: c.links.filter((l, idx) => idx !== i) })} />
             </div>
           );
         })}
@@ -2456,7 +2635,7 @@ function AddLinkModal({ open, change: c, onClose }) {
   }, [problems, tickets, q, c.links]);
 
   function add(id) {
-    patchIn('changes', c.id, (prev) => ({ links: [...(prev.links || []), { type, id }] }));
+    patchIn('changes', c.id, { links: [...c.links, { type, id }] });
     onClose();
   }
 
@@ -2507,7 +2686,6 @@ function AddLinkModal({ open, change: c, onClose }) {
 function PeoplePanel({ change: c }) {
   const { t } = useTheme();
   const directory = useStore(s => s.directory || []);
-  const agents = useStore(s => s.agents || []);
 
   return (
     <Panel icon={User} accent="blue" title="People" subtitle="Who asked, and who runs it">
@@ -2519,13 +2697,17 @@ function PeoplePanel({ change: c }) {
             <p className={cx('text-sm truncate', t.text)}>{personName(c.requestedById, directory)}</p>
           </div>
         </div>
+        {/* Implementers come from the DIRECTORY, not the agent roster: the
+            people who run changes are engineers, and half of them never take a
+            ticket. An options list that cannot represent the person already on
+            the record would quietly show "Unassigned" over a real assignment. */}
         <Field label="Implementer">
           <Select
             accent={HUE}
             value={c.assigneeId || ''}
             placeholder="Unassigned"
             onChange={(e) => patchIn('changes', c.id, { assigneeId: e.target.value || null })}
-            options={agents.map(a => ({ value: a.id, label: `${a.name} · ${a.title}` }))}
+            options={directory.map(p => ({ value: p.id, label: `${p.name} · ${p.title}` }))}
           />
         </Field>
         {!c.assigneeId && (
@@ -2586,8 +2768,8 @@ function CancelModal({ open, change: c, onClose }) {
 function NewChangeModal({ open, onClose, existing }) {
   const { t } = useTheme();
   const currentUser = useStore(s => s.currentUser);
-  const agents = useStore(s => s.agents || []);
-  const products = useCatalogProducts();
+  const directory = useStore(s => s.directory || []);
+  const catalog = useCatalogServices();
 
   const [type, setType] = useState('normal');
   const [title, setTitle] = useState('');
@@ -2775,25 +2957,25 @@ function NewChangeModal({ open, onClose, existing }) {
         <Field label="Implementer">
           <Select accent={HUE} value={assigneeId} placeholder="Assign later"
             onChange={(e) => setAssigneeId(e.target.value)}
-            options={agents.map(a => ({ value: a.id, label: `${a.name} · ${a.title}` }))} />
+            options={directory.map(p => ({ value: p.id, label: `${p.name} · ${p.title}` }))} />
         </Field>
 
         <Field label="Affected services" hint="Conflict detection compares this list against every other booked change.">
-          {products.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {products.map(p => {
+          {catalog.items.length ? (
+            <div className="flex flex-wrap gap-1.5 max-h-40 overflow-auto">
+              {catalog.items.map(p => {
                 const on = productIds.includes(p.id);
                 return (
                   <button key={p.id}
-                    onClick={() => setProductIds(list => on ? list.filter(x => x !== p.id) : [...list, p.id])}>
-                    <Chip accent={on ? ENTITIES.product.hue : 'gray'} icon={on ? Check : Package}>{p.name}</Chip>
+                    onClick={() => setProductIds(ids => on ? ids.filter(x => x !== p.id) : [...ids, p.id])}>
+                    <Chip accent={on ? ENTITIES.item.hue : 'gray'} icon={on ? Check : Package} title={p.path}>{p.name}</Chip>
                   </button>
                 );
               })}
             </div>
           ) : (
             <p className={cx('text-xs', t.textMuted)}>
-              No catalog products are configured yet — the Products &amp; Services module owns that list.
+              No catalog services are configured yet — the Products &amp; Services module owns that list.
               Conflict detection will fall back to shared assets only.
             </p>
           )}

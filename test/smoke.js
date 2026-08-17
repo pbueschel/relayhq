@@ -211,6 +211,29 @@ walkCatalog(seed.catalog, (n, trail) => {
 ok('catalog is well formed and its references resolve', catalogProblems.length === 0,
   catalogProblems.slice(0, 5).join(' | '));
 
+/* `catalogItemIds` must resolve to ITEMS, not products or subcategories.
+ *
+ * A product id here is not dangling — it exists — so a plain existence check
+ * passes while the link is silently invisible everywhere that matches on items.
+ * That is exactly the bug this catches: 34 asset links pointed at products and
+ * nothing rendered them. The field name is the contract; enforce it. */
+const catalogItemIds = new Set();
+const catalogNodeIds = new Set();
+walkCatalog(seed.catalog, (n) => {
+  catalogNodeIds.add(n.id);
+  if (n.type === 'item') catalogItemIds.add(n.id);
+});
+
+const wrongLevel = [];
+for (const a of seed.assets || []) {
+  for (const id of a.catalogItemIds || []) {
+    if (catalogItemIds.has(id)) continue;
+    wrongLevel.push(`${a.id} → ${id}${catalogNodeIds.has(id) ? ' (a product/subcategory, not an item)' : ' (dangling)'}`);
+  }
+}
+ok('every asset catalogItemIds entry resolves to a catalog ITEM',
+  wrongLevel.length === 0, wrongLevel.slice(0, 5).join(' | '));
+
 const refProblems = [];
 for (const sf of seed.subforms || []) {
   if (sf.routing?.queueId && !queueIds.has(sf.routing.queueId)) refProblems.push(`subform ${sf.id}: dangling queue ${sf.routing.queueId}`);

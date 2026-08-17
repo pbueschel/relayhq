@@ -1,13 +1,13 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   BookOpen, LayoutGrid, Plus, Trash2, Play, Pause, ChevronUp, ChevronDown,
-  Tag, Package, GraduationCap, Globe, Building2, Users, Eye, ThumbsUp, ThumbsDown,
+  Tag, Package, Folder, GraduationCap, Globe, Building2, Users, Eye, ThumbsUp, ThumbsDown,
   Clock, ListChecks, Bold, Italic, Underline, List, Heading3, Image as ImageIcon,
   Video, Type, AlertCircle, Check, ArrowLeft, Layers, Circle, Lock,
   Share2, X, Info,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, ENTITIES,
+  useTheme, cx, ICON, DENSITY, ENTITIES, entityHue,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag, Avatar,
   EmptyState, Card, Panel, GroupLabel, ListRow, Stat, Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, TileGroup, SearchInput,
@@ -65,6 +65,17 @@ const AUDIENCES = {
   both:     { label: 'Both',      hue: 'teal',  icon: Users,     hint: 'Staff and customers see the same atom' },
 };
 const aud = (a) => AUDIENCES[a?.audience] || AUDIENCES.internal;
+
+/** Audience metadata for a bare audience key (catalog nodes carry one too). */
+const audOf = (key) => AUDIENCES[key] || AUDIENCES.internal;
+
+/**
+ * Catalog node vocabulary, matching Catalog.jsx. A node's colour comes from the
+ * ENTITIES registry so a catalog item is the same emerald here as it is there —
+ * the reuse panel must not invent a second colour for a record it links to.
+ */
+const NODE_ICON = { product: Folder, subcategory: Layers, item: Circle };
+const nodeIcon = (type) => NODE_ICON[type] || Package;
 
 const STATUSES = [
   { value: 'draft',     label: 'Draft',     icon: Circle,   accent: 'gray' },
@@ -526,7 +537,7 @@ function AtomRow({ atom, reuse, owner, tab, onPreview }) {
  * ------------------------------------------------------------------ */
 
 function ReuseMap({ atoms, reuseIndex }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
   return (
     <Card className="overflow-x-auto">
       <table className="w-full text-left text-xs min-w-[52rem]">
@@ -547,7 +558,7 @@ function ReuseMap({ atoms, reuseIndex }) {
                 onClick={() => navigate('knowledge', 'all', a.id)}>
                 <td className="px-3 py-2">
                   <span className="flex items-center gap-2 min-w-0">
-                    <f.icon size={ICON.sm} className={cx('flex-shrink-0')} />
+                    <f.icon size={ICON.sm} className={cx('flex-shrink-0', a(f.hue).fg)} />
                     <span className={cx('font-medium truncate max-w-[16rem]', t.text)}>{a.title}</span>
                   </span>
                 </td>
@@ -722,14 +733,22 @@ function ReusePanel({ atom, reuse, ext, linked }) {
             icon={Package} accent="amber" title="Deflection"
             hint="Catalog items that offer it before the request form"
             empty="No catalog item links to this atom, so a customer browsing the catalog will never be offered it."
-            rows={reuse.catalog.map(c => ({
-              id: c.id,
-              title: c.name,
-              subtitle: c.path,
-              meta: <Chip accent={c.audience === 'internal' ? 'slate' : c.audience === 'both' ? 'teal' : 'green'}>
-                {AUDIENCES[c.audience]?.label || c.audience}
-              </Chip>,
-              go: () => navigate('catalog', null, c.id),
+            rows={reuse.catalog.map(node => ({
+              id: node.id,
+              title: node.name,
+              subtitle: node.path,
+              // The row wears the catalog node's own entity colour and icon.
+              accent: entityHue(node.type),
+              icon: nodeIcon(node.type),
+              meta: (
+                <Chip accent={audOf(node.audience).hue} icon={audOf(node.audience).icon}>
+                  {audOf(node.audience).label}
+                </Chip>
+              ),
+              // Catalog reads the node id from the THIRD segment (#/catalog/node/<id>).
+              // Passing null for `sub` collapses the href and lands the id in `sub`,
+              // where Catalog never looks — the link silently opened the first item.
+              go: () => navigate('catalog', 'node', node.id),
             }))}
           />
 
@@ -793,10 +812,10 @@ function ReuseColumn({ icon: Icon, accent, title, hint, rows, empty }) {
       {rows.length === 0 ? (
         <p className={cx('text-xs leading-relaxed', t.textMuted)}>{empty}</p>
       ) : (
-        <div className="space-y-1.5">
+        <div className={DENSITY.rowGap}>
           {rows.map(r => (
-            <ListRow key={r.id} accent={accent} title={r.title} subtitle={r.subtitle}
-              meta={r.meta} onClick={r.go} />
+            <ListRow key={r.id} accent={r.accent || accent} icon={r.icon} title={r.title}
+              subtitle={r.subtitle} meta={r.meta} onClick={r.go} />
           ))}
         </div>
       )}
@@ -843,7 +862,7 @@ function PropertiesPanel({ atom, directory }) {
           />
         </Field>
         <Field label="Owner" hint="Who is accountable for keeping this accurate.">
-          <Select value={atom.ownerId || ''} accent={f.hue}
+          <Select value={atom.ownerId || ''} accent={f.hue} placeholder="Unassigned"
             onChange={e => touch(atom.id, { ownerId: e.target.value })}
             options={directory.map(p => ({ value: p.id, label: `${p.name} — ${p.title}` }))} />
         </Field>
@@ -1207,16 +1226,22 @@ function StoriesPlayer({ slides = [], startAt = 0, large = false }) {
   const [index, setIndex] = useState(Math.min(startAt, Math.max(0, slides.length - 1)));
   const [playing, setPlaying] = useState(true);
 
-  const slide = slides[index];
+  // The editor deletes slides underneath a running player. If the player had
+  // already advanced past the slide that is now last, `slides[index]` is
+  // undefined and every read below it throws. Clamp on read rather than trying
+  // to keep the state in sync with a list the player does not own.
+  const last = Math.max(0, slides.length - 1);
+  const at = Math.min(index, last);
+  const slide = slides[at];
 
   useEffect(() => {
     if (!playing || !slide || !slide.seconds) return undefined;
     const id = setTimeout(() => {
-      if (index + 1 < slides.length) setIndex(index + 1);
+      if (at + 1 < slides.length) setIndex(at + 1);
       else setPlaying(false);            // stop at the end rather than looping
     }, slide.seconds * 1000);
     return () => clearTimeout(id);
-  }, [index, playing, slide, slides.length]);
+  }, [at, playing, slide, slides.length]);
 
   if (!slides.length) {
     return (
@@ -1227,8 +1252,8 @@ function StoriesPlayer({ slides = [], startAt = 0, large = false }) {
     );
   }
 
-  const back = () => { setPlaying(false); setIndex(i => Math.max(0, i - 1)); };
-  const fwd = () => { setPlaying(false); setIndex(i => Math.min(slides.length - 1, i + 1)); };
+  const back = () => { setPlaying(false); setIndex(Math.max(0, at - 1)); };
+  const fwd = () => { setPlaying(false); setIndex(Math.min(last, at + 1)); };
 
   return (
     <div className={cx('relative rounded-2xl overflow-hidden border select-none', t.borderLight, c.softStrong)}
@@ -1254,10 +1279,10 @@ function StoriesPlayer({ slides = [], startAt = 0, large = false }) {
           <span key={s.id} className="flex-1 h-0.5 rounded-full bg-white/30 overflow-hidden">
             <span
               className={cx('block h-full bg-white',
-                i < index ? 'w-full'
-                  : i === index && playing && s.seconds ? 'rhq-story-fill'
-                  : i === index ? 'w-full' : 'w-0')}
-              style={i === index && playing && s.seconds ? { animationDuration: `${s.seconds}s` } : undefined}
+                i < at ? 'w-full'
+                  : i === at && playing && s.seconds ? 'rhq-story-fill'
+                  : i === at ? 'w-full' : 'w-0')}
+              style={i === at && playing && s.seconds ? { animationDuration: `${s.seconds}s` } : undefined}
             />
           </span>
         ))}
@@ -1292,7 +1317,7 @@ function StoriesPlayer({ slides = [], startAt = 0, large = false }) {
           {playing ? <Pause size={ICON.sm} /> : <Play size={ICON.sm} />}
         </button>
         <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-white text-[10px] tabular-nums">
-          {index + 1}/{slides.length}
+          {at + 1}/{slides.length}
         </span>
       </div>
     </div>
@@ -1384,10 +1409,15 @@ function LessonSection({ atom, atoms }) {
               onChange={e => touch(atom.id, { minutes: Number(e.target.value) || 0 })} />
           </Field>
           <Field label="Knowledge check">
-            <div className={cx('flex items-center gap-2 h-[38px]')}>
-              <Chip accent={questions.length ? 'amber' : 'gray'} icon={ListChecks}>
-                {questions.length ? `${questions.length} question${questions.length === 1 ? '' : 's'}` : 'None yet'}
-              </Chip>
+            {/* Values, not a count: show what is actually asked, with the DS
+                overflow badge. "3 questions" tells the author nothing. */}
+            <div className="flex items-center flex-wrap gap-1.5 min-h-[38px]">
+              <ChipGroup
+                items={questions}
+                render={q => q.prompt || 'Untitled question'}
+                accent="amber" icon={ListChecks} max={2}
+                empty={<Chip accent="gray" icon={ListChecks}>None yet</Chip>}
+              />
             </div>
           </Field>
         </div>

@@ -10,11 +10,12 @@ import {
   useTheme, cx, ICON, DENSITY, statusMeta, priorityMeta,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, Avatar,
   EmptyState, Card, Section, GroupLabel, ListRow, Stat, Banner, Divider,
-  Field, Input, Textarea, Select, Checkbox, Toggle, SearchInput,
+  Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
   Modal, ConfirmDelete, Menu, MenuItem, MenuDivider, MenuLabel,
   SubTabs, PageHeader, Toolbar, PageBody, Breadcrumbs,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, NOW } from '@/store/store.js';
+import { Q, USR } from '@/store/seed/ids.js';
 import { navigate } from '@/lib/router.js';
 import {
   FIELDS, FIELD_BY_ID, OPERATORS, ALL_OPERATORS, operatorsFor, fieldLabel,
@@ -81,6 +82,18 @@ function pick(obj, keys) {
   return out;
 }
 
+/**
+ * v1's chip rule applied to node subtitles: show the VALUES, with an overflow
+ * marker, never a bare count. "Urgent, High +1" is readable at a glance;
+ * "3 cases" makes the reader open the node to learn anything.
+ */
+function listValues(values, empty, max = 3) {
+  const list = (values || []).map(v => String(v ?? '').trim()).filter(Boolean);
+  if (!list.length) return empty;
+  const shown = list.slice(0, max).join(', ');
+  return list.length > max ? `${shown} +${list.length - max}` : shown;
+}
+
 const NODE_TYPES = {
   /* ---------------- triggers ---------------- */
   'trigger.ticketCreated': {
@@ -119,7 +132,7 @@ const NODE_TYPES = {
       { key: 'policyId', label: 'Approval policy', type: 'ref', from: 'policies' },
       { key: 'decision', label: 'Decision', type: 'select', options: ['approved', 'rejected', 'expired', 'any'] },
     ],
-    output: (n, ctx) => ({ approval: { policyId: n.config?.policyId || 'pol-unset', decision: n.config?.decision || 'approved' }, ...pick(ctx, ['ticket', 'requester']) }),
+    output: (n, ctx) => ({ approval: { policyId: n.config?.policyId || null, decision: n.config?.decision || 'approved' }, ...pick(ctx, ['ticket', 'requester']) }),
   },
   'trigger.assetRenewalDue': {
     label: 'Asset Renewal Due', category: 'trigger', icon: CalendarClock, hue: 'cyan',
@@ -141,7 +154,7 @@ const NODE_TYPES = {
       { key: 'courseId', label: 'Course', type: 'ref', from: 'courses' },
       { key: 'result', label: 'Result', type: 'select', options: ['passed', 'failed', 'any'] },
     ],
-    output: (n, ctx) => ({ enrollment: { courseId: n.config?.courseId || 'crs-unset', result: n.config?.result || 'passed' }, ...pick(ctx, ['requester']) }),
+    output: (n, ctx) => ({ enrollment: { courseId: n.config?.courseId || null, result: n.config?.result || 'passed' }, ...pick(ctx, ['requester']) }),
   },
   'trigger.schedule': {
     label: 'Schedule', category: 'trigger', icon: Clock, hue: 'sky',
@@ -191,7 +204,8 @@ const NODE_TYPES = {
       const cases = (n.config?.cases || []).map(c => ({ id: c.id, label: c.label || c.value || 'case' }));
       return n.config?.fallback === false ? cases : [...cases, { id: 'fallback', label: 'fallback', hue: 'slate' }];
     },
-    describe: (n) => `On ${fieldLabel(n.config?.field || 'ticket.priority')} · ${(n.config?.cases || []).length} cases`,
+    // Values, never a count: "3 cases" tells a reader nothing they can act on.
+    describe: (n) => `On ${fieldLabel(n.config?.field || 'ticket.priority')} · ${listValues((n.config?.cases || []).map(c => c.label || c.value), 'no cases yet')}`,
     fields: [
       { key: 'field', label: 'Route on field', type: 'field' },
       { key: 'cases', label: 'Cases', type: 'cases' },
@@ -247,7 +261,7 @@ const NODE_TYPES = {
       { key: 'assigneeId', label: 'Assign to', type: 'ref', from: 'people' },
       { key: 'note', label: 'Internal note', type: 'textarea' },
     ],
-    output: (n, ctx) => ({ ticket: { key: ctx?.ticket?.key || 'TIC-0000', queueId: n.config?.queueId || 'queue-general', assigneeId: n.config?.assigneeId || null } }),
+    output: (n, ctx) => ({ ticket: { key: ctx?.ticket?.key || 'TIC-0000', queueId: n.config?.queueId || Q.GENERAL, assigneeId: n.config?.assigneeId || null } }),
   },
   'action.setPriority': {
     label: 'Set Priority', category: 'action', icon: Flag, hue: 'orange',
@@ -264,7 +278,7 @@ const NODE_TYPES = {
     label: 'Add Label', category: 'action', icon: Tag, hue: 'purple',
     blurb: 'Tags the record so later steps and views can find it',
     outputs: () => MAIN_OUT,
-    describe: (n) => (n.config?.labels || []).join(', ') || 'No labels set',
+    describe: (n) => listValues(n.config?.labels, 'No labels set'),
     fields: [{ key: 'labels', label: 'Labels', type: 'tags' }],
     output: (n, ctx) => ({ ticket: { key: ctx?.ticket?.key || 'TIC-0000', labels: [...(ctx?.ticket?.labels || []), ...(n.config?.labels || [])] } }),
   },
@@ -292,7 +306,7 @@ const NODE_TYPES = {
       { key: 'dueDays', label: 'Due in (days)', type: 'number' },
       { key: 'note', label: 'Note for approvers', type: 'textarea', expr: true },
     ],
-    output: (n) => ({ approval: { policyId: n.config?.policyId || 'pol-unset', state: n.config?.waitForDecision ? 'approved' : 'awaiting' } }),
+    output: (n) => ({ approval: { policyId: n.config?.policyId || null, state: n.config?.waitForDecision ? 'approved' : 'awaiting' } }),
   },
   'action.createTask': {
     label: 'Create Task', category: 'action', icon: CheckSquare, hue: 'teal',
@@ -306,7 +320,7 @@ const NODE_TYPES = {
       { key: 'dueDays', label: 'Due in (days)', type: 'number' },
       { key: 'priority', label: 'Priority', type: 'select', options: ['urgent', 'high', 'medium', 'low'] },
     ],
-    output: (n) => ({ task: { title: renderExpr(n.config?.title) || 'Untitled task', queueId: n.config?.queueId || 'queue-general', dueInDays: n.config?.dueDays ?? 7 } }),
+    output: (n) => ({ task: { title: renderExpr(n.config?.title) || 'Untitled task', queueId: n.config?.queueId || Q.GENERAL, dueInDays: n.config?.dueDays ?? 7 } }),
   },
   'action.updateAsset': {
     label: 'Update Asset', category: 'action', icon: Monitor, hue: 'cyan',
@@ -331,7 +345,7 @@ const NODE_TYPES = {
       { key: 'dueDays', label: 'Due in (days)', type: 'number' },
       { key: 'notify', label: 'Email the learner', type: 'toggle' },
     ],
-    output: (n) => ({ enrollment: { courseId: n.config?.courseId || 'crs-unset', status: 'enrolled', dueInDays: n.config?.dueDays ?? 14 } }),
+    output: (n) => ({ enrollment: { courseId: n.config?.courseId || null, status: 'enrolled', dueInDays: n.config?.dueDays ?? 14 } }),
   },
   'action.postComment': {
     label: 'Post Comment', category: 'action', icon: MessageSquare, hue: 'rose',
@@ -362,7 +376,7 @@ const NODE_TYPES = {
     label: 'Set Fields', category: 'utility', icon: Braces, hue: 'slate',
     blurb: 'Builds or overwrites fields on each item',
     outputs: () => MAIN_OUT,
-    describe: (n) => `${(n.config?.fields || []).length} fields set`,
+    describe: (n) => listValues((n.config?.fields || []).map(f => f && f.name), 'no fields set'),
     fields: [
       { key: 'fields', label: 'Fields', type: 'kv' },
       { key: 'keepOnly', label: 'Keep only these fields', type: 'toggle' },
@@ -751,11 +765,17 @@ function AutomationList({ automations, runs, lookup }) {
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(null);
 
+  // Newest first per workflow. `addTo` appends, so a test run started just now
+  // lands at the END of the collection — taking runs[0] unsorted would keep
+  // reporting the previous run as the latest one.
   const runsBy = useMemo(() => {
     const map = new Map();
     for (const r of runs) {
       if (!map.has(r.automationId)) map.set(r.automationId, []);
       map.get(r.automationId).push(r);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
     }
     return map;
   }, [runs]);
@@ -778,10 +798,16 @@ function AutomationList({ automations, runs, lookup }) {
     active: acc.active + (a.active ? 1 : 0),
   }), { runs: 0, errors: 0, active: 0 }), [automations]);
 
-  const recent = useMemo(
-    () => [...runs].sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt))).slice(0, 8),
-    [runs],
-  );
+  // The execution list follows the filter. Filtering the workflows above while
+  // still listing every workflow's runs below reads as a bug.
+  const scoped = tab !== 'all' || query.trim().length > 0;
+  const recent = useMemo(() => {
+    const visible = new Set(filtered.map(a => a.id));
+    return [...runs]
+      .filter(r => !scoped || visible.has(r.automationId))
+      .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))
+      .slice(0, 8);
+  }, [runs, filtered, scoped]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -844,14 +870,17 @@ function AutomationList({ automations, runs, lookup }) {
             </div>
           )}
 
-          <Section title="Recent executions" hint="Every run across every workflow, newest first.">
+          <Section
+            title="Recent executions"
+            hint={scoped ? 'Runs from the workflows matching this filter, newest first.' : 'Every run across every workflow, newest first.'}
+          >
             <Card>
               <div className={cx('divide-y', t.borderLight)}>
                 {recent.map(r => (
                   <RunLine key={r.id} run={r} automations={automations} />
                 ))}
                 {recent.length === 0 && (
-                  <p className={cx('text-sm p-4', t.textMuted)}>No executions recorded yet.</p>
+                  <p className={cx('text-sm p-4', t.textMuted)}>No executions recorded for these workflows.</p>
                 )}
               </div>
             </Card>
@@ -877,7 +906,7 @@ function AutomationList({ automations, runs, lookup }) {
 }
 
 function AutomationRow({ automation, runs, lookup, onDelete }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
   const nodes = (automation.nodes || []).filter(n => n.type !== 'util.sticky');
   const trigger = nodes.find(n => categoryOf(n) === 'trigger');
   const last = runs[0];
@@ -894,7 +923,7 @@ function AutomationRow({ automation, runs, lookup, onDelete }) {
       onClick={() => navigate('automations', 'flow', automation.id)}
       meta={
         <>
-          <span className={cx('text-xs tabular-nums hidden sm:inline', errors ? 'text-red-500' : t.textMuted)}>
+          <span className={cx('text-xs tabular-nums hidden sm:inline', errors ? a('red').fg : t.textMuted)}>
             {rate}% ok · {plural(total, 'run')}
           </span>
           <Chip accent={automation.active ? 'emerald' : 'gray'} icon={automation.active ? Zap : Power}>
@@ -924,7 +953,11 @@ function AutomationRow({ automation, runs, lookup, onDelete }) {
       }
     >
       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-        {trigger && <Chip accent="amber" icon={nodeMeta(trigger).icon}>{describeNode(trigger, lookup) || nodeMeta(trigger).label}</Chip>}
+        {trigger && (
+          <Chip accent={CATEGORIES.trigger.hue} icon={nodeMeta(trigger).icon}>
+            {describeNode(trigger, lookup) || nodeMeta(trigger).label}
+          </Chip>
+        )}
         <ChipGroup accent="sky" max={3} items={nodes.filter(n => categoryOf(n) !== 'trigger').map(n => n.name)} />
         <span className={cx('text-[11px]', t.textMuted)}>
           {plural(nodes.length, 'node')} · {plural((automation.connections || []).length, 'connection')} · last run {relTime(last?.startedAt || automation.stats?.lastRunAt)}
@@ -953,12 +986,12 @@ function RunLine({ run, automations }) {
 }
 
 const BLANK_TEMPLATES = [
-  { value: 'ticket', label: 'When a ticket is created', type: 'trigger.ticketCreated', icon: Inbox },
-  { value: 'schedule', label: 'On a schedule', type: 'trigger.schedule', icon: Clock },
-  { value: 'approval', label: 'When an approval is decided', type: 'trigger.approvalDecided', icon: Stamp },
-  { value: 'course', label: 'When a course is completed', type: 'trigger.courseCompleted', icon: GraduationCap },
-  { value: 'webhook', label: 'On a webhook call', type: 'trigger.webhook', icon: Webhook },
-  { value: 'manual', label: 'Manually, for testing', type: 'trigger.manual', icon: MousePointerClick },
+  { value: 'ticket', label: 'Ticket created', hint: 'a request arrives', type: 'trigger.ticketCreated', icon: Inbox },
+  { value: 'schedule', label: 'On a schedule', hint: 'cron', type: 'trigger.schedule', icon: Clock },
+  { value: 'approval', label: 'Approval decided', hint: 'approved or rejected', type: 'trigger.approvalDecided', icon: Stamp },
+  { value: 'course', label: 'Course completed', hint: 'a learner finishes', type: 'trigger.courseCompleted', icon: GraduationCap },
+  { value: 'webhook', label: 'Webhook call', hint: 'an external system POSTs', type: 'trigger.webhook', icon: Webhook },
+  { value: 'manual', label: 'Manually', hint: 'for testing', type: 'trigger.manual', icon: MousePointerClick },
 ];
 
 function NewAutomationModal({ open, onClose }) {
@@ -980,7 +1013,7 @@ function NewAutomationModal({ open, onClose }) {
       name: name.trim() || 'Untitled workflow',
       description: description.trim(),
       active: false,
-      ownerId: 'usr-admin',
+      ownerId: USR.ADMIN,
       audience: 'both',
       tags: [],
       createdAt: new Date().toISOString(),
@@ -1020,30 +1053,16 @@ function NewAutomationModal({ open, onClose }) {
           <Textarea accent="sky" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the outcome, not the steps." />
         </Field>
         <Field label="Trigger">
-          <div className="grid sm:grid-cols-2 gap-1.5">
-            {BLANK_TEMPLATES.map(x => (
-              <TriggerChoice key={x.value} option={x} selected={starter === x.value} onSelect={() => setStarter(x.value)} />
-            ))}
-          </div>
+          <TileGroup
+            accent="sky"
+            columns={3}
+            value={starter}
+            onChange={setStarter}
+            options={BLANK_TEMPLATES}
+          />
         </Field>
       </div>
     </Modal>
-  );
-}
-
-function TriggerChoice({ option, selected, onSelect }) {
-  const { t, a } = useTheme();
-  const c = a('sky');
-  const Glyph = option.icon;
-  return (
-    <button
-      onClick={onSelect}
-      className={cx('flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-colors',
-        selected ? cx(c.soft, c.borderStrong) : cx(t.bgCard, t.borderLight, t.bgHover))}
-    >
-      <Glyph size={ICON.md} className={selected ? c.fg : t.textMuted} />
-      <span className={cx('text-sm', t.text)}>{option.label}</span>
-    </button>
   );
 }
 
@@ -1409,7 +1428,7 @@ function Canvas({
   onSelect, onDragNode, onDragEnd, onConnect, onDeleteConnection, onDeleteNode,
   onDuplicateNode, onToggleNode, onRunFrom, onAddFromPort, onOpenPalette,
 }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
   const rootRef = useRef(null);
   const dragRef = useRef(null);
   const [view, setView] = useState({ x: 40, y: 20, z: 0.85 });
@@ -1582,13 +1601,17 @@ function Canvas({
             );
           })}
           {ghost && (
-            <path
-              d={bezier(ghost.from.x, ghost.from.y, ghost.to.x, ghost.to.y)}
-              className="stroke-sky-500"
-              strokeWidth="2"
-              strokeDasharray="5 4"
-              fill="none"
-            />
+            // Colour comes from the accent set via currentColor, the same way
+            // Connector does it — an SVG stroke class is not in the DS surface.
+            <g className={a('sky').fg}>
+              <path
+                d={bezier(ghost.from.x, ghost.from.y, ghost.to.x, ghost.to.y)}
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeDasharray="5 4"
+                fill="none"
+              />
+            </g>
           )}
         </svg>
 
@@ -2464,7 +2487,7 @@ function FieldPicker({ value, onChange }) {
  * ==================================================================== */
 
 function ExecutionLog({ open, onToggle, tab, onTab, run, history, onSelectNode }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
   const [pastId, setPastId] = useState(null);
   const past = history.find(r => r.id === pastId) || null;
 
@@ -2493,7 +2516,7 @@ function ExecutionLog({ open, onToggle, tab, onTab, run, history, onSelectNode }
           ]}
         />
         <div className="flex-1" />
-        {run?.error && <span className="text-xs text-red-500">{run.error}</span>}
+        {run?.error && <span className={cx('text-xs', a('red').fg)}>{run.error}</span>}
         {summary && (
           <div className="flex items-center gap-2">
             <StatusPill status={run.playing ? 'running' : summary.errors ? 'error' : 'success'} />
@@ -2615,7 +2638,7 @@ function RunBreakdown({ run, onSelectNode }) {
 }
 
 function PastRunSteps({ run, onSelectNode }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
   return (
     <div>
       <div className={cx('flex items-center gap-2 px-3 py-2 border-b', t.borderLight)}>
@@ -2638,7 +2661,7 @@ function PastRunSteps({ run, onSelectNode }) {
           >
             <StatusPill status={s.status} />
             <span className={cx('text-xs flex-1 min-w-0 truncate', t.text)}>{s.name}</span>
-            {s.error && <span className="text-[10px] text-red-500 truncate max-w-[16rem]">{s.error}</span>}
+            {s.error && <span className={cx('text-[10px] truncate max-w-[16rem]', a('red').fg)}>{s.error}</span>}
             <span className={cx('text-[10px] tabular-nums w-16 text-right', t.textMuted)}>{plural(s.items, 'item')}</span>
             <span className={cx('text-[10px] tabular-nums w-14 text-right', t.textMuted)}>{fmtMs(s.ms)}</span>
           </button>

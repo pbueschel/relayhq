@@ -652,11 +652,14 @@ export const APPROVAL_POLICIES = [
         escalateTo: { kind: 'user', userId: USR.PATTI },
       },
       {
+        // `rule: 'all'` means every resolved member of the IT queue signs off —
+        // quorum is not read for 'all', so it mirrors the approver-spec count
+        // rather than carrying a second, contradictory number.
         id: 'stg-off-it',
         name: 'Access revocation sign-off',
         approvers: [{ kind: 'queue', queueId: Q.IT }],
         rule: 'all',
-        quorum: 3,
+        quorum: 1,
         dueInHours: 8,
         onTimeout: 'escalate',
         escalateTo: { kind: 'user', userId: USR.ADMIN },

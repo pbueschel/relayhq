@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Stamp, Check, X, Clock, ChevronDown, ChevronRight, Users, UserPlus, Zap,
-  Inbox, GitBranch, CircleAlert, CircleCheck, CircleX, CircleDot, Hourglass,
+  Inbox, GitBranch, AlertOctagon, CircleCheck, CircleX, CircleDot, Hourglass,
   Timer, Sparkles, CornerDownRight, Layers, MessageSquare,
-  Package, Monitor, GraduationCap, BookOpen, Info, Scale, CheckCheck, Ban,
-  UserCheck, TriangleAlert, ArrowRight, ListChecks, Undo2,
+  Briefcase, CheckSquare, Monitor, BookMarked, BookOpen, FileQuestion,
+  Info, Scale, CheckCheck, Ban, UserCheck, TriangleAlert, ArrowRight, Undo2,
 } from 'lucide-react';
 import {
   useTheme, cx, ICON, DENSITY, LAYOUT, ENTITIES, entityHue,
@@ -14,7 +14,7 @@ import {
   Modal, Menu, MenuItem, MenuLabel, MenuDivider, FilterPill,
   LensBar, PageHeader, Toolbar, PageBody,
 } from '@/ds';
-import { useStore, setCollection, patchIn } from '@/store/store.js';
+import { useStore, setCollection, patchIn, NOW } from '@/store/store.js';
 import {
   canDecide, decide, progress, isOverdue, applyTimeout, startApproval,
   matchingPolicies, describeApprover, resolveApprovers, STAGE_RULES, TIMEOUT_ACTIONS,
@@ -151,20 +151,29 @@ function stageHue(stage, isCurrent, requestState) {
 
 /* ================================================================== *
  * Targets — an approval always hangs off some other record
+ *
+ * `kind` names the entity in the ENTITIES registry, which is where the chip's
+ * hue AND its glyph come from — a reader who has learned "amber folder = course"
+ * elsewhere in the app must see the same thing here.
+ *
+ * `to` is [section, sub] and BOTH segments are load-bearing. The router builds
+ * `#/section/sub/id` by dropping falsy segments, so `['changes']` produces
+ * `#/changes/<id>`, where the receiving view reads the id as its `sub` and the
+ * record never opens. Every destination therefore names the tab that shows it.
  * ================================================================== */
 
 const TARGETS = {
-  ticket:       { kind: 'ticket',       icon: Inbox,          collection: 'tickets',   to: ['workspace', 'tickets'] },
-  incident:     { kind: 'incident',     icon: Inbox,          collection: 'tickets',   to: ['workspace', 'tickets'] },
-  conversation: { kind: 'conversation', icon: MessageSquare,  collection: 'tickets',   to: ['workspace', 'tickets'] },
-  change:       { kind: 'change',       icon: GitBranch,      collection: 'changes',   to: ['changes'] },
-  problem:      { kind: 'problem',      icon: CircleAlert,    collection: 'problems',  to: ['problems'] },
-  task:         { kind: 'task',         icon: CheckCheck,     collection: 'tasks',     to: ['workspace', 'tasks'] },
-  project:      { kind: 'project',      icon: Package,        collection: 'projects',  to: ['projects'] },
-  asset:        { kind: 'hardware',     icon: Monitor,        collection: 'assets',    to: ['assets'] },
-  course:       { kind: 'course',       icon: GraduationCap,  collection: 'courses',   to: ['learning'] },
-  knowledge:    { kind: 'article',      icon: BookOpen,       collection: 'knowledge', to: ['knowledge'] },
-  subform:      { kind: 'subform',      icon: ListChecks,     collection: 'subforms',  to: ['forms'] },
+  ticket:       { kind: 'ticket',       icon: Inbox,          collection: 'tickets',   to: ['workspace', 'ticket'] },
+  incident:     { kind: 'incident',     icon: Inbox,          collection: 'tickets',   to: ['workspace', 'ticket'] },
+  conversation: { kind: 'conversation', icon: MessageSquare,  collection: 'tickets',   to: ['workspace', 'ticket'] },
+  change:       { kind: 'change',       icon: GitBranch,      collection: 'changes',   to: ['changes', 'list'] },
+  problem:      { kind: 'problem',      icon: AlertOctagon,   collection: 'problems',  to: ['problems', null] },
+  task:         { kind: 'task',         icon: CheckSquare,    collection: 'tasks',     to: ['workspace', 'task'] },
+  project:      { kind: 'project',      icon: Briefcase,      collection: 'projects',  to: ['projects', null] },
+  asset:        { kind: 'hardware',     icon: Monitor,        collection: 'assets',    to: ['assets', 'hardware'] },
+  course:       { kind: 'course',       icon: BookMarked,     collection: 'courses',   to: ['learning', 'courses'] },
+  knowledge:    { kind: 'article',      icon: BookOpen,       collection: 'knowledge', to: ['knowledge', 'all'] },
+  subform:      { kind: 'subform',      icon: FileQuestion,   collection: 'subforms',  to: ['forms', 'requests'] },
 };
 
 function targetMeta(type) {
@@ -459,10 +468,18 @@ export default function Approvals({ route }) {
   const bootstrapped = useRef(false);
 
   const meId = actingId || currentUser?.id || USR.ADMIN;
-  const now = Date.now();
+  // The demo clock, not the wall clock. Every seeded due time, decision and
+  // "N hours ago" is authored relative to NOW; reading Date.now() here made the
+  // inbox drift a little further out of step every day it was opened — three of
+  // the four in-flight requests were rendering as overdue instead of one.
+  const now = NOW.getTime();
+  const nowISO = () => NOW.toISOString();
 
   const lens = LENS_VALUES.includes(route?.sub) ? route.sub : 'mine';
-  const selectedId = route?.id || null;
+  // A deep link can arrive as #/approvals/<lens>/<id> or as #/approvals/<id>
+  // (Changes and the ticket panels link the second way, and the router reads
+  // that id into `sub`). Accept both, or those links open an empty inbox.
+  const selectedId = route?.id || (LENS_VALUES.includes(route?.sub) ? null : route?.sub) || null;
 
   /* --- bootstrap (only when the service seed carried no running requests) --- */
   useEffect(() => {
@@ -473,7 +490,7 @@ export default function Approvals({ route }) {
     const built = bootstrapRequests(
       policies, directory || [], queues || [],
       { tickets: tickets || [], changes: changes || [], courses: courses || [] },
-      Date.now(),
+      NOW.getTime(),
     );
     if (built.length) setCollection('approvals', built);
   }, [approvals, policies, directory, queues, tickets, changes, courses]);
@@ -553,7 +570,7 @@ export default function Approvals({ route }) {
   const resolveCtx = (request) => ({ ...(request.context || {}), directory: directory || [], queues: queues || [] });
 
   const onDecide = (request, verdict, comment) => {
-    const next = decide(request, { approverId: meId, verdict, comment, now: new Date().toISOString() });
+    const next = decide(request, { approverId: meId, verdict, comment, now: nowISO() });
     if (next === request) return;
     patchIn('approvals', request.id, next);
     // A decision does not always move the request. On an "any one approves"
@@ -575,7 +592,7 @@ export default function Approvals({ route }) {
     const before = request.stages[request.currentStage];
     const ctx = resolveCtx(request);
     const escalationTargets = before?.escalateTo ? resolveApprovers(before.escalateTo, ctx) : [];
-    const next = applyTimeout(request, ctx, new Date().toISOString());
+    const next = applyTimeout(request, ctx, nowISO());
     if (next === request) return;
     patchIn('approvals', request.id, next);
     const after = next.stages[next.currentStage];
@@ -594,7 +611,7 @@ export default function Approvals({ route }) {
   };
 
   const onDelegate = (request, toId) => {
-    const at = new Date().toISOString();
+    const at = nowISO();
     const idx = request.currentStage;
     const stages = request.stages.map((s, i) => (i !== idx ? s : {
       ...s,
@@ -610,7 +627,7 @@ export default function Approvals({ route }) {
 
   const sweepOverdue = () => {
     for (const r of overdue) {
-      const next = applyTimeout(r, resolveCtx(r), new Date().toISOString());
+      const next = applyTimeout(r, resolveCtx(r), nowISO());
       if (next !== r) patchIn('approvals', r.id, next);
     }
     setFlash({ id: null, kind: 'swept', count: overdue.length });

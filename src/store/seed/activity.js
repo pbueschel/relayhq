@@ -47,7 +47,7 @@
  * misleading sentence.
  */
 
-import { USR, CON, KB, CRS, CUR, AUTO } from './ids.js';
+import { USR, CON, KB, CRS, CUR, AUTO, PRJ, CAT, SF, LOC } from './ids.js';
 
 /* Entries are numbered in write order so the log reads as a sequence rather
  * than a bag of records; `at` is what everything actually sorts on. */
@@ -80,6 +80,12 @@ export const ACTIVITY = [
   ev('2026-08-03T15:40:00', USR.JAMES, 'created', 'hardware', 'ast-lt-0190',
     'NW-LT-0190 · MacBook Pro 14" (M3 Pro)',
     'Expedited replacement raised against PO-2026-0338 for the stolen NW-LT-0138. $2,399 through CDW, three-day build.'),
+  ev('2026-08-03T16:20:00', USR.PRIYA, 'updated', 'project', PRJ.CRM_MIGRATION,
+    'CRM Migration',
+    'Cutover held at 24 October. Dry run #1 rejected 0.8% of opportunity rows; #2 has to beat 0.5% before that date is defensible.'),
+  ev('2026-08-03T17:05:00', USR.ADMIN, 'created', 'task', 'tsk-me-02',
+    'Submit Q3 expense report',
+    'Two conference nights and the Austin trip. Finance closes the quarter on the 20th, so this is not a September problem.'),
 
   /* ================= Tue 4 Aug — Sam Whitfield starts ================= */
   ev('2026-08-04T08:15:00', USR.LISA, 'enrolled', 'curriculum', CUR.SUPPORT_AGENT,
@@ -116,14 +122,23 @@ export const ACTIVITY = [
   ev('2026-08-06T13:05:00', USR.EMMA, 'checked_in', 'software', 'lic-figma',
     'Figma Organization — 25 seats',
     'Reclaimed three seats dormant for 90 days, ahead of the design systems request that everyone knows is coming.'),
+  ev('2026-08-06T16:40:00', USR.DEVON, 'completed', 'projectTask', 'tsk-aca-01a',
+    'Record the triage walkthrough',
+    'Eleven minutes, captions written, customer names swapped for the demo org. Feeds the triage module of Support Foundations.'),
 
   /* ================= Fri 7 Aug ================= */
+  ev('2026-08-07T09:25:00', USR.ADMIN, 'created', 'task', 'tsk-me-04',
+    'Approve the Austin support centre headcount plan',
+    'Two agents in Q4, one in Q1. Lisa has the ramp plan; it needs a decision before the budget lock.'),
   ev('2026-08-07T10:44:00', USR.SAM, 'completed', 'course', CRS.SUPPORT_FOUNDATIONS,
     'Support Foundations: your first week on the queue',
     'Passed at 92% on the first attempt, seven days inside the due date.'),
   ev('2026-08-07T11:02:00', USR.LISA, 'commented', 'enrollment', 'enr-sam-foundations',
     'Sam Whitfield · Support Foundations',
     'Strong on the SLA questions. Moving him onto Working the queue now rather than waiting for the September cohort.'),
+  ev('2026-08-07T14:10:00', USR.LINDA, 'updated', 'location', LOC.CHI,
+    'Chicago HQ',
+    'Hot-desking confirmed for floor 4 only. Floors 3 and 5 stay assigned seating until the move, so asset records should not follow people yet.'),
   ev('2026-08-07T15:18:00', USR.MICHAEL, 'closed', 'ticket', 'tkt-4821',
     'TKT-4821 · Sponsorship deposit for the Retail Ops Summit — $1,800',
     'Deposit raised as PO-2026-0344 and paid the same afternoon. Approval record attached for the audit trail.'),
@@ -133,7 +148,7 @@ export const ACTIVITY = [
     'CHG-1049 · Replace the DisplayLink docks in the Chicago hot-desk pool',
     'Vendor firmware fix is not coming. Fourteen docks to swap; PRB-205 closes with it rather than staying a standing known error.'),
   ev('2026-08-09T15:48:00', AUTO.BREACH_ESCALATE, 'ran_automation', 'automation', AUTO.BREACH_ESCALATE,
-    'SLA breach escalation',
+    'SLA breach escalation sweep',
     'run-8720 · Two Enterprise tickets crossed 75% of their resolution target on a Sunday. Raised to urgent and paged the weekend on-call lead.'),
 
   /* ================= Mon 10 Aug ================= */
@@ -143,6 +158,9 @@ export const ACTIVITY = [
   ev('2026-08-10T09:41:00', USR.JAMES, 'checked_in', 'hardware', 'ast-lt-0190',
     'NW-LT-0190 · MacBook Pro 14" (M3 Pro)',
     'Expedited replacement received at Bolingbrook and imaged with the marketing build. Held for shipping to New York.'),
+  ev('2026-08-10T11:05:00', USR.JAMES, 'updated', 'contract', 'ctr-adobe-vip',
+    'Adobe VIP Marketplace Agreement',
+    'Anniversary date confirmed as 30 September and the co-term rule written onto the record, so the seat count is settled before the quote arrives.'),
   ev('2026-08-10T14:20:00', USR.EMMA, 'updated', 'change', 'chg-1048',
     'CHG-1048 · Monthly endpoint patch ring rollout — August',
     'Pilot ring finished on 12 devices with no rollback and no support tickets. Fleet window confirmed for Thursday 20:00 CT.'),
@@ -160,6 +178,9 @@ export const ACTIVITY = [
   ev('2026-08-11T11:44:00', USR.NADIA, 'closed', 'ticket', 'tkt-4806',
     'TKT-4806 · How do I connect Stripe to my storefront?',
     'Answered with the Connect a payment provider guide. Cole confirmed his first live order came through an hour later.'),
+  ev('2026-08-11T15:10:00', USR.EMMA, 'updated', 'subform', SF.LAPTOP_REPAIR,
+    'Laptop repair or replacement',
+    'Added a loaner-required question and routed it to the IT queue. NW-LT-0164 went to the depot without one and Nadia has been remote on a spare all week.'),
 
   /* ================= Wed 12 Aug ================= */
   ev('2026-08-12T09:30:00', USR.SAM, 'completed', 'lesson', KB.USING_MACROS,
@@ -168,6 +189,9 @@ export const ACTIVITY = [
   ev('2026-08-12T11:20:00', USR.EMMA, 'updated', 'software', 'lic-adobe-cc',
     'Adobe Creative Cloud All Apps — 12 seats',
     'Fourteen people are assigned against twelve owned seats. Either two come off before 30 September or the renewal quote grows.'),
+  ev('2026-08-12T14:40:00', USR.NADIA, 'published', 'item', CAT.I_PAYMENTS,
+    'Connect payments',
+    'Put the Connect a payment provider guide on the item itself. Three Stripe tickets in a fortnight all had the same answer sitting one click away.'),
   ev('2026-08-12T22:04:00', AUTO.TRIAGE, 'ran_automation', 'automation', AUTO.TRIAGE,
     'Triage — VIP and Enterprise fast path',
     'run-8762 · Routed six overnight tickets. Two took the VIP fast path; four went to the General queue for human triage in the morning.'),
@@ -177,11 +201,14 @@ export const ACTIVITY = [
     'TKT-4809 · Quarterly access review export is missing deactivated users',
     'Raised through the Vireo Health portal. Their auditor needs the export to include leavers, and the review closes on the 28th.'),
   ev('2026-08-13T09:15:00', AUTO.BREACH_ESCALATE, 'ran_automation', 'automation', AUTO.BREACH_ESCALATE,
-    'SLA breach escalation',
+    'SLA breach escalation sweep',
     'run-8774 · Swept 41 open tickets against their targets and found nothing inside the warning band. First clean sweep in nine days.'),
   ev('2026-08-13T10:40:00', USR.EMMA, 'updated', 'problem', 'prb-dock-flicker',
     'PRB-205 · DisplayLink firmware causes display flicker on the Chicago hot-desk docks',
     "Vendor closed our case as 'works as designed'. Moved to known error with the workaround documented and CHG-1049 as the permanent fix."),
+  ev('2026-08-13T11:30:00', USR.EMMA, 'assigned', 'projectTask', 'tsk-crm-03',
+    'Data migration dry run #2',
+    'Priya owns it. Full-volume load into staging on the agreed field map, starting the 17th — the reject rate is the gate on the cutover date.'),
   ev('2026-08-13T16:05:00', USR.LISA, 'published', 'article', KB.HANDLING_ANGRY,
     'Handling an angry customer',
     'Second revision after the Parkway escalation. One atom doing three jobs: help centre, agent panel, and lesson four of Writing to customers.'),
@@ -204,12 +231,18 @@ export const ACTIVITY = [
     'Shipped to Sarah Johnson at the New York office. Tracking 1Z999AA10123456784, signature required.'),
 
   /* ================= Sat 15 Aug ================= */
+  ev('2026-08-15T09:20:00', USR.LINDA, 'commented', 'projectTask', 'tsk-mov-04',
+    'Move day run of show',
+    'The freight lift is booked from 18:00 Friday, not 16:00. Everything downstream of that shifts two hours and the Sunday network cutover gets tight.'),
   ev('2026-08-15T10:05:00', USR.JEN, 'approved', 'approval', 'apr-1',
     'CHG-1045 · Northwind Storefront 3.5 release to production',
     'Three customer-visible fixes in this train that we have promised by name. Yes. Two of three needed.'),
   ev('2026-08-15T10:05:00', USR.ROBERT, 'approved', 'approval', 'apr-4',
     'TKT-4822 · Salesforce sandbox admin access for Tom Alvarez',
     'Tom needs this to finish the mapping. Fine by me. Stage still needs the system owner.'),
+  ev('2026-08-15T11:35:00', USR.NADIA, 'updated', 'projectTask', 'tsk-aca-01b',
+    'Add a knowledge check to every module',
+    'Triage and Reading a ticket are written. SLA and Closing well still open, and Support Foundations cannot leave review until all four are in.'),
   ev('2026-08-15T13:30:00', CON.BEA, 'created', 'ticket', 'tkt-4803',
     'TKT-4803 · Duplicate charge on August invoice INV-20418',
     'Parkway were billed twice for the same 85 seats. Their finance team has already flagged it with the card issuer.'),
@@ -226,7 +259,7 @@ export const ACTIVITY = [
     'TKT-4808 · Shipment webhook retries exhausted — orders stuck in Awaiting Fulfilment',
     'Raised to engineering and attached to PRB-203. Our retry budget is shorter than a normal customer maintenance window.'),
   ev('2026-08-15T18:12:00', AUTO.CSAT_FOLLOWUP, 'ran_automation', 'automation', AUTO.CSAT_FOLLOWUP,
-    'CSAT follow-up',
+    'CSAT follow-up on low scores',
     'run-8829 · Surveyed nine tickets closed today. Two replies already in: one Great, one Bad with a comment about the second reply time.'),
   ev('2026-08-15T22:18:00', CON.DANA, 'created', 'ticket', 'tkt-4801',
     'TKT-4801 · Checkout returns 502 during Saturday peak traffic',
@@ -239,6 +272,9 @@ export const ACTIVITY = [
   ev('2026-08-16T07:10:00', CON.COLE, 'created', 'ticket', 'tkt-4810',
     'TKT-4810 · Trial ended but I was charged for 12 seats',
     'Fernbrook are on Starter and twelve days old as a customer. This is the first bill they have ever seen from us.'),
+  ev('2026-08-16T07:15:00', USR.ADMIN, 'updated', 'form', 'form-storefront-support',
+    'Northwind Storefront Support',
+    "Put Integration and API help above Billing question on the portal. Two of this weekend's four customer tickets were integration failures dressed as billing."),
   ev('2026-08-16T07:20:00', CON.OWEN, 'created', 'ticket', 'tkt-4804',
     'TKT-4804 · API keys rotated — webhook deliveries now failing with 401',
     'Vireo rotated their keys on Friday and every webhook since has 401d. Clinical order sync is the blast radius.'),
@@ -257,9 +293,9 @@ export const ACTIVITY = [
   ev('2026-08-16T08:44:00', USR.LISA, 'assigned', 'ticket', 'tkt-4805',
     'TKT-4805 · Bulk catalog import stalls at 40% for files over 20,000 rows',
     'Given to Sam with Nadia shadowing. He finished the catalog import lesson on Wednesday — first customer ticket on the strength of it.'),
-  ev('2026-08-16T08:45:00', AUTO.BREACH_ESCALATE, 'ran_automation', 'automation', AUTO.BREACH_ESCALATE,
-    'SLA breach escalation',
-    'run-8836 · Running now. TKT-4801 is at 82% of the Enterprise four-hour response target and the PagerDuty leg is erroring.'),
+  ev('2026-08-16T08:45:00', AUTO.BREACH_ESCALATE, 'ran_automation', 'ticket', 'tkt-4801',
+    'TKT-4801 · Checkout returns 502 during Saturday peak traffic',
+    'run-8836 · Running now, at 82% of the Enterprise resolution target. The PagerDuty leg is erroring, so the page has not gone out.'),
   ev('2026-08-16T08:52:00', USR.ADMIN, 'commented', 'change', 'chg-1044',
     'CHG-1044 · Emergency: replay held shipment webhooks for Parkway Logistics',
     "Standing by for the on-call decision. Parkway's ops manager has been told 09:30 CT, so we need an answer inside the hour."),

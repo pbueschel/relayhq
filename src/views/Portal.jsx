@@ -1,13 +1,13 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  Search, ArrowLeft, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, BookOpen, Layers,
+  ArrowLeft, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, BookOpen, Layers,
   Folder, Circle, Inbox, FileQuestion, CircleCheck, CircleAlert, Play, Pause, AlignLeft,
   Sparkles, GraduationCap, BookMarked, Clock, Stamp, Send, ThumbsUp, ThumbsDown, Info,
   Moon, Sun, LogOut, Building2, Users, User, Route, Eye, Award, Paperclip, Check,
   LayoutGrid, ListOrdered, MessageSquare, ShieldCheck, Video,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, GRADIENT, LAYOUT,
+  useTheme, cx, useDismiss, ICON, DENSITY, GRADIENT, entityHue,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, PriorityFlag, EntityTag,
   Avatar, EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat, Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, SearchInput,
@@ -47,8 +47,10 @@ import { Q, USR, CON } from '@/store/seed/ids.js';
  * Catalog helpers
  * ==================================================================== */
 
+/* Icons are components, so they cannot live in tokens.js — but the HUE must.
+ * A second colour map here would be a second source of truth and would drift
+ * away from ENTITIES the first time a hue changes. Ask the registry instead. */
 const NODE_ICON = { product: Folder, subcategory: Layers, item: Circle };
-const NODE_HUE = { product: 'amber', subcategory: 'purple', item: 'emerald' };
 
 function walkCatalog(nodes, trail = [], out = []) {
   for (const n of nodes || []) {
@@ -375,6 +377,11 @@ export default function Portal({ route }) {
 
   const course = courseId ? byCourse.get(courseId) || null : null;
 
+  /* The suggestion popover is a real popover, so it dismisses on Escape and on a
+   * click outside — the DS hook, not a bespoke listener. The ref goes on the
+   * wrapper rather than the panel so clicking back into the input is "inside". */
+  const searchRef = useDismiss(!!results, () => setQuery(''));
+
   /* Where an atom shows up elsewhere — the reuse, surfaced to the reader. */
   const alsoTaughtIn = useMemo(() => {
     if (!atom) return [];
@@ -397,9 +404,21 @@ export default function Portal({ route }) {
   const openAtom = (id, from) => { setReading({ id, from: from || 'item' }); setQuery(''); };
   const openIntake = (id) => { setIntakeId(id); setAnswers({}); setTouched(false); setReading(null); };
 
-  const onArticleNo = () => {
+  /* "No, I need help" promises to land you on the request forms for this service.
+   * When the article was opened from search we are not standing on an item yet,
+   * so resolve one: the catalog item that hosts this atom AND carries an intake.
+   * Without this the reader is dropped back on the browse grid, which is exactly
+   * the round trip the prompt says it will save them. */
+  const onArticleNo = (id) => {
     setReading(null);
     setEmphasise(true);
+    if (item) return;
+    const hosts = walkCatalog(products)
+      .filter(x => x.node.type === 'item' && (x.node.knowledgeIds || []).includes(id));
+    const host = hosts.find(x => (x.node.subformIds || []).length) || hosts[0];
+    if (!host) return;
+    const ids = pathIdsTo(products, host.node.id);
+    if (ids) setPath(ids);
   };
   const onArticleYes = (id) => {
     setResolvedId(id);
@@ -567,7 +586,7 @@ export default function Portal({ route }) {
       >
         <div className="space-y-2">
           <Toolbar>
-            <div className="relative w-full max-w-xl">
+            <div ref={searchRef} className="relative w-full max-w-xl">
               <SearchInput
                 value={query}
                 onChange={setQuery}
@@ -658,7 +677,7 @@ export default function Portal({ route }) {
                 fromCourse={reading.from === 'course' ? course : null}
                 onCourseBack={() => { setReading(null); setTab('academy'); }}
                 onYes={() => onArticleYes(atom.id)}
-                onNo={onArticleNo}
+                onNo={() => onArticleNo(atom.id)}
               />
             ) : item ? (
               <ItemScreen
@@ -776,15 +795,11 @@ function BrandPicker({ forms, form, open, onOpen, onClose, onPick }) {
   const { t } = useTheme();
   return (
     <div className="relative">
-      <button
-        onClick={onOpen}
-        aria-expanded={open}
-        className={cx('flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm border transition-colors',
-          t.portalInput, t.text)}
-      >
-        <span className="truncate max-w-[11rem]">{form.name}</span>
-        <ChevronDown size={ICON.base} className={cx(t.textMuted, 'transition-transform', open && 'rotate-180')} />
-      </button>
+      <Button variant="outline" size="sm" onClick={onOpen} aria-expanded={open} className="max-w-[14rem]">
+        <span className="truncate">{form.name}</span>
+        <ChevronDown size={ICON.base}
+          className={cx('flex-shrink-0 transition-transform', t.textMuted, open && 'rotate-180')} />
+      </Button>
       <Menu open={open} onClose={onClose} align="right" width="w-72">
         <MenuLabel>Published portals</MenuLabel>
         {forms.map(f => (
@@ -892,7 +907,6 @@ const LEVEL_COPY = [
 ];
 
 function BrowseScreen({ form, nodes, level, popular, whyHint, onWhy, onDismissWhy, onPick, onItem }) {
-  const { t } = useTheme();
   const copy = LEVEL_COPY[Math.min(level, 2)];
 
   return (
@@ -913,13 +927,17 @@ function BrowseScreen({ form, nodes, level, popular, whyHint, onWhy, onDismissWh
         <Section title="Most requested" hint="What people at this stage usually pick.">
           <div className="flex flex-wrap gap-1.5">
             {popular.map(({ node, trail }) => (
-              <button key={node.id} onClick={() => onItem(node.id)}
-                className={cx('flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                  t.portalCard, t.text)}
-                title={trail.map(n => n.name).join(' › ')}>
-                <Circle size={ICON.xs} className="flex-shrink-0" />
+              <Button
+                key={node.id}
+                variant="outline"
+                size="xs"
+                icon={Circle}
+                className="rounded-full px-3 py-1.5"
+                onClick={() => onItem(node.id)}
+                title={trail.map(n => n.name).join(' › ')}
+              >
                 {node.name}
-              </button>
+              </Button>
             ))}
           </div>
         </Section>
@@ -951,7 +969,7 @@ function BrowseScreen({ form, nodes, level, popular, whyHint, onWhy, onDismissWh
 
 function NodeCard({ node, onPick }) {
   const { t, a } = useTheme();
-  const hue = NODE_HUE[node.type] || 'gray';
+  const hue = entityHue(node.type);
   const c = a(hue);
   const Icon = NODE_ICON[node.type] || Circle;
   const count = (node.children || []).length;
@@ -1061,7 +1079,7 @@ function ItemScreen({ item, atoms, forms, queues, policies, emphasise, onAtom, o
 function AtomCard({ atom, onOpen }) {
   const { t, a } = useTheme();
   const guide = atom.format === 'guide';
-  const hue = guide ? 'purple' : 'blue';
+  const hue = entityHue(guide ? 'guide' : 'article');
   const c = a(hue);
   const slides = (atom.slides || []).length;
 
@@ -1106,7 +1124,7 @@ function IntakeCard({ subform, queue, policy, emphasise, onStart }) {
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         {queue
-          ? <Chip accent={queue.hue || 'gray'} icon={Inbox} title={queue.description}>{queue.name}</Chip>
+          ? <Chip accent={queue.hue || entityHue('queue')} icon={Inbox} title={queue.description}>{queue.name}</Chip>
           : <Chip accent="amber" icon={Route}>Unrouted → General</Chip>}
         {policy && <Chip accent="amber" icon={Stamp} title={policy.description}>{policy.name}</Chip>}
         <span className={cx('text-[11px]', t.textMuted)}>
@@ -1335,7 +1353,11 @@ function StoryPlayer({ atom }) {
     setIndex(i => Math.max(0, Math.min(slides.length - 1, i + dir)));
   };
   const tap = (dir) => {
-    if (Date.now() - downAt.current > 300) return;   // that was a hold, not a tap
+    const startedAt = downAt.current;
+    downAt.current = 0;
+    // A press longer than 300ms was a hold-to-pause, not a tap. A click with no
+    // pointer press at all is a keyboard activation, which must still move.
+    if (startedAt && Date.now() - startedAt > 300) return;
     step(dir);
   };
   const onKeyDown = (e) => {
@@ -2197,11 +2219,11 @@ function WhyCompare({ facts, subforms, queues, defaultQueue }) {
                 {sample.trail.map((n, i) => (
                   <React.Fragment key={n.id}>
                     {i > 0 && <ChevronRight size={ICON.xs} className={t.textMuted} />}
-                    <Chip accent={NODE_HUE[n.type] || 'gray'}>{n.name}</Chip>
+                    <Chip accent={entityHue(n.type)}>{n.name}</Chip>
                   </React.Fragment>
                 ))}
                 <ChevronRight size={ICON.xs} className={t.textMuted} />
-                <Chip accent="emerald">{sample.node.name}</Chip>
+                <Chip accent={entityHue('item')}>{sample.node.name}</Chip>
               </div>
               <div className={cx('rounded-lg border p-2.5 space-y-1.5', t.borderLight)}>
                 <p className={cx('text-xs font-medium flex items-center gap-1.5', t.text)}>
