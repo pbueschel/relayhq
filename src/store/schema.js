@@ -119,11 +119,70 @@
  * The complete root state. Modules own their own slices and must not reshape
  * another module's slice.
  */
+/**
+ * ============================================================================
+ * TWO CATALOGS, BECAUSE THEY ANSWER DIFFERENT QUESTIONS
+ * ============================================================================
+ * The portal has two front doors and they are not the same shape:
+ *
+ *   GET HELP        "something is wrong"  → a Product › Subcategory › Item tree,
+ *                   where an Item carries knowledge first and a report-a-problem
+ *                   form second. This is `catalog`, unchanged.
+ *
+ *   SERVICE CATALOG "I want something"    → a flat Category › ServiceItem list of
+ *                   orderable things, where an item carries a price, a delivery
+ *                   time, an approval and a fulfilment queue. This is
+ *                   `serviceCategories` + `serviceItems`, new.
+ *
+ * Collapsing them into one tree was the mistake. "Cannot sign in" and "Request a
+ * new laptop" look similar in a tree and behave nothing alike: one wants an
+ * answer, the other wants an outcome with a cost and a sign-off.
+ *
+ * WHAT THEY SHARE, DELIBERATELY: a ServiceItem's request form is an ordinary
+ * `subform` — same builder, same conditional fields, same routing — and a
+ * ServiceItem can carry `knowledgeIds` for "read this before you order". The
+ * author-once rule holds across both catalogs.
+ */
+
+/**
+ * @typedef {Object} ServiceCategory
+ * @property {string} id
+ * @property {string} name
+ * @property {string} description
+ * @property {string} icon                 lucide icon name
+ * @property {'internal'|'external'|'both'} audience
+ * @property {number} order
+ */
+
+/**
+ * @typedef {Object} ServiceItem
+ * @property {string} id
+ * @property {string} categoryId
+ * @property {string} name
+ * @property {string} shortDescription     one line, shown on the card
+ * @property {string} description          full copy, shown on the request screen
+ * @property {string} icon
+ * @property {'internal'|'external'|'both'} audience
+ * @property {string} subformId            the request form — an ordinary subform
+ * @property {string[]} knowledgeIds       "before you order" help
+ * @property {string} [approvalPolicyId]   what has to be signed off
+ * @property {string} fulfilmentQueueId    where the request lands
+ * @property {number|null} price           one-off cost, null when free
+ * @property {number|null} recurringPrice
+ * @property {'monthly'|'annual'|null} recurrence
+ * @property {number} deliveryDays         "available in N working days"
+ * @property {string} [assetModelId]       when ordering provisions a real asset
+ * @property {boolean} popular
+ * @property {'draft'|'published'} status
+ */
+
 export const STATE_KEYS = /** @type {const} */ ([
   // people
   'currentUser', 'agents', 'directory', 'contacts', 'organizations', 'jobFunctions',
   // catalog + content
   'catalog', 'knowledge', 'subforms', 'forms',
+  // the service catalog — orderable things, distinct from the help tree above
+  'serviceCategories', 'serviceItems',
   // service records
   'tickets', 'problems', 'changes', 'approvals',
   // work management

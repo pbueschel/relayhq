@@ -11,6 +11,7 @@ import { CURRENT_USER, AGENTS, DIRECTORY, CONTACTS, ORGANIZATIONS, JOB_FUNCTIONS
 import { CATALOG } from './catalog.js';
 import { KNOWLEDGE } from './knowledge.js';
 import { SUBFORMS, FORMS } from './forms.js';
+import { SERVICE_CATEGORIES, SERVICE_ITEMS, SERVICE_SUBFORMS } from './servicecatalog.js';
 import { QUEUES, RULES, APPROVAL_POLICIES, SLA_POLICIES } from './rules.js';
 import { TICKETS, PROBLEMS, CHANGES, APPROVALS } from './service.js';
 import { TASKS, PROJECTS } from './work.js';
@@ -31,8 +32,14 @@ export function buildSeed() {
 
   s.catalog = CATALOG;
   s.knowledge = KNOWLEDGE;
-  s.subforms = SUBFORMS;
+  // A service item's request form is an ordinary subform, so the service
+  // catalog contributes into the same collection rather than growing a second
+  // form model. Same builder, same conditional fields, same routing.
+  s.subforms = [...SUBFORMS, ...SERVICE_SUBFORMS];
   s.forms = FORMS;
+
+  s.serviceCategories = SERVICE_CATEGORIES;
+  s.serviceItems = SERVICE_ITEMS;
 
   s.queues = QUEUES;
   s.rules = RULES;

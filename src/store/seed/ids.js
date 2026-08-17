@@ -151,6 +151,54 @@ export const CAT = {
 };
 
 /* ------------------------------------------------------------------ *
+ * The SERVICE CATALOG — orderable things, as opposed to the help tree.
+ *
+ * "Cannot sign in" belongs to Get Help; "Request a new laptop" belongs here.
+ * A service item's request form is an ordinary subform, so these ids point at
+ * SF entries rather than introducing a second form model.
+ * ------------------------------------------------------------------ */
+export const SVCCAT = {
+  HARDWARE:  'svc-cat-hardware',
+  SOFTWARE:  'svc-cat-software',
+  ACCESS:    'svc-cat-access',
+  PEOPLE:    'svc-cat-people',
+  WORKPLACE: 'svc-cat-workplace',
+  CUSTOMER:  'svc-cat-customer',   // external — things a customer can order
+};
+
+export const SVC = {
+  // hardware
+  NEW_LAPTOP:      'svc-new-laptop',
+  MONITOR:         'svc-monitor',
+  HEADSET:         'svc-headset',
+  PHONE:           'svc-phone',
+  LOANER:          'svc-loaner',
+  // software
+  SOFTWARE_LICENCE:'svc-software-licence',
+  ADOBE_SEAT:      'svc-adobe-seat',
+  FIGMA_SEAT:      'svc-figma-seat',
+  VM_SANDBOX:      'svc-vm-sandbox',
+  // access
+  APP_ACCESS:      'svc-app-access',
+  VPN_ACCESS:      'svc-vpn-access',
+  SHARED_MAILBOX:  'svc-shared-mailbox',
+  ELEVATED_ACCESS: 'svc-elevated-access',
+  // people
+  ONBOARD_HIRE:    'svc-onboard-hire',
+  OFFBOARD:        'svc-offboard',
+  ROLE_CHANGE:     'svc-role-change',
+  // workplace
+  DESK_MOVE:       'svc-desk-move',
+  MEETING_KIT:     'svc-meeting-kit',
+  BUILDING_ACCESS: 'svc-building-access',
+  // external / customer-orderable
+  EXTRA_SEATS:     'svc-extra-seats',
+  SANDBOX_TENANT:  'svc-sandbox-tenant',
+  PREMIUM_SUPPORT: 'svc-premium-support',
+  ONBOARDING_HELP: 'svc-onboarding-help',
+};
+
+/* ------------------------------------------------------------------ *
  * Approval policies — shared by subforms, changes and the rules engine.
  * ------------------------------------------------------------------ */
 export const POL = {
