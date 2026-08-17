@@ -290,7 +290,7 @@ export function Card({ accent, hover, className, children, ...rest }) {
   return (
     <div
       className={cx('rounded-xl border', t.bgCard, t.borderLight,
-        hover && cx('transition-colors', c ? c.borderStrong.replace('border-', 'hover:border-') : 'hover:border-gray-400'),
+        hover && cx('transition-colors', c ? c.borderStrong.replace('border-', 'hover:border-') : 'hover:border-stone-400'),
         className)}
       {...rest}
     >

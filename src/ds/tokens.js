@@ -18,79 +18,79 @@ export { ACCENTS, ACCENT_HUES, accent, accentSet };
 
 const LIGHT = {
   // page + chrome
-  bg: 'bg-gray-50',
+  bg: 'bg-stone-50',
   bgSidebar: 'bg-white',
   bgCard: 'bg-white',
   bgInput: 'bg-white',
-  bgSubtle: 'bg-gray-100',
-  bgHover: 'hover:bg-gray-100',
-  bgActive: 'bg-gray-100',
+  bgSubtle: 'bg-stone-100',
+  bgHover: 'hover:bg-stone-100',
+  bgActive: 'bg-stone-100',
 
   // text
-  text: 'text-gray-900',
-  textSecondary: 'text-gray-600',
-  textMuted: 'text-gray-500',
+  text: 'text-stone-900',
+  textSecondary: 'text-stone-600',
+  textMuted: 'text-stone-500',
   textInverse: 'text-white',
 
   // lines
-  border: 'border-gray-200',
-  borderLight: 'border-gray-300',
-  divide: 'divide-gray-200',
-  rule: 'bg-gray-300',            // a drawn divider line
+  border: 'border-stone-200',
+  borderLight: 'border-stone-300',
+  divide: 'divide-stone-200',
+  rule: 'bg-stone-300',            // a drawn divider line
   ringOnBg: 'border-white',       // avatar/badge ring that matches the page behind it
 
   // floating chrome that sits above the page (collapse handles, popovers)
   floatBg: 'bg-white',
-  floatBorder: 'border-gray-200',
-  trackOff: 'bg-gray-300',        // switch track, unchecked
+  floatBorder: 'border-stone-200',
+  trackOff: 'bg-stone-300',        // switch track, unchecked
 
   // overlays
   modal: 'bg-white',
   overlay: 'bg-black/50',
 
   // end-user portal surfaces (deliberately softer than the admin app)
-  portalBg: 'bg-gradient-to-br from-gray-100/95 via-purple-100/80 to-gray-100/95 backdrop-blur-xl',
-  portalCard: 'bg-white border-gray-200 hover:bg-gray-50',
-  portalInput: 'bg-white border-gray-300',
+  portalBg: 'bg-gradient-to-br from-stone-100/95 via-purple-100/80 to-stone-100/95 backdrop-blur-xl',
+  portalCard: 'bg-white border-stone-200 hover:bg-stone-50',
+  portalInput: 'bg-white border-stone-300',
 
   // canvas (automation workspace)
-  canvasBg: 'bg-gray-100',
+  canvasBg: 'bg-stone-100',
   canvasGrid: '#d4d4d8',
   canvasEdge: '#a1a1aa',
 };
 
 const DARK = {
-  bg: 'bg-gray-950',
-  bgSidebar: 'bg-gray-900/50',
-  bgCard: 'bg-gray-800/50',
-  bgInput: 'bg-gray-800',
-  bgSubtle: 'bg-gray-800/60',
+  bg: 'bg-stone-950',
+  bgSidebar: 'bg-stone-900/50',
+  bgCard: 'bg-stone-800/50',
+  bgInput: 'bg-stone-800',
+  bgSubtle: 'bg-stone-800/60',
   bgHover: 'hover:bg-white/5',
   bgActive: 'bg-white/5',
 
   text: 'text-white',
-  textSecondary: 'text-gray-400',
-  textMuted: 'text-gray-500',
-  textInverse: 'text-gray-900',
+  textSecondary: 'text-stone-400',
+  textMuted: 'text-stone-500',
+  textInverse: 'text-stone-900',
 
-  border: 'border-gray-800/50',
-  borderLight: 'border-gray-700/50',
-  divide: 'divide-gray-800/50',
-  rule: 'bg-gray-700',
-  ringOnBg: 'border-gray-950',
+  border: 'border-stone-800/50',
+  borderLight: 'border-stone-700/50',
+  divide: 'divide-stone-800/50',
+  rule: 'bg-stone-700',
+  ringOnBg: 'border-stone-950',
 
-  floatBg: 'bg-gray-800',
-  floatBorder: 'border-gray-700',
-  trackOff: 'bg-gray-700',
+  floatBg: 'bg-stone-800',
+  floatBorder: 'border-stone-700',
+  trackOff: 'bg-stone-700',
 
-  modal: 'bg-gray-900',
+  modal: 'bg-stone-900',
   overlay: 'bg-black/80',
 
-  portalBg: 'bg-gradient-to-br from-gray-950/95 via-purple-950/80 to-gray-950/95 backdrop-blur-xl',
+  portalBg: 'bg-gradient-to-br from-stone-950/95 via-purple-950/80 to-stone-950/95 backdrop-blur-xl',
   portalCard: 'bg-white/5 border-white/10 hover:bg-white/10',
   portalInput: 'bg-white/5 border-white/10',
 
-  canvasBg: 'bg-gray-900',
+  canvasBg: 'bg-stone-900',
   canvasGrid: '#3f3f46',
   canvasEdge: '#71717a',
 };
@@ -474,8 +474,8 @@ export function tint(key, dark) {
  * Subtle in light; in dark it lifts the header off the near-black ground.
  */
 export const HEAD_WASH = {
-  light: 'bg-gradient-to-b from-gray-50 to-transparent',
-  dark:  'bg-gradient-to-b from-gray-900/60 to-transparent',
+  light: 'bg-gradient-to-b from-stone-50 to-transparent',
+  dark:  'bg-gradient-to-b from-stone-900/60 to-transparent',
 };
 
 export function headWash(dark) {

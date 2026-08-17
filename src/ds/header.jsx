@@ -179,7 +179,11 @@ export function FilterBar({
   const activeCount = countActive(value);
 
   return (
-    <div className={cx('px-4 flex items-center gap-2 border-t', ROW2_H, t.borderLight, t.bgSubtle)}>
+    /* No fill and no rule of its own: the whole header is ONE flat surface, the
+     * page colour, and the filter bar is part of it rather than a darker shelf
+     * bolted underneath. A band of `bgSubtle` here read as a second piece of
+     * chrome stacked on the first. */
+    <div className={cx('px-4 flex items-center gap-2', ROW2_H)}>
       {/* The controls scroll; Clear all does NOT. A narrow window used to push it
         * off the end of the row, which meant a list could be filtered with no
         * visible way to unfilter it — the same class of fault as a filter whose

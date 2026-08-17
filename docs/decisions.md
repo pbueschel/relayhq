@@ -508,3 +508,33 @@ parameter list first. And after ANY scripted edit to a view, run a Bun.Transpile
 
 **Why.** The build error gave no file and no line. The parse sweep found it in seconds and is four lines
 of script. Worth keeping as a habit whenever an edit is applied by script rather than by hand.
+
+---
+
+## 2026-08-17 — The neutral ramp is `stone`, not `gray`, and the header is one flat surface
+
+**Context.** Phil pointed at a ServiceHub screenshot: "I want this to be the background color for the
+agent workspace." Sampling both images settled it — the page background was ALREADY identical, `#f9fafb`
+in each. Then: "why does the github page feel colder? we need to warm the color pallet slightly."
+
+**Decision.** Two changes, from two measurements.
+
+1. The `FilterBar` no longer paints `t.bgSubtle` (gray-100) or draws its own rule. A vertical pixel scan
+   down the right margin showed RelayHQ banding its chrome — header `#f9fafb`, filter bar `#f3f4f6`,
+   content `#f9fafb` — where the reference was one uninterrupted surface from the top bar to the first
+   card. The header is now one flat surface.
+2. The neutral ramp moved from Tailwind `gray` to `stone` across `tokens.js` (41 class refs) plus the two
+   strays in `forms.jsx` and `primitives.jsx`.
+
+**Why.** "Colder" was not the background — it was every border, muted label and body string on the page.
+Tailwind's `gray` is blue-biased: sampled muted text measured R−B = −23. On `stone` the same pixel reads
++14, a 37-point swing toward warm, while the page itself barely moves (`#f9fafb` → `#fafaf9`). That is
+what "warm it slightly" should mean: leave the surfaces alone, take the blue out of the ink.
+
+**Rejected.** `neutral`, which removes the blue without adding any warmth — it would have read as a bug
+fix rather than a change. Tinting the page background instead, which moves the one value that was already
+correct and leaves the cold ink in place.
+
+**Note.** The `slate` and `gray` ACCENT hues in the generated `accents.js` are untouched, so muted chips
+keep a cool cast. If that reads wrong next to warm chrome, the fix is `scripts/gen-accents.js` and a
+regenerate, not a hand-edit — `accents.js` is generated.

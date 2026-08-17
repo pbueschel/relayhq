@@ -103,7 +103,7 @@ export function Toggle({ checked, onChange, label, accent = 'purple', className 
       className={cx('flex items-center gap-2.5 select-none', className)}
     >
       <span className={cx('relative w-9 h-5 rounded-full transition-colors flex-shrink-0',
-        checked ? c.solid : (t.bgSubtle + ' ring-1 ring-inset ring-gray-400/30'))}>
+        checked ? c.solid : (t.bgSubtle + ' ring-1 ring-inset ring-stone-400/30'))}>
         <span className={cx('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
           checked ? 'translate-x-[18px]' : 'translate-x-0.5')} />
       </span>
