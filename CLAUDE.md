@@ -77,6 +77,10 @@ Outward-facing deliverables are HELD until Phil gives explicit go-ahead. Track t
 plan.md under **Held**. The GitHub Pages deployment itself is *not* held — Phil authorised it
 on 2026-08-16.
 
+**Deploying is not the same as sharing.** Something can be live at the public URL and still be
+held: the landing page on the empty hash route is exactly that as of 2026-08-17. Read the **Held**
+section of plan.md before sending anyone a link, and never send one on your own initiative.
+
 ## Environment note
 
 `~/Documents` is iCloud-synced on Phil's Mac, which makes `node_modules` there slow to install and

@@ -185,3 +185,22 @@ Work through the omissions the catalog rework left behind, in this order:
 **The landing page is built and live at the URL, but not cleared for sharing.** Phil's framing was
 "before we share this out to anyone" — he has seen it and asked for changes, but has not said go.
 Do not send the link onward without his explicit word.
+
+### Addendum — design artifacts shown to Phil this session
+
+Three designs were put in front of Phil as Claude artifacts before any of them was implemented.
+Recording the URLs because the decisions above reference "shown as an artifact" and a future
+session would otherwise have no way back to what he actually approved.
+
+- **Gradient restoration** — v1's gradient treatment reapplied to the current build:
+  https://claude.ai/code/artifact/d971e55c-0db4-43a2-a770-6a0607770bac
+- **Header architecture** — the options for the module top-bar, including Option B-2 with
+  multi-select dropdowns and an in-page search, which is what shipped:
+  https://claude.ai/code/artifact/9d7a8cc8-bafd-4cd7-84e4-d2ed9e932aa5
+- **Landing page directions** — three directions; Phil picked option 2, then asked to blend all
+  three, then specified the rotating-audience headline himself:
+  https://claude.ai/code/artifact/d8a48de0-ec60-4d90-b1c8-972154cf87b2
+
+**The working pattern worth keeping:** every visual change this session went artifact → Phil's
+reaction → implementation. None of the three was built as specced; each got a correction that only
+surfaced because he had something concrete to react to. Propose visually before writing the view.
