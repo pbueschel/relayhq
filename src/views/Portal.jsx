@@ -2,9 +2,9 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, BookOpen, Layers,
-  Folder, Circle, Inbox, FileQuestion, CircleCheck, CircleAlert, Play, Pause, AlignLeft,
+  Folder, Circle, Inbox, FileQuestion, CircleCheck, CircleAlert, AlignLeft,
   Sparkles, GraduationCap, BookMarked, Clock, Stamp, Send, ThumbsUp, ThumbsDown, Info,
-  Moon, Sun, LogOut, Building2, Users, User, Route, Eye, Award, Paperclip, Check,
+  Moon, Sun, LogOut, Building2, Users, User, Route, Award, Paperclip,
   LayoutGrid, ListOrdered, MessageSquare, ShieldCheck, Video, Search, X,
   KeyRound, Mail, Laptop, AppWindow, Store, LifeBuoy,
   DollarSign, Truck, ShoppingCart, CalendarClock, Monitor, Headphones, Smartphone,
@@ -106,6 +106,17 @@ const WIDE = 'max-w-6xl mx-auto px-6';
 const MID = 'max-w-4xl mx-auto px-6';
 const READ = 'max-w-3xl mx-auto px-6';
 const PROSE = 'max-w-[70ch]';
+
+/* THE OPTION LIST'S RHYTHM.
+ *
+ * v1 rendered every list of choices as full-width rows stacked one per line —
+ * long pills — and that is what a choice list is again. It is a deliberately
+ * looser rhythm than DENSITY.rowGap, which paces an agent's dense record list;
+ * this is an end user picking ONE thing from a short list, and the extra air is
+ * what stops it reading as a table. The row's own padding is DENSITY.cardPad. */
+const OPTION_STACK = 'space-y-3';
+/* The reading column the home page's option list shares with the search box. */
+const OPTION_COL = 'max-w-2xl mx-auto';
 
 /* The hero wash. One gradient moment on the page, tuned per mode rather than
  * inverted: light gets a whisper, dark gets a glow that lifts the page off
@@ -356,8 +367,10 @@ function nextTicketKey(tickets) {
 /* ==================================================================== *
  * Accessibility
  *
- * Auto-advance is a WCAG 2.2.2 concern, so the guide player never starts a
- * timer for a reader who asked us not to move things.
+ * NOTHING IN THIS FILE MOVES ON ITS OWN ANY MORE, so this hook no longer has a
+ * timer to suppress. What is left for it is the card's own entry and exit
+ * gesture, which is skipped outright — not shortened — for a reader who asked
+ * us not to animate.
  * ==================================================================== */
 
 function usePrefersReducedMotion() {
@@ -699,12 +712,11 @@ export default function Portal({ route }) {
     : null;
   const svcQueue = leafService?.fulfilmentQueueId ? byQueue.get(leafService.fulfilmentQueueId) || null : null;
 
-  /* Where an atom shows up elsewhere — the reuse, surfaced to the reader. */
-  const alsoTaughtIn = useMemo(() => {
-    const id = frameAtom?.id || lessonId;
-    if (!id) return [];
-    return (s.courses || []).filter(c => lessonIdsOf(c).includes(id));
-  }, [frameAtom, lessonId, s.courses]);
+  /* Where an atom ALSO shows up — which courses teach it — is deliberately not
+   * computed here any more. It is a true and useful fact about the atom, and it
+   * belongs to the Knowledge and Learning modules where somebody is authoring or
+   * being taught. In the portal it is one more thing between a person and their
+   * answer. */
 
   /* ---------------- search, scoped to the active tab ---------------- */
 
@@ -1226,7 +1238,12 @@ export default function Portal({ route }) {
               onAtom={(hit) => openCard([...helpFrames(hit.leaf.id), { type: 'atom', id: hit.id }])}
               onThing={(hit) => openHelpNode(hit.id)}
               doors={<DoorCards facts={doorFacts} onOpen={openDoor} />}
-              popular={popular.map(({ node }) => ({ id: node.id, name: node.name, icon: Circle }))}
+              /* Full-width rows, so each one has room to say where it sits in
+                 the catalog rather than being a bare name in a pill. */
+              popular={popular.map(({ node, trail }) => ({
+                id: node.id, name: node.name, icon: Circle,
+                hint: trail.map(n => n.name).join(' › '),
+              }))}
               popularHue={entityHue('item')}
               popularLabel="Most requested"
               onPopular={openHelpNode}
@@ -1263,7 +1280,11 @@ export default function Portal({ route }) {
               onAtom={(hit) => openCard([...serviceFrames(hit.leaf.id), { type: 'atom', id: hit.id }])}
               onThing={(hit) => openService(hit.id)}
               doors={<DoorCards facts={doorFacts} onOpen={openDoor} />}
-              popular={svcPopular.map(i => ({ id: i.id, name: i.name, icon: serviceGlyph(i.icon) }))}
+              popular={svcPopular.map(i => ({
+                id: i.id, name: i.name, icon: serviceGlyph(i.icon),
+                hint: [byCat.get(i.categoryId)?.name, fmtMoney(i.price) || 'No charge', fmtDelivery(i.deliveryDays)]
+                  .filter(Boolean).join(' · '),
+              }))}
               popularHue={entityHue('item')}
               popularLabel="Ordered most often"
               onPopular={openService}
@@ -1298,7 +1319,6 @@ export default function Portal({ route }) {
               />
               <ReadingScreen
                 atom={lesson}
-                alsoIn={alsoTaughtIn}
                 fromCourse={course}
                 onCourseBack={() => setLessonId(null)}
               />
@@ -1376,7 +1396,6 @@ export default function Portal({ route }) {
           {frameKind === 'atom' && frameAtom ? (
             <LeafReading
               atom={frameAtom}
-              alsoIn={alsoTaughtIn}
               canAskForHelp={leafForms.length > 0}
               onYes={() => onArticleYes(frameAtom.id)}
               onNo={onArticleNo}
@@ -1665,13 +1684,23 @@ function PortalHero({
         {doors}
 
         {popular.length > 0 && (
-          <div className="mt-10">
-            <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em] mb-3.5', t.textMuted)}>
+          <div className={cx('mt-10 text-left', OPTION_COL)}>
+            <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em] mb-3.5 text-center', t.textMuted)}>
               {popularLabel}
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-2.5">
+            {/* A CHOICE LIST, SO IT IS A STACK OF FULL-WIDTH ROWS. These used to
+                wrap into ragged rows of inline pills, which made a short list of
+                the most-asked-for things look like a tag cloud. */}
+            <div className={OPTION_STACK}>
               {popular.map(p => (
-                <PopularPill key={p.id} entry={p} hue={popularHue} onOpen={onPopular} />
+                <OptionRow
+                  key={p.id}
+                  icon={p.icon || Circle}
+                  hue={popularHue}
+                  name={p.name}
+                  secondary={p.hint}
+                  onClick={() => onPopular(p.id)}
+                />
               ))}
             </div>
           </div>
@@ -1936,23 +1965,72 @@ function SearchThingRow({ thing, tone, onOpen }) {
   );
 }
 
-function PopularPill({ entry, hue, onOpen }) {
+/* ==================================================================== *
+ * THE LONG PILL — one option, one full-width row.
+ *
+ * v1's option list, restored: every choice in this portal is a row spanning the
+ * reading column, stacked one per line, never a grid of boxes. A grid asks you
+ * to scan in two dimensions and sizes every option identically whatever it
+ * carries; a stack of rows is read top to bottom in one pass, which is the
+ * shape of "pick one of these".
+ *
+ * The anatomy is fixed so every list in the portal is the same object: a tinted
+ * icon tile, a name, a quiet secondary line, an optional meta line of facts, an
+ * optional trailing group of VALUE chips, and a chevron.
+ *
+ * The chevron is muted at rest and accent on hover. It is drawn twice and
+ * cross-faded rather than given a `group-hover:` colour, because the accent
+ * class comes from a(hue) at runtime and interpolating one would compile to
+ * nothing at all.
+ * ==================================================================== */
+
+function OptionRow({ icon: Glyph, hue = 'gray', name, secondary, meta, trailing, emphasise, onClick }) {
   const { t, a } = useTheme();
   const c = a(hue);
-  const Glyph = entry.icon || Circle;
   return (
     <button
-      onClick={() => onOpen(entry.id)}
-      className={cx('group inline-flex items-center gap-3 rounded-full border pl-2 pr-5 py-2 shadow-sm',
-        'transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg', t.portalCard)}
+      onClick={onClick}
+      className={cx('group w-full flex items-center gap-4 rounded-2xl border text-left shadow-sm',
+        'transition-all duration-200 hover:shadow-lg', DENSITY.cardPad, t.portalCard,
+        emphasise && c.borderStrong)}
     >
-      <span className={cx('w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0', c.softStrong)}>
-        <Glyph size={ICON.base} className={c.fg} />
+      <span className={cx('p-3 rounded-xl flex-shrink-0', c.softStrong)}>
+        <Glyph size={ICON.lg} className={c.fg} />
       </span>
-      <span className={cx('text-sm font-medium', t.text)}>{entry.name}</span>
-      <ArrowRight size={ICON.base}
-        className={cx('-ml-2 opacity-0 group-hover:opacity-100 group-hover:ml-0 transition-all', c.fg)} />
+
+      <span className="flex-1 min-w-0">
+        <span className={cx('block font-medium leading-snug', t.text)}>{name}</span>
+        {secondary && (
+          <span className={cx('block text-xs mt-0.5 leading-relaxed line-clamp-2', t.textMuted)}>{secondary}</span>
+        )}
+        {meta && (
+          <span className={cx('mt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px]', t.textMuted)}>
+            {meta}
+          </span>
+        )}
+      </span>
+
+      {trailing && (
+        <span className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end max-w-[45%]">{trailing}</span>
+      )}
+
+      <span aria-hidden className="relative flex-shrink-0 w-4 h-4">
+        <ChevronRight size={ICON.md}
+          className={cx('absolute inset-0 transition-opacity group-hover:opacity-0', t.textMuted)} />
+        <ChevronRight size={ICON.md}
+          className={cx('absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100', c.fg)} />
+      </span>
     </button>
+  );
+}
+
+/** One fact on a row's meta line — an icon and a value, never a bare number. */
+function OptionFact({ icon: Glyph, children, className }) {
+  return (
+    <span className={cx('flex items-center gap-1.5', className)}>
+      {Glyph && <Glyph size={ICON.xs} className="flex-shrink-0" />}
+      {children}
+    </span>
   );
 }
 
@@ -2063,11 +2141,49 @@ function NodeCard({ node, onPick }) {
 }
 
 /**
+ * ONE CATALOG NODE AS A ROW — product, subcategory or item.
+ *
+ * It carries everything the card version carried: the description, the counts
+ * that say how much sits under it, and the Popular flag. The counts are plain
+ * facts on the meta line rather than chips, because a chip carries a VALUE and
+ * "3 categories" is a number.
+ */
+function NodeOptionRow({ node, onPick }) {
+  const stats = nodeStats(node);
+  return (
+    <OptionRow
+      icon={nodeIcon(node)}
+      hue={entityHue(node.type)}
+      name={node.name}
+      secondary={node.description}
+      meta={<>
+        {node.type === 'product' && stats.children > 0 && (
+          <OptionFact icon={Layers}>{plural(stats.children, 'category', 'categories')}</OptionFact>
+        )}
+        {node.type === 'product' && stats.items > 0 && (
+          <OptionFact icon={Circle}>{plural(stats.items, 'service', 'services')}</OptionFact>
+        )}
+        {node.type === 'subcategory' && stats.children > 0 && (
+          <OptionFact icon={Circle}>{plural(stats.children, 'service', 'services')}</OptionFact>
+        )}
+        {stats.help > 0 && <OptionFact icon={BookOpen}>{plural(stats.help, 'answer', 'answers')}</OptionFact>}
+        {stats.intakes > 0 && <OptionFact icon={FileQuestion}>{plural(stats.intakes, 'form', 'forms')}</OptionFact>}
+        {node.fulfillment && <OptionFact icon={Clock}>{node.fulfillment}</OptionFact>}
+      </>}
+      trailing={node.popular ? <Chip accent="amber" icon={Sparkles}>Popular</Chip> : null}
+      onClick={() => onPick(node)}
+    />
+  );
+}
+
+/**
  * A HELP BROWSE LEVEL, INSIDE THE CARD.
  *
- * The same cards the home grid uses, in the card's measure — because the point
- * of moving the drill in here is that nothing changes shape when it moves. The
- * step label lives in the card header, so the body only has to say what to do.
+ * A LIST OF CHOICES, SO IT IS A LIST — full-width rows stacked one per line,
+ * not a two-up grid of boxes. The home page keeps its browse grid because that
+ * is a landing overview of everything; this is "pick one", and it reads top to
+ * bottom in a single pass. The step label lives in the card header, so the body
+ * only has to say what to do.
  */
 function LeafHelpBrowse({ level, node, nodes, onPick }) {
   const { t } = useTheme();
@@ -2086,7 +2202,9 @@ function LeafHelpBrowse({ level, node, nodes, onPick }) {
           <EmptyState icon={Folder} title="Nothing published here"
             hint="This branch of the catalog has no published children for your audience." />
         ) : (
-          <BrowseGrid nodes={nodes} onPick={onPick} />
+          <div className={OPTION_STACK}>
+            {nodes.map(n => <NodeOptionRow key={n.id} node={n} onPick={onPick} />)}
+          </div>
         )}
       </div>
     </div>
@@ -2101,6 +2219,78 @@ function LeafHelpBrowse({ level, node, nodes, onPick }) {
  * rather than an article and a symptom picker.
  * ==================================================================== */
 
+/**
+ * ONE SERVICE CATEGORY AS A ROW.
+ *
+ * A category groups orderable things, so it is coloured like the grouping level
+ * of the other catalog. The registry decides, not this file.
+ */
+function ServiceCategoryOptionRow({ category, items, onPick }) {
+  const free = items.filter(i => !Number(i.price)).length;
+  const approvals = items.filter(i => i.approvalPolicyId).length;
+  return (
+    <OptionRow
+      icon={serviceGlyph(category.icon, Boxes)}
+      hue={entityHue('product')}
+      name={category.name}
+      secondary={category.description}
+      meta={<>
+        <OptionFact icon={Package}>{plural(items.length, 'service', 'services')}</OptionFact>
+        {free > 0 && <OptionFact icon={DollarSign}>{free} at no charge</OptionFact>}
+        {approvals > 0 && <OptionFact icon={Stamp}>{approvals} need sign-off</OptionFact>}
+      </>}
+      onClick={() => onPick(category.id)}
+    />
+  );
+}
+
+/**
+ * ONE ORDERABLE SERVICE AS A ROW.
+ *
+ * Price, recurrence and delivery sit on the meta line; the named approval and
+ * the Popular flag are trailing chips. Every fact the card carried is still
+ * here — a person choosing between two laptops still sees what each costs and
+ * when it turns up, without opening either.
+ */
+function ServiceItemOptionRow({ item, policy, onPick }) {
+  const { a } = useTheme();
+  const c = a(entityHue('item'));
+  const price = fmtMoney(item.price) || 'No charge';
+  const recurring = fmtRecurring(item);
+  const delivery = fmtDelivery(item.deliveryDays);
+
+  return (
+    <OptionRow
+      icon={serviceGlyph(item.icon)}
+      hue={entityHue('item')}
+      name={item.name}
+      secondary={item.shortDescription}
+      meta={<>
+        <OptionFact icon={DollarSign} className={cx('font-semibold', c.fg)}>{price}</OptionFact>
+        {recurring && <OptionFact>then {recurring}</OptionFact>}
+        {delivery && <OptionFact icon={Truck}>{delivery}</OptionFact>}
+      </>}
+      trailing={<>
+        {item.popular && <Chip accent="amber" icon={Sparkles}>Popular</Chip>}
+        {/* The chip carries the VALUE — the policy that will run — not a count
+            and not a generic label, and it appears BEFORE the form so nobody
+            fills one in to discover it needs their director. The name only
+            falls back to the generic wording when the policy is missing. */}
+        {item.approvalPolicyId && (
+          <Chip
+            accent={entityHue('approval')}
+            icon={Stamp}
+            title={policy ? `Approval required — ${policy.name}` : 'Approval required'}
+          >
+            {policy?.name || 'Approval required'}
+          </Chip>
+        )}
+      </>}
+      onClick={() => onPick(item.id)}
+    />
+  );
+}
+
 /** The service door's first level, inside the card. */
 function LeafServiceCategories({ categories, items, onPick }) {
   return (
@@ -2113,9 +2303,9 @@ function LeafServiceCategories({ categories, items, onPick }) {
         <EmptyState icon={ShoppingCart} title="No services published yet"
           hint="The service catalog is empty for your audience. Published service items appear here grouped by category." />
       ) : (
-        <div className="flex flex-wrap gap-4 items-stretch">
+        <div className={OPTION_STACK}>
           {categories.map(cat => (
-            <ServiceCategoryCard
+            <ServiceCategoryOptionRow
               key={cat.id}
               category={cat}
               items={items.filter(i => i.categoryId === cat.id)}
@@ -2147,9 +2337,9 @@ function LeafServiceItems({ category, items, policies, onPick }) {
           <EmptyState icon={Package} title="Nothing published in this category"
             hint="Service items appear here once they are published to your audience." />
         ) : (
-          <div className="flex flex-wrap gap-4 items-stretch">
+          <div className={OPTION_STACK}>
             {items.map(item => (
-              <ServiceItemCard
+              <ServiceItemOptionRow
                 key={item.id}
                 item={item}
                 policy={policies.find(p => p.id === item.approvalPolicyId) || null}
@@ -2232,61 +2422,6 @@ function ServiceCategoryCard({ category, items, onPick }) {
         {approvals > 0 && (
           <span className="flex items-center gap-1.5"><Stamp size={ICON.xs} />{approvals} need sign-off</span>
         )}
-      </span>
-    </button>
-  );
-}
-
-function ServiceItemCard({ item, policy, onPick }) {
-  const { t, a } = useTheme();
-  const hue = entityHue('item');
-  const c = a(hue);
-  const Glyph = serviceGlyph(item.icon);
-  const price = fmtMoney(item.price) || 'No charge';
-  const recurring = fmtRecurring(item);
-  const delivery = fmtDelivery(item.deliveryDays);
-
-  return (
-    <button
-      onClick={() => onPick(item.id)}
-      className={cx('group relative text-left rounded-2xl border overflow-hidden p-5 flex flex-col',
-        'flex-1 basis-[20rem] min-w-[17rem] shadow-sm',
-        'transition-transform duration-200 hover:-translate-y-1 hover:shadow-xl', t.portalCard)}
-    >
-      <span aria-hidden className={cx('absolute inset-x-0 top-0 h-1 opacity-0 group-hover:opacity-100 transition-opacity', c.rail)} />
-      <span aria-hidden className={cx('absolute inset-0 rounded-2xl border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity', c.borderStrong)} />
-
-      <span className="flex items-start justify-between gap-3">
-        <IconTile icon={Glyph} accent={hue} size="lg" />
-        <span className="flex items-center gap-1.5 flex-wrap justify-end">
-          {item.popular && <Chip accent="amber" icon={Sparkles}>Popular</Chip>}
-          {/* The chip carries the VALUE — the policy that will run — not a count
-              and not a generic label, and it appears BEFORE the form so nobody
-              fills one in to discover it needs their director. The name only
-              falls back to the generic wording when the policy is missing. */}
-          {item.approvalPolicyId && (
-            <Chip
-              accent={entityHue('approval')}
-              icon={Stamp}
-              title={policy ? `Approval required — ${policy.name}` : 'Approval required'}
-            >
-              {policy?.name || 'Approval required'}
-            </Chip>
-          )}
-        </span>
-      </span>
-
-      <span className={cx('mt-4 block text-base font-semibold leading-snug text-balance', t.text)}>{item.name}</span>
-      <span className={cx('mt-2 block text-sm leading-relaxed line-clamp-2 min-h-[2.75rem]', t.textSecondary)}>
-        {item.shortDescription}
-      </span>
-
-      <span className={cx('mt-auto pt-4 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs border-t', t.textMuted, t.border)}>
-        <span className={cx('flex items-center gap-1.5 font-semibold', c.fg)}>
-          <DollarSign size={ICON.xs} />{price}
-        </span>
-        {recurring && <span className="flex items-center gap-1.5">then {recurring}</span>}
-        {delivery && <span className="flex items-center gap-1.5"><Truck size={ICON.xs} />{delivery}</span>}
       </span>
     </button>
   );
@@ -2515,7 +2650,7 @@ function LeafHelpItem({ item, trailText, atoms, forms, queues, policies, emphasi
             title="Try these before you raise anything"
             hint={`${plural(atoms.length, 'article covers', 'articles cover')} the usual version of this. Most people stop here.`}
           />
-          <div className={DENSITY.rowGap}>
+          <div className={OPTION_STACK}>
             {atoms.map(k => <LeafAtomRow key={k.id} atom={k} onOpen={() => onAtom(k.id)} />)}
           </div>
         </section>
@@ -2536,7 +2671,7 @@ function LeafHelpItem({ item, trailText, atoms, forms, queues, policies, emphasi
               you to try it again.
             </Banner>
           )}
-          <div className={DENSITY.rowGap}>
+          <div className={OPTION_STACK}>
             {forms.map(f => (
               <LeafIntakeRow
                 key={f.id}
@@ -2559,77 +2694,67 @@ function LeafHelpItem({ item, trailText, atoms, forms, queues, policies, emphasi
   );
 }
 
+/** A help resource, as a row. Format and read time both survive the revert. */
 function LeafAtomRow({ atom, onOpen }) {
-  const { t, a } = useTheme();
+  const { a } = useTheme();
   const guide = atom.format === 'guide';
   const hue = entityHue(guide ? 'guide' : 'article');
   const c = a(hue);
-  const Glyph = guide ? LayoutGrid : BookOpen;
   const slides = (atom.slides || []).length;
 
   return (
-    <button
+    <OptionRow
+      icon={guide ? LayoutGrid : BookOpen}
+      hue={hue}
+      name={atom.title}
+      secondary={atom.summary}
+      meta={<>
+        {guide && slides > 0 && <OptionFact icon={LayoutGrid}>{plural(slides, 'screen', 'screens')}</OptionFact>}
+        {atom.minutes ? <OptionFact icon={Clock}>{atom.minutes} min read</OptionFact> : null}
+        {atom.helpfulYes ? (
+          <OptionFact icon={ThumbsUp} className={c.fg}>
+            {atom.helpfulYes.toLocaleString()} found this helpful
+          </OptionFact>
+        ) : null}
+      </>}
+      trailing={<EntityTag kind={guide ? 'guide' : 'article'} />}
       onClick={onOpen}
-      className={cx('group w-full text-left rounded-xl border flex items-start gap-3 shadow-sm',
-        'transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg', DENSITY.rowPad, t.portalCard)}
-    >
-      <IconTile icon={Glyph} accent={hue} size="sm" className="mt-0.5" />
-      <span className="min-w-0 flex-1">
-        <span className={cx('block text-sm font-medium leading-snug', t.text)}>{atom.title}</span>
-        <span className={cx('block text-xs mt-0.5 line-clamp-2', t.textMuted)}>{atom.summary}</span>
-        <span className={cx('mt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px]', t.textMuted)}>
-          {guide && slides > 0 && (
-            <span className="flex items-center gap-1"><LayoutGrid size={ICON.xs} />{plural(slides, 'screen', 'screens')}</span>
-          )}
-          {atom.minutes ? <span className="flex items-center gap-1"><Clock size={ICON.xs} />{atom.minutes} min</span> : null}
-          {atom.helpfulYes ? (
-            <span className={cx('flex items-center gap-1', c.fg)}>
-              <ThumbsUp size={ICON.xs} />{atom.helpfulYes.toLocaleString()} found this helpful
-            </span>
-          ) : null}
-        </span>
-      </span>
-      <span className="flex items-center gap-2 flex-shrink-0">
-        <EntityTag kind={guide ? 'guide' : 'article'} />
-        <ChevronRight size={ICON.md} className={cx('opacity-0 group-hover:opacity-100 transition-opacity', c.fg)} />
-      </span>
-    </button>
+    />
   );
 }
 
+/**
+ * A request intake, as a row.
+ *
+ * The whole row is the control now — there is no separate Start button to aim
+ * at — but the intake's own submit wording is kept as the trailing label, so
+ * the row still says what pressing it will do. The queue and the policy stay
+ * as VALUE chips: nobody should fill a form in to discover where it lands or
+ * who has to sign it off.
+ */
 function LeafIntakeRow({ subform, queue, policy, emphasise, onStart }) {
-  const { t, a } = useTheme();
+  const { a } = useTheme();
   const c = a(entityHue('subform'));
   const fields = (subform.fields || []).length;
   const conditional = (subform.fields || []).filter(f => f.showIf).length;
 
   return (
-    <div className={cx('rounded-xl border shadow-sm flex items-start gap-3', DENSITY.rowPad,
-      t.portalCard, emphasise && c.borderStrong)}>
-      <IconTile icon={FileQuestion} accent={entityHue('subform')} size="sm" className="mt-0.5" />
-      <div className="min-w-0 flex-1">
-        <p className={cx('text-sm font-medium leading-snug', t.text)}>{subform.name}</p>
-        {subform.description && (
-          <p className={cx('text-xs mt-0.5 leading-relaxed', t.textSecondary)}>{subform.description}</p>
-        )}
-        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-          {queue
-            ? <Chip accent={queue.hue || entityHue('queue')} icon={Inbox} title={queue.description}>{queue.name}</Chip>
-            : <Chip accent="amber" icon={Route}>Unrouted → General</Chip>}
-          {policy && <Chip accent={entityHue('approval')} icon={Stamp} title={policy.description}>{policy.name}</Chip>}
-          <span className={cx('text-[11px]', t.textMuted)}>
-            {plural(fields, 'question', 'questions')}{conditional ? ` · ${conditional} conditional` : ''}
-          </span>
-        </div>
-      </div>
-      {/* SOLID, not the signature gradient. An item can carry several intakes and
-          a gradient on each one turns the brand moment into wallpaper — the
-          gradient belongs to the single primary action in the card footer. */}
-      <Button variant="solid" accent={entityHue('subform')} size="sm" iconRight={ArrowRight}
-        onClick={onStart} className="flex-shrink-0 mt-0.5">
-        {subform.submitLabel || 'Start'}
-      </Button>
-    </div>
+    <OptionRow
+      icon={FileQuestion}
+      hue={entityHue('subform')}
+      name={subform.name}
+      secondary={subform.description}
+      emphasise={emphasise}
+      meta={<>
+        {queue
+          ? <Chip accent={queue.hue || entityHue('queue')} icon={Inbox} title={queue.description}>{queue.name}</Chip>
+          : <Chip accent="amber" icon={Route}>Unrouted → General</Chip>}
+        {policy && <Chip accent={entityHue('approval')} icon={Stamp} title={policy.description}>{policy.name}</Chip>}
+        <span>{plural(fields, 'question', 'questions')}{conditional ? ` · ${conditional} conditional` : ''}</span>
+      </>}
+      trailing={<span className={cx('text-xs font-medium', c.fg)}>{subform.submitLabel || 'Start'}</span>}
+      onClick={onStart}
+    />
   );
 }
 
@@ -2691,7 +2816,7 @@ function LeafServiceItem({ item, categoryName, atoms, subform, queue, policy, on
             title="Worth reading first"
             hint="The same published articles the help centre serves — attached here so nobody orders blind."
           />
-          <div className={DENSITY.rowGap}>
+          <div className={OPTION_STACK}>
             {atoms.map(k => <LeafAtomRow key={k.id} atom={k} onOpen={() => onAtom(k.id)} />)}
           </div>
         </section>
@@ -2749,7 +2874,21 @@ function ServiceFact({ icon: Glyph, hue, label, value, note }) {
  * Level 2 — reading, inside the card
  * ==================================================================== */
 
-function LeafReading({ atom, alsoIn, canAskForHelp, onYes, onNo }) {
+/**
+ * THE CUSTOMER-FACING READER SHOWS CUSTOMER-FACING THINGS.
+ *
+ * Three things that used to frame the article are gone from the portal: the
+ * view count, the "what you will be able to do" objective, and the banner
+ * naming the courses this atom is also a lesson in. All three are true and all
+ * three are useful — to an author or to a learner. The person reading this is
+ * neither: they arrived holding a problem and they are looking for the fix.
+ * Those facts still live in the Knowledge and Learning modules, which is where
+ * somebody is actually authoring or being taught.
+ *
+ * What stays is what helps a reader judge the answer in front of them: how long
+ * it takes to read, when it was last touched, and how many people it worked for.
+ */
+function LeafReading({ atom, canAskForHelp, onYes, onNo }) {
   const { t } = useTheme();
   const guide = atom.format === 'guide';
 
@@ -2758,37 +2897,34 @@ function LeafReading({ atom, alsoIn, canAskForHelp, onYes, onNo }) {
       <div>
         <p className={cx('text-[15px] leading-relaxed', t.textSecondary)}>{atom.summary}</p>
         <div className="mt-2 flex items-center gap-2 flex-wrap">
-          {atom.minutes ? <Chip accent="slate" icon={Clock}>{atom.minutes} min</Chip> : null}
-          {atom.views ? <Chip accent="slate" icon={Eye}>{atom.views.toLocaleString()} views</Chip> : null}
+          {atom.minutes ? <Chip accent="slate" icon={Clock}>{atom.minutes} min read</Chip> : null}
+          {atom.helpfulYes ? (
+            <Chip accent={statusMeta('resolved').hue} icon={ThumbsUp}>
+              {atom.helpfulYes.toLocaleString()} found this helpful
+            </Chip>
+          ) : null}
           {atom.updatedAt && <span className={cx('text-xs', t.textMuted)}>Updated {fmtWhen(atom.updatedAt)}</span>}
         </div>
       </div>
 
-      {atom.objective && (
-        <Banner accent="blue" icon={Check} title="What you will be able to do">
-          {atom.objective}
-        </Banner>
-      )}
-
       {guide ? <GuideBody atom={atom} /> : <ArticleBody atom={atom} />}
-
-      {alsoIn.length > 0 && (
-        <div className={cx('rounded-2xl border p-4 flex items-center gap-3 flex-wrap', t.portalCard)}>
-          <span className="flex items-center gap-2.5">
-            <IconTile icon={GraduationCap} accent={entityHue('curriculum')} size="sm" />
-            <span className={cx('text-sm', t.textSecondary)}>This same article is a lesson in</span>
-          </span>
-          <ChipGroup accent={entityHue('curriculum')} icon={BookMarked} max={3} items={alsoIn} render={(c) => c.title} />
-        </div>
-      )}
 
       <ResolvePrompt canAskForHelp={canAskForHelp} onYes={onYes} onNo={onNo} />
     </div>
   );
 }
 
-/** The academy still reads a lesson as a page — it is a course, not a leaf. */
-function ReadingScreen({ atom, alsoIn, fromCourse, onCourseBack }) {
+/**
+ * The academy still reads a lesson as a page — it is a course, not a leaf.
+ *
+ * Same rule as the card reader: this is still the portal, so the view count,
+ * the objective panel and the "also a lesson in" banner are not here either.
+ * The reader already knows they are in a course — the trail bar says so and the
+ * footer below links back to it — and the lesson's objective is what the course
+ * page prints under every lesson in the module list, which is where somebody
+ * chooses what to read next.
+ */
+function ReadingScreen({ atom, fromCourse, onCourseBack }) {
   const { t } = useTheme();
   const guide = atom.format === 'guide';
 
@@ -2801,30 +2937,18 @@ function ReadingScreen({ atom, alsoIn, fromCourse, onCourseBack }) {
         title={atom.title}
         sub={atom.summary}
         meta={<>
-          {atom.minutes ? <Chip accent="slate" icon={Clock}>{atom.minutes} min</Chip> : null}
-          {atom.views ? <Chip accent="slate" icon={Eye}>{atom.views.toLocaleString()} views</Chip> : null}
+          {atom.minutes ? <Chip accent="slate" icon={Clock}>{atom.minutes} min read</Chip> : null}
+          {atom.helpfulYes ? (
+            <Chip accent={statusMeta('resolved').hue} icon={ThumbsUp}>
+              {atom.helpfulYes.toLocaleString()} found this helpful
+            </Chip>
+          ) : null}
           {atom.updatedAt && <span className={cx('text-xs', t.textMuted)}>Updated {fmtWhen(atom.updatedAt)}</span>}
         </>}
       />
 
       <div className={cx(guide ? WIDE : READ, 'pb-16 space-y-6')}>
-        {atom.objective && (
-          <Banner accent="blue" icon={Check} title="What you will be able to do">
-            {atom.objective}
-          </Banner>
-        )}
-
         {guide ? <GuideBody atom={atom} /> : <ArticleBody atom={atom} />}
-
-        {alsoIn.length > 0 && (
-          <div className={cx('rounded-2xl border p-4 flex items-center gap-3 flex-wrap', t.portalCard)}>
-            <span className="flex items-center gap-2.5">
-              <IconTile icon={GraduationCap} accent={entityHue('curriculum')} size="sm" />
-              <span className={cx('text-sm', t.textSecondary)}>This same article is a lesson in</span>
-            </span>
-            <ChipGroup accent={entityHue('curriculum')} icon={BookMarked} max={3} items={alsoIn} render={(c) => c.title} />
-          </div>
-        )}
 
         {fromCourse && (
           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -2854,15 +2978,31 @@ function ArticleBody({ atom }) {
 }
 
 /* ==================================================================== *
- * Guide — the Instagram-style how-to, done accessibly.
+ * Guide — the carousel, and nobody's clock but the reader's.
  *
- * Stories conventions implemented in full: segmented progress across the top,
- * tap right/left to move, press-and-hold to pause. WCAG 2.2.2 says an
- * auto-advancing carousel needs a way to pause, so there is a visible
- * pause/play control, arrow-key and space support with a visible focus state,
- * prefers-reduced-motion suppresses auto-advance entirely, and "Read as text"
+ * THE READER MOVES THEMSELVES. There is no timer here: no setTimeout, no
+ * interval, no animation that advances anything, no armed or running state and
+ * no reading of a slide's duration. A screen changes when a person asks for the
+ * next one — an arrow, a dot, a click on either half of the media, or the
+ * keyboard — and never otherwise.
+ *
+ * WHY THERE IS NO PAUSE CONTROL. WCAG 2.2.2 (pause, stop, hide) obliges any
+ * automatically moving content to offer a way to stop it. That obligation was
+ * real when this player advanced on its own, and it is why the old version
+ * carried a pause button, a segmented progress bar and a press-and-hold
+ * gesture. With the timer gone the success criterion does not apply — there is
+ * nothing to pause — so the control is REMOVED rather than left on screen as
+ * chrome that stops nothing. Leaving a dead pause button would be the worse
+ * outcome of the two: a control that lies about what it does.
+ *
+ * WHAT WAS NEVER ABOUT THE TIMER, AND SO STAYS: alt text on every image,
+ * full keyboard control (Left/Right step, Home/End jump) with a visible focus
+ * state, an aria-live announcement of the position, and "Read as text", which
  * renders the same slides as a static captioned sequence with the alt text
- * shown — the accessible equivalent, not a lesser version.
+ * written out — the accessible equivalent, not a lesser version.
+ *
+ * `seconds` is still on the slide model and still in the seed. This viewer
+ * simply never reads it.
  * ==================================================================== */
 
 function GuideBody({ atom }) {
@@ -2874,7 +3014,8 @@ function GuideBody({ atom }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <span className={cx('text-sm', t.textMuted)}>
-          {plural(slides.length, 'screen', 'screens')} · tap the right side to advance, hold to pause
+          {plural(slides.length, 'screen', 'screens')}
+          {slides.length > 1 ? ' · you move between them; nothing advances on its own' : ''}
         </span>
         <Button
           variant={asText ? 'solid' : 'soft'}
@@ -2883,47 +3024,11 @@ function GuideBody({ atom }) {
           icon={asText ? LayoutGrid : AlignLeft}
           onClick={() => setAsText(v => !v)}
         >
-          {asText ? 'Play the guide' : 'Read as text'}
+          {asText ? 'Back to the screens' : 'Read as text'}
         </Button>
       </div>
 
-      {asText
-        ? <GuideAsText atom={atom} />
-        : (
-          <div className="grid gap-6 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(17rem, 1fr))' }}>
-            <div className="max-w-[20rem] w-full mx-auto">
-              <StoryPlayer atom={atom} />
-            </div>
-            <GuideOutline atom={atom} />
-          </div>
-        )}
-    </div>
-  );
-}
-
-function GuideOutline({ atom }) {
-  const { t, a } = useTheme();
-  const c = a(entityHue('guide'));
-  return (
-    <div className={cx('rounded-2xl border p-5', t.portalCard)}>
-      <GroupLabel>What the guide covers</GroupLabel>
-      <ol className="mt-3 space-y-2.5">
-        {(atom.slides || []).map((sl, i) => (
-          <li key={sl.id} className="flex items-start gap-2.5">
-            <span className={cx('w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-semibold flex-shrink-0',
-              c.softStrong, c.fg)}>{i + 1}</span>
-            <span className="min-w-0">
-              <span className={cx('block text-sm leading-snug', t.text)}>{sl.heading || `Screen ${i + 1}`}</span>
-              <span className={cx('text-[11px]', t.textMuted)}>{sl.seconds ? `${sl.seconds}s` : 'manual'}</span>
-            </span>
-          </li>
-        ))}
-      </ol>
-      {atom.tags?.length ? (
-        <div className="mt-4">
-          <ChipGroup accent="slate" max={4} items={atom.tags} />
-        </div>
-      ) : null}
+      {asText ? <GuideAsText atom={atom} /> : <CarouselViewer atom={atom} />}
     </div>
   );
 }
@@ -2933,7 +3038,8 @@ function GuideAsText({ atom }) {
   return (
     <div className={cx('rounded-2xl border p-5 sm:p-6', t.portalCard)}>
       <Banner accent="blue" icon={Info} className="mb-5">
-        The same guide as a static sequence. Nothing moves on its own, and every image's description is written out.
+        The same guide as one static sequence — every screen at once, in order, with each image's description
+        written out.
       </Banner>
       <ol className={cx('space-y-5', PROSE)}>
         {(atom.slides || []).map((sl, i) => (
@@ -2965,161 +3071,182 @@ function GuideAsText({ atom }) {
   );
 }
 
-function StoryPlayer({ atom }) {
+/**
+ * THE CAROUSEL. v1's shape, restored whole.
+ *
+ * A 16:9 media box, one screen at a time, with round chevrons at the edges, a
+ * "3 / 5" counter, the caption underneath and dots below that. Either half of
+ * the media is also a click target, which is the one Stories habit worth
+ * keeping — it costs nothing and it is what a thumb reaches for.
+ *
+ * Moving is the reader's job in every mode: `step` is called from the arrows,
+ * the dots, the half-clicks and the keyboard, and from nowhere else. There is
+ * no effect in this component and no timer anywhere in this file.
+ *
+ * Stepping wraps, as v1 did, so neither arrow is ever a dead control.
+ */
+function CarouselViewer({ atom }) {
   const { t, a } = useTheme();
   const c = a(entityHue('guide'));
   const slides = atom.slides || [];
-  const reduced = usePrefersReducedMotion();
   const [index, setIndex] = useState(0);
-  const [playing, setPlaying] = useState(!reduced);
-  const [held, setHeld] = useState(false);
-  const downAt = useRef(0);
-
-  const slide = slides[index] || null;
-  const armed = !reduced && !!slide?.seconds;
-  const running = armed && playing && !held;
-
-  useEffect(() => { if (reduced) setPlaying(false); }, [reduced]);
-
-  useEffect(() => {
-    if (!running || !slide) return undefined;
-    const id = setTimeout(() => {
-      if (index + 1 < slides.length) setIndex(index + 1);
-      else setPlaying(false);
-    }, slide.seconds * 1000);
-    return () => clearTimeout(id);
-  }, [running, index, slide, slides.length]);
 
   if (!slides.length) {
     return (
-      <div className={cx('rounded-3xl border flex items-center justify-center text-xs text-center p-4',
-        t.bgInput, t.borderLight, t.textMuted)} style={{ aspectRatio: '9 / 16' }}>
+      <div className={cx('rounded-2xl border aspect-video flex items-center justify-center text-sm text-center p-6',
+        t.bgSubtle, t.borderLight, t.textMuted)}>
         This guide has no screens yet.
       </div>
     );
   }
 
-  const step = (dir) => {
-    setIndex(i => Math.max(0, Math.min(slides.length - 1, i + dir)));
-  };
-  const tap = (dir) => {
-    const startedAt = downAt.current;
-    downAt.current = 0;
-    // A press longer than 300ms was a hold-to-pause, not a tap. A click with no
-    // pointer press at all is a keyboard activation, which must still move.
-    if (startedAt && Date.now() - startedAt > 300) return;
-    step(dir);
-  };
-  /* Pressing play after the run has finished starts it again from the top —
-   * otherwise the control is visible but inert on the last screen, which is
-   * worse than not offering it. */
-  const togglePlay = () => {
-    if (!playing && slides.length > 1 && index >= slides.length - 1) setIndex(0);
-    setPlaying(p => !p);
-  };
+  const at = Math.min(index, slides.length - 1);
+  const slide = slides[at];
+  const many = slides.length > 1;
+  const step = (dir) => setIndex(i => (i + dir + slides.length) % slides.length);
+
   const onKeyDown = (e) => {
     if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
-    else if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); togglePlay(); }
+    else if (e.key === 'Home') { e.preventDefault(); setIndex(0); }
+    else if (e.key === 'End') { e.preventDefault(); setIndex(slides.length - 1); }
   };
 
-  const onImage = slide.type === 'image';
-
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      {/* THE MEDIA. `object-contain` rather than cover: a guide screenshot that
+          has been cropped to fit a box is a guide screenshot with the thing it
+          was pointing at cut off. */}
       <div
         role="group"
-        aria-roledescription="Story guide"
-        aria-label={`${atom.title} — screen ${index + 1} of ${slides.length}`}
+        aria-roledescription="carousel"
+        aria-label={`${atom.title} — screen ${at + 1} of ${slides.length}`}
         tabIndex={0}
         onKeyDown={onKeyDown}
-        onPointerDown={() => { downAt.current = Date.now(); setHeld(true); }}
-        onPointerUp={() => setHeld(false)}
-        onPointerLeave={() => setHeld(false)}
-        onPointerCancel={() => setHeld(false)}
-        className={cx('relative rounded-3xl overflow-hidden border-2 select-none outline-none shadow-xl',
-          t.borderLight, c.ring, c.softStrong)}
-        style={{ aspectRatio: '9 / 16' }}
+        className={cx('relative rounded-2xl overflow-hidden border-2 aspect-video focus:outline-none',
+          t.bgSubtle, t.borderLight, c.ring)}
       >
-        {onImage && slide.url && (
-          <img src={slide.url} alt={slide.alt || ''} className="absolute inset-0 w-full h-full object-cover" />
+        {slide.type === 'image' && slide.url && (
+          <img src={slide.url} alt={slide.alt || ''} className="absolute inset-0 w-full h-full object-contain" />
         )}
-        {slide.type === 'video' && (
-          <div className={cx('absolute inset-0 flex flex-col items-center justify-center gap-2', c.softStrong)}>
-            <IconTile icon={Video} accent={entityHue('guide')} size="lg" />
-            <p className={cx('text-[10px] px-4 text-center break-all', t.textMuted)}>{slide.url}</p>
+
+        {/* A TEXT SCREEN IS STILL A SCREEN, and every guide in this catalog
+            ends on one — “You are back in”, “Add a backup method”. With no
+            media to show, the frame would otherwise be a blank rectangle, so
+            the screen renders as a tinted card carrying its own heading. That
+            is why the heading is not repeated in the caption below. The same
+            branch catches an image screen whose file is missing, because seed
+            data must never blank the frame. */}
+        {(slide.type === 'text' || (slide.type === 'image' && !slide.url)) && (
+          <div className={cx('absolute inset-0 flex items-center justify-center text-center p-6 sm:p-10', c.softStrong)}>
+            <p className={cx('text-xl sm:text-2xl font-semibold tracking-tight text-balance', t.text)}>
+              {slide.heading || `Screen ${at + 1}`}
+            </p>
           </div>
         )}
-        {onImage && <div className="absolute inset-0 bg-black/45" />}
 
-        {/* Segmented progress — one segment per screen, the active one filling. */}
-        <div className="absolute top-0 left-0 right-0 flex gap-1 p-2 z-20">
-          {slides.map((sl, i) => (
-            <span key={sl.id} className="flex-1 h-0.5 rounded-full bg-white/30 overflow-hidden">
-              <span
-                className={cx('block h-full bg-white',
-                  i < index ? 'w-full'
-                    : i === index && armed ? 'rhq-story-fill'
-                    : i === index ? 'w-full' : 'w-0')}
-                style={i === index && armed
-                  ? { animationDuration: `${sl.seconds}s`, animationPlayState: running ? 'running' : 'paused' }
-                  : undefined}
-              />
+        {/* A VIDEO SCREEN IS A PLACEHOLDER NAMING WHAT THE CLIP SHOWS, which
+            is how Knowledge and Learning render one too. A real <video> here
+            would be a control that cannot be operated: the two half-width
+            click targets sit above it, so its own play button is unreachable,
+            and the seeded clips point at a domain that does not resolve. The
+            description is the slide's alt text, so the screen still says what
+            it contains rather than showing a dead player. */}
+        {slide.type === 'video' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-center p-6">
+            <IconTile icon={Video} accent={entityHue('guide')} size="lg" />
+            <p className={cx('text-xs max-w-sm leading-relaxed', t.textMuted)}>
+              {slide.alt || 'This screen is a video clip.'}
+            </p>
+          </div>
+        )}
+
+        {many && (
+          <>
+            {/* The halves are the convenience target; the round buttons below
+                are the real, labelled, tabbable controls. The halves are hidden
+                from assistive tech so the same two actions are not announced
+                twice. */}
+            <button type="button" tabIndex={-1} aria-hidden="true" onClick={() => step(-1)}
+              className="absolute inset-y-0 left-0 w-1/2 z-10 cursor-w-resize" />
+            <button type="button" tabIndex={-1} aria-hidden="true" onClick={() => step(1)}
+              className="absolute inset-y-0 right-0 w-1/2 z-10 cursor-e-resize" />
+
+            <button
+              onClick={() => step(-1)}
+              aria-label="Previous screen"
+              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/55 text-white shadow-lg transition-colors hover:bg-black/75 focus:outline-none focus-visible:bg-black/85"
+            >
+              <ChevronLeft size={ICON.lg} />
+            </button>
+            <button
+              onClick={() => step(1)}
+              aria-label="Next screen"
+              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/55 text-white shadow-lg transition-colors hover:bg-black/75 focus:outline-none focus-visible:bg-black/85"
+            >
+              <ChevronRight size={ICON.lg} />
+            </button>
+
+            <span aria-hidden
+              className="absolute top-3 right-3 z-20 px-2 py-0.5 rounded-full bg-black/55 text-white text-[11px] font-medium tabular-nums">
+              {at + 1} / {slides.length}
             </span>
-          ))}
-        </div>
+          </>
+        )}
+      </div>
 
-        {/* Tap zones. They reveal a chevron on hover and on keyboard focus, so the
-            interaction is discoverable instead of folklore. */}
-        <button
-          onClick={() => tap(-1)}
-          aria-label="Previous screen"
-          className="absolute inset-y-0 left-0 w-1/2 z-10 flex items-center justify-start pl-2 opacity-0 hover:opacity-100 focus-visible:opacity-100 focus:outline-none transition-opacity"
-        >
-          <span className="p-1.5 rounded-full bg-black/50 text-white"><ChevronLeft size={ICON.md} /></span>
-        </button>
-        <button
-          onClick={() => tap(1)}
-          aria-label="Next screen"
-          className="absolute inset-y-0 right-0 w-1/2 z-10 flex items-center justify-end pr-2 opacity-0 hover:opacity-100 focus-visible:opacity-100 focus:outline-none transition-opacity"
-        >
-          <span className="p-1.5 rounded-full bg-black/50 text-white"><ChevronRight size={ICON.md} /></span>
-        </button>
-
-        <div className="absolute top-4 right-2 z-30 flex items-center gap-1">
-          <button
-            onClick={togglePlay}
-            aria-label={playing ? 'Pause the guide' : 'Play the guide'}
-            aria-pressed={!playing}
-            className="p-1.5 rounded-full bg-black/50 text-white focus:outline-none focus-visible:bg-black/80"
-          >
-            {playing ? <Pause size={ICON.sm} /> : <Play size={ICON.sm} />}
-          </button>
-          <span className="px-1.5 py-0.5 rounded-full bg-black/50 text-white text-[10px] tabular-nums">
-            {index + 1}/{slides.length}
-          </span>
-        </div>
-
-        <div className={cx('absolute inset-x-0 bottom-0 p-4 z-20 pointer-events-none', onImage ? 'text-white' : t.text)}>
-          {slide.heading && <p className="font-semibold leading-tight text-base">{slide.heading}</p>}
+      {/* THE CAPTION SITS UNDER THE MEDIA, where it can be read at full size in
+          the page's own colours rather than laid over an image in white. */}
+      {((slide.heading && slide.type !== 'text') || slide.caption) && (
+        <div className={cx('text-center mx-auto', PROSE)}>
+          {slide.heading && slide.type !== 'text' && (
+            <p className={cx('text-base font-semibold leading-snug', t.text)}>{slide.heading}</p>
+          )}
           {slide.caption && (
             <div
-              className={cx('rhq-prose mt-1 leading-snug text-xs', onImage ? 'text-white/90' : t.textSecondary)}
+              className={cx('rhq-prose text-sm mt-1 leading-relaxed', t.textSecondary)}
               dangerouslySetInnerHTML={{ __html: slide.caption }}
             />
           )}
         </div>
+      )}
 
-        <span className="sr-only" aria-live="polite">
-          Screen {index + 1} of {slides.length}. {slide.heading || ''} {onImage ? slide.alt || '' : ''}
-        </span>
-      </div>
+      {many && (
+        <div className="flex items-center justify-center gap-2 pt-1">
+          {slides.map((sl, i) => (
+            <button
+              key={sl.id}
+              onClick={() => setIndex(i)}
+              aria-label={`Screen ${i + 1}${sl.heading ? ` — ${sl.heading}` : ''}`}
+              aria-current={i === at ? 'true' : undefined}
+              /* A dot is six pixels wide, so its focus state has to sit
+                 OUTSIDE it. The outline takes its colour from currentColor —
+                 `c.fg` here — which is how an accent gets onto an outline
+                 without interpolating a class name that would compile to
+                 nothing. Suppressing focus without replacing it, which is
+                 what a bare `focus:outline-none` does, would leave the dots
+                 keyboard-reachable and invisible. */
+              className={cx('h-1.5 rounded-full transition-all',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current', c.fg,
+                i === at ? cx('w-6', GRADIENT.brandBar) : cx('w-1.5', t.trackOff, 'hover:opacity-70'))}
+            />
+          ))}
+        </div>
+      )}
 
       <p className={cx('text-[11px] text-center', t.textMuted)}>
-        {reduced
-          ? 'Auto-advance is off because your system asks for reduced motion. Use the arrows or arrow keys.'
-          : 'Arrow keys move · space pauses · press and hold to pause'}
+        {many
+          ? 'Nothing moves on its own. Use the arrows, the dots, either half of the picture, or your arrow keys.'
+          : 'One screen, and it stays put.'}
       </p>
+
+      {/* The position, the heading and — for any screen carrying media — its
+          description, so a screen reader hears the same thing a sighted
+          reader sees. Video screens describe themselves here too; only a text
+          screen has nothing beyond its heading to add. */}
+      <span className="sr-only" aria-live="polite">
+        Screen {at + 1} of {slides.length}. {slide.heading || ''} {slide.type === 'text' ? '' : slide.alt || ''}
+      </span>
     </div>
   );
 }
