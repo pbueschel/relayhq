@@ -88,6 +88,30 @@ for (const f of files) {
 }
 
 /* ------------------------------------------------------------------ *
+ * GUARD 4 — no component defined inside another component's body.
+ *
+ * An inner component is a NEW function identity on every parent render, so
+ * React unmounts and remounts its whole subtree — losing focus, scroll and
+ * local state. v1 was built entirely this way and it was the app's performance
+ * ceiling. Components belong at module scope.
+ *
+ * Heuristic: an INDENTED declaration of a CamelCase name bound to a function.
+ * `const Icon = item.icon` (aliasing an existing component) is not matched,
+ * because the binding must be a function literal.
+ * ------------------------------------------------------------------ */
+
+const NESTED_COMPONENT =
+  /^\s+(?:const\s+([A-Z][a-z]\w*)\s*=\s*(?:\(|function|React\.memo|memo\()|function\s+([A-Z][a-z]\w*)\s*\()/;
+
+for (const f of files) {
+  const hits = f.text.split('\n')
+    .map((line, i) => ({ line, n: i + 1 }))
+    .filter(({ line }) => NESTED_COMPONENT.test(line));
+  ok(`no nested component definition in ${f.rel}`, hits.length === 0,
+    hits.slice(0, 3).map(h => `line ${h.n}: ${h.line.trim().slice(0, 70)}`).join(' | '));
+}
+
+/* ------------------------------------------------------------------ *
  * Design system invariants
  * ------------------------------------------------------------------ */
 

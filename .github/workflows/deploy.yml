@@ -24,7 +24,7 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - name: Verification gates
-        run: bun test/smoke.js
+        run: bun test/smoke.js && bun test/engines.js
       - run: bun run build
       - name: Render check (headless)
         run: bun test/render-check.js
