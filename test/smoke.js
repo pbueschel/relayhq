@@ -50,14 +50,22 @@ ok('source files found', files.length > 10, `${files.length} files`);
  * ------------------------------------------------------------------ */
 
 const INTERPOLATED_CLASS = /\b(bg|text|border|ring|from|to|via|fill|stroke|divide|outline|shadow|accent|decoration|placeholder)-\$\{/;
+
+/* The same bug wearing a different hat: a Tailwind VARIANT prefix concatenated
+ * onto a class value at runtime — `'hover:' + t.text`, `'group-hover:' + c.fg`.
+ * The scanner cannot see the result either, so the state silently never renders.
+ * This escaped the check above twice, once in a view and once in the design
+ * system itself, where a ViewSwitcher hover colour had never worked. */
+const CONCATENATED_VARIANT = /['"`](?:group-)?(?:hover|focus|active|disabled|checked|peer-\w+|group-\w+|dark|sm|md|lg|xl):['"`]?\s*\+/;
 for (const f of files) {
   if (f.rel.endsWith('scripts/gen-accents.js')) continue;
   const hits = f.text.split('\n')
     .map((line, i) => ({ line, n: i + 1 }))
-    .filter(({ line }) => INTERPOLATED_CLASS.test(line))
-    // The guard's own regex and the doc comments that explain it are allowed.
-    .filter(({ line }) => !/eslint|GUARD|never interpolate|do not interpolate/i.test(line));
-  ok(`no interpolated colour class in ${f.rel}`, hits.length === 0,
+    .filter(({ line }) => INTERPOLATED_CLASS.test(line) || CONCATENATED_VARIANT.test(line))
+    // The guard's own regexes and the doc comments explaining them are allowed.
+    .filter(({ line }) => !/eslint|GUARD|never interpolate|do not interpolate|assembled at runtime|NOT `/i.test(line))
+    .filter(({ line }) => !/^\s*(\/\/|\*|\/\*)/.test(line));
+  ok(`no runtime-built colour class in ${f.rel}`, hits.length === 0,
     hits.map(h => `line ${h.n}: ${h.line.trim().slice(0, 90)}`).join(' | '));
 }
 

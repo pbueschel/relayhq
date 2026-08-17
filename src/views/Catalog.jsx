@@ -1178,8 +1178,19 @@ function KnowledgeRow({ id, record, courses, onDetach }) {
   const usedIn = missing ? [] : coursesUsing(courses, id);
 
   return (
-    <div className={cx('flex items-center gap-3', DENSITY.rowPad)}>
+    /* The row OPENS THE ATOM. It used to be an inert div, so the one thing an
+       author wants from this list — go and look at the thing — was the one
+       thing it did not do. Detach stays a separate control beside it, because
+       a button cannot nest a button. */
+    <div className={cx('group flex items-center gap-3', DENSITY.rowPad, t.bgHover)}>
       <span className={cx('w-1 self-stretch min-h-8 rounded-full flex-shrink-0', missing ? a('red').rail : c.rail)} />
+      <button
+        onClick={() => !missing && navigate('knowledge', null, id)}
+        disabled={missing}
+        title={missing ? undefined : `Open ${labelOf(record, id)}`}
+        className={cx('flex-1 flex items-center gap-3 min-w-0 text-left',
+          missing ? 'cursor-default' : 'cursor-pointer')}
+      >
       <Icon size={ICON.base} className={cx(missing ? a('red').fg : c.fg, 'flex-shrink-0')} />
       <div className="flex-1 min-w-0">
         <p className={cx('text-sm font-medium truncate', t.text)}>{labelOf(record, id)}</p>
@@ -1199,6 +1210,11 @@ function KnowledgeRow({ id, record, courses, onDetach }) {
           )}
         </div>
       </div>
+      </button>
+      {/* The chevron stays muted. An accent-on-hover would have to be built as
+          `'group-hover:' + c.fg`, and a class assembled at runtime is invisible
+          to Tailwind's scanner — the row's hover band is the affordance. */}
+      {!missing && <ChevronRight size={ICON.base} className={cx('flex-shrink-0', t.textMuted)} />}
       <IconButton icon={X} label="Detach from this item" onClick={onDetach} />
     </div>
   );

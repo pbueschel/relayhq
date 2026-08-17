@@ -161,7 +161,10 @@ export function ViewSwitcher({ items = [], value, onChange, inline = false, clas
             key={item.value}
             onClick={() => onChange(item.value)}
             className={cx('px-3 py-2 text-sm font-medium flex items-center gap-1.5 border-b-2 -mb-px transition-colors whitespace-nowrap',
-              active ? cx(c.borderStrong, t.text) : cx('border-transparent', t.textSecondary, 'hover:' + t.text.replace('text-', 'text-')))}
+              /* NOT `'hover:' + t.text` — a class assembled at runtime is
+                 invisible to Tailwind's scanner, so that hover state never
+                 rendered at all. A static hover surface does the job. */
+              active ? cx(c.borderStrong, t.text) : cx('border-transparent', t.textSecondary, t.bgHover))}
           >
             {Icon && <Icon size={ICON.base} className={active ? c.fg : t.textMuted} />}
             {item.label}
