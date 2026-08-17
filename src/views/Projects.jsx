@@ -8,12 +8,13 @@ import {
   Sparkles, MoreHorizontal, ArrowRight,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, LAYOUT, ENTITIES, PRIORITY, priorityMeta,
+  useTheme, cx, ICON, DENSITY, LAYOUT, ENTITIES, PRIORITY, priorityMeta, CONTROL_H,
   Button, IconButton, IconTile, Chip, ChipGroup, PriorityFlag, EntityTag,
-  Avatar, AvatarStack, EmptyState, Card, GroupLabel, Stat, Banner, Divider,
-  Field, Input, Textarea, Select, Checkbox, Toggle, SearchInput,
-  Modal, ConfirmDelete, Menu, MenuItem, MenuDivider, MenuLabel, FilterPill,
-  SubTabs, ViewSwitcher, PageHeader, Toolbar, PageBody, Breadcrumbs,
+  Avatar, AvatarStack, EmptyState, Card, GroupLabel, Banner, Divider,
+  Field, Input, Textarea, Select, Checkbox, Toggle,
+  Modal, ConfirmDelete, Menu, MenuItem, MenuDivider, MenuLabel,
+  SubTabs, ViewSwitcher, PageBody,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, setCollection, addTo, patchIn, removeFrom, uid, NOW } from '@/store/store.js';
 import { useRoute, navigate } from '@/lib/router.js';
@@ -93,6 +94,25 @@ const GROUP_BY = [
   { value: 'status',   label: 'Status',   icon: Circle },
   { value: 'assignee', label: 'Assignee', icon: User },
   { value: 'priority', label: 'Priority', icon: Flag },
+];
+
+/** How the landing draws the SAME set of projects — a view switch, not a tab. */
+const LANDING_VIEWS = [
+  { value: 'list', label: 'List', icon: List },
+  { value: 'grid', label: 'Grid', icon: LayoutGrid },
+];
+
+/**
+ * Health and due date are the same question asked twice, so the landing asks it
+ * once. The buckets are exclusive and resolved in this order, because a project
+ * with work already past its date is late whether or not the PROJECT's own date
+ * has passed — that is what "health" means here.
+ */
+const HEALTH_BUCKETS = [
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'week',    label: 'Due this week' },
+  { value: 'ontrack', label: 'On track' },
+  { value: 'nodate',  label: 'No due date' },
 ];
 
 const CORE_COLUMNS = [
@@ -266,6 +286,29 @@ function progressOf(project, list) {
   if (!list.length) return { pct: 0, done: 0, total: 0 };
   const done = list.filter(t => isComplete(project, t)).length;
   return { pct: Math.round((done / list.length) * 100), done, total: list.length };
+}
+
+/**
+ * The workflow states a project currently has work sitting in.
+ *
+ * A project has no status of its own — it AUTHORS a workflow. So "filter by
+ * status" on the landing means "show me the projects with work in Build", which
+ * is the question that makes sense at this altitude.
+ */
+function statusesInPlay(list) {
+  return [...new Set(list.map(ts => ts.status).filter(Boolean))];
+}
+
+/** One word for where a project stands. See HEALTH_BUCKETS for the ordering. */
+function healthOf(project, list) {
+  const due = toDay(project.dueDate);
+  const finished = list.length > 0 && list.every(ts => isComplete(project, ts));
+  if (!finished && due && due.getTime() < TODAY.getTime()) return 'overdue';
+  if (!finished && list.some(ts => isOverdue(project, ts))) return 'overdue';
+  if (!due) return 'nodate';
+  const days = daysBetween(TODAY, due);
+  if (!finished && days >= 0 && days <= 7) return 'week';
+  return 'ontrack';
 }
 
 /** Blockers and blocked-by, derived from BOTH directions. Never mirrored in the data. */
@@ -788,33 +831,91 @@ export default function Projects({ route: routeProp }) {
 }
 
 function ProjectsLanding({ projects, personal, tasks, people, onOpenTask, onNewProject }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
   const [mode, setMode] = useState('list');
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(() => new Set([projects[0]?.id].filter(Boolean)));
 
+  /* One header state: the multi-select values, the in-page query, and whether the
+   * tray is showing. The tray forces itself open whenever something is active, so
+   * a filter can never be on while its control is hidden. */
+  const [filters, setFilters] = useState({});
+  const [trayOpen, setTrayOpen] = useState(false);
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+
   const all = useMemo(() => [...projects, personal], [projects, personal]);
+
+  /* Resolved once per render rather than per row per predicate — every filter,
+   * the search and the counts all ask the same question of the same task list. */
+  const rowsOf = useMemo(() => {
+    const map = new Map();
+    for (const p of all) map.set(p.id, tasksOfProject(tasks, p.id));
+    return map;
+  }, [all, tasks]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return all;
     return all.filter(p => {
+      const rows = rowsOf.get(p.id) || [];
+      if (!passes(filters.status, statusesInPlay(rows))) return false;
+      if (!passes(filters.member, p.memberIds || [])) return false;
+      if (!passes(filters.health, healthOf(p, rows))) return false;
+      // Search layers ON TOP of the filters rather than replacing them.
+      if (!q) return true;
       if (p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)) return true;
-      return tasksOfProject(tasks, p.id).some(ts => ts.title.toLowerCase().includes(q));
+      return rows.some(ts => ts.title.toLowerCase().includes(q));
     });
-  }, [all, query, tasks]);
+  }, [all, rowsOf, filters, query]);
 
   const stats = useMemo(() => {
-    let open = 0, overdue = 0, milestones = 0;
+    let open = 0, overdue = 0;
     for (const p of all) {
-      for (const ts of tasksOfProject(tasks, p.id)) {
+      for (const ts of rowsOf.get(p.id) || []) {
         if (!isComplete(p, ts)) open += 1;
         if (isOverdue(p, ts)) overdue += 1;
-        if (ts.milestone) milestones += 1;
       }
     }
-    return { open, overdue, milestones };
-  }, [all, tasks]);
+    return { open, overdue };
+  }, [all, rowsOf]);
+
+  /* Counts are computed over EVERY project, not the filtered view, so an option
+   * says how many projects exist rather than how many survive the filters you
+   * have already set — the latter reads as options vanishing as you work. */
+  const FILTER_DEFS = useMemo(() => {
+    const byStatus = optionCounts(all, p => statusesInPlay(rowsOf.get(p.id) || []));
+    const byMember = optionCounts(all, p => p.memberIds || []);
+    const byHealth = optionCounts(all, p => healthOf(p, rowsOf.get(p.id) || []));
+
+    // Every project authors its own workflow, so the option list is the union of
+    // those workflows, keyed by status id and labelled the way its project spells it.
+    const statuses = new Map();
+    for (const p of all) for (const s of p.statuses || []) if (!statuses.has(s.id)) statuses.set(s.id, s);
+
+    const memberIds = new Set();
+    for (const p of all) for (const id of p.memberIds || []) memberIds.add(id);
+
+    return [
+      {
+        id: 'status', label: 'Status', icon: Circle,
+        options: [...statuses.values()]
+          .sort((x, y) => x.label.localeCompare(y.label))
+          .map(s => ({ value: s.id, label: s.label, dot: a(s.hue).dot, count: byStatus.get(s.id) || 0 })),
+        footer: 'Projects with work sitting in that state.',
+      },
+      {
+        id: 'member', label: 'Members', icon: Users,
+        options: [...memberIds]
+          .map(id => ({ value: id, label: people.find(p => p.id === id)?.name || id, count: byMember.get(id) || 0 }))
+          .sort((x, y) => x.label.localeCompare(y.label)),
+      },
+      {
+        id: 'health', label: 'Health', icon: TriangleAlert,
+        options: HEALTH_BUCKETS.map(h => ({ value: h.value, label: h.label, count: byHealth.get(h.value) || 0 })),
+      },
+    ];
+  }, [all, rowsOf, people, a]);
 
   const toggle = (id) => setExpanded(prev => {
     const next = new Set(prev);
@@ -824,36 +925,50 @@ function ProjectsLanding({ projects, personal, tasks, people, onOpenTask, onNewP
 
   return (
     <>
-      <PageHeader
+      <ModuleHeader
         icon={Briefcase}
         module={MODULE}
         title="Projects"
-        subtitle={`${projects.length} projects · ${stats.open} tasks open · ${stats.overdue} overdue`}
-        actions={<Button variant="grad" module={MODULE} icon={Plus} onClick={onNewProject}>New project</Button>}
-      >
-        <Toolbar>
-          <SubTabs
-            value={mode} onChange={setMode}
-            items={[
-              { value: 'list', label: 'List', icon: List, accent: HUE_PROJECT },
-              { value: 'grid', label: 'Grid', icon: LayoutGrid, accent: HUE_PROJECT },
-            ]}
+        /* The subtitle always tells the truth about what is on screen: the
+         * resting line when nothing narrows the list, "3 of 5 shown" when
+         * something does. The stat strip that printed these same numbers a
+         * second time is gone. */
+        subtitle={subsetLabel(
+          filtered.length,
+          all.length,
+          `${projects.length} projects and your personal list · ${stats.open} tasks open · ${stats.overdue} overdue`,
+        )}
+        primary={<Button variant="grad" module={MODULE} icon={Plus} onClick={onNewProject}>New project</Button>}
+        tools={<>
+          <ViewSwitcher items={LANDING_VIEWS} value={mode} onChange={setMode} inline />
+          <ScopedSearch
+            value={query}
+            onChange={setQuery}
+            /* Names its own scope, so it can never be mistaken for the global
+               field in the bar above. */
+            scope={`${all.length} projects`}
+            accent={HUE_PROJECT}
           />
-          <SearchInput value={query} onChange={setQuery} accent={HUE_PROJECT}
-            placeholder="Search projects and tasks…" width="w-72" />
-        </Toolbar>
-      </PageHeader>
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent={HUE_PROJECT}
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray
+            open
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+          />
+        ) : null}
+      />
 
       <PageBody width="max-w-6xl">
         <div className="space-y-4">
-          <div className="flex flex-wrap justify-center gap-2">
-            <Stat label="projects" value={projects.length} accent={HUE_PROJECT} icon={Briefcase} />
-            <Stat label="open tasks" value={stats.open} accent="blue" icon={Circle} />
-            <Stat label="overdue" value={stats.overdue} accent="red" icon={TriangleAlert} />
-            <Stat label="milestones" value={stats.milestones} accent={HUE_MILESTONE} icon={Flag} />
-            <Stat label="personal tasks" value={tasksOfProject(tasks, PERSONAL_ID).length} accent={HUE_TASK} icon={User} />
-          </div>
-
           <Banner accent={HUE_PROJECT} icon={CircleAlert} title="Where a new task lands">
             Expanding a project shows its tasks grouped by that project's own statuses. A task added from a
             group's <strong className={t.text}>+ Add task</strong> row inherits that group — add it under
@@ -863,8 +978,20 @@ function ProjectsLanding({ projects, personal, tasks, people, onOpenTask, onNewP
           </Banner>
 
           {!filtered.length && (
-            <EmptyState icon={Briefcase} title="No projects match" hint="Try a different search, or create a project."
-              action={<Button variant="grad" module={MODULE} icon={Plus} onClick={onNewProject}>New project</Button>} />
+            <EmptyState
+              icon={Briefcase}
+              title="No projects match"
+              hint={
+                query.trim() || activeFilters > 0
+                  ? 'Search composes with the filters above rather than replacing them — clearing a filter may bring projects back.'
+                  : 'Create a project to get started.'
+              }
+              action={
+                query.trim() || activeFilters > 0
+                  ? <Button variant="soft" accent={HUE_PROJECT} icon={X} onClick={clearFilters}>Clear filters</Button>
+                  : <Button variant="grad" module={MODULE} icon={Plus} onClick={onNewProject}>New project</Button>
+              }
+            />
           )}
 
           {mode === 'list' ? (
@@ -1151,7 +1278,6 @@ function patchField(task, fieldId, value) {
  * ==================================================================== */
 
 function ProjectWorkspace({ project, view, tasks, people, curricula, onOpenTask }) {
-  const { t } = useTheme();
   const [groupBy, setGroupBy] = useState('status');
   const [query, setQuery] = useState('');
   const [settings, setSettings] = useState(false);
@@ -1176,55 +1302,64 @@ function ProjectWorkspace({ project, view, tasks, people, curricula, onOpenTask 
 
   return (
     <>
-      <PageHeader
+      <ModuleHeader
         icon={project.personal ? User : Briefcase}
         module={gradKeyFor(project)}
         title={project.name}
-        subtitle={project.description}
+        /* The project's own band carries the subset, the progress and the team.
+         * The parent "Projects" is one click away in the top bar's breadcrumb,
+         * so the in-header crumb that repeated it is gone.
+         *
+         * The completion figure lives in the ProgressBar and NOWHERE ELSE in
+         * this band. Printing "62% complete · 18 of 29 done" here while a bar
+         * renders the same fact two inches away is precisely the duplication
+         * this header was built to remove — the old stat strip and lens bar
+         * disagreed in exactly that way. The bar shows the progress; the
+         * subtitle says what the project is, or what the filters have done. */
+        subtitle={subsetLabel(
+          visible.length,
+          rows.length,
+          project.description || `${prog.total} ${prog.total === 1 ? 'task' : 'tasks'}`,
+        )}
+        primary={
+          <Button variant="grad" module={gradKeyFor(project)} icon={Plus}
+            onClick={() => addTo('tasks', newTask(project, {}, 'New task'))}>
+            New task
+          </Button>
+        }
+        tools={<>
+          <ViewSwitcher items={VIEWS} value={view} onChange={(v) => navigate('projects', project.id, v)} inline />
+          <GroupByControl value={groupBy} onChange={setGroupBy} accent={hue} />
+          {view === 'list' && (
+            <ColumnsControl
+              project={project}
+              hidden={hiddenColumns} onChange={setHiddenColumns}
+              showSubtasks={showSubtasks} onShowSubtasks={setShowSubtasks}
+              accent={hue}
+            />
+          )}
+          <ScopedSearch
+            value={query}
+            onChange={setQuery}
+            /* Names its own scope, so it can never be mistaken for the global
+               field in the bar above. */
+            scope={`${rows.length} tasks`}
+            accent={hue}
+          />
+        </>}
         actions={
           <>
-            <Button variant="outline" icon={ChevronLeft} onClick={() => navigate('projects')}>All projects</Button>
+            <AvatarStack names={(project.memberIds || []).map(id => people.find(p => p.id === id)?.name).filter(Boolean)} max={5} size="sm" />
+            {curriculum && <Chip accent="indigo" icon={GraduationCap}>{curriculum.name || curriculum.title}</Chip>}
+            <ProgressBar pct={prog.pct} hue={hue} className="w-20" />
+            <Divider vertical className="h-5" />
+            <Button variant="ghost" size="xs" icon={ChevronLeft} onClick={() => navigate('projects')}>Projects</Button>
             {!project.personal && (
               <IconButton icon={Settings2} label="Project settings" accent={hue} onClick={() => setSettings(true)} />
             )}
-            <Button variant="grad" module={gradKeyFor(project)} icon={Plus}
-              onClick={() => addTo('tasks', newTask(project, {}, 'New task'))}>
-              New task
-            </Button>
           </>
         }
-      >
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <Breadcrumbs
-              items={[{ id: 'root', name: 'Projects' }, { id: project.id, name: project.name }]}
-              onNavigate={(item) => { if (item.id === 'root') navigate('projects'); }}
-            />
-            <div className="flex items-center gap-2 flex-wrap">
-              <AvatarStack names={(project.memberIds || []).map(id => people.find(p => p.id === id)?.name).filter(Boolean)} max={5} size="sm" />
-              <Divider vertical className="h-5" />
-              <span className={cx('text-xs tabular-nums', t.textSecondary)}>{prog.pct}% complete</span>
-              <ProgressBar pct={prog.pct} hue={hue} className="w-24" />
-              {curriculum && <Chip accent="indigo" icon={GraduationCap}>{curriculum.name || curriculum.title}</Chip>}
-            </div>
-          </div>
-
-          <div className="flex items-end justify-between gap-3 flex-wrap">
-            <ViewSwitcher items={VIEWS} value={view} onChange={(v) => navigate('projects', project.id, v)} />
-            <div className="flex items-center gap-2 flex-wrap pb-1">
-              <GroupByControl value={groupBy} onChange={setGroupBy} />
-              {view === 'list' && (
-                <ColumnsControl
-                  project={project}
-                  hidden={hiddenColumns} onChange={setHiddenColumns}
-                  showSubtasks={showSubtasks} onShowSubtasks={setShowSubtasks}
-                />
-              )}
-              <SearchInput value={query} onChange={setQuery} accent={hue} placeholder="Search tasks…" width="w-56" />
-            </div>
-          </div>
-        </div>
-      </PageHeader>
+      />
 
       <PageBody width={view === 'list' || view === 'calendar' ? 'max-w-6xl' : 'max-w-7xl'}>
         {view === 'list' && (
@@ -1255,12 +1390,40 @@ function ProjectWorkspace({ project, view, tasks, people, curricula, onOpenTask 
   );
 }
 
-function GroupByControl({ value, onChange }) {
+/**
+ * A dropdown trigger at the header's own height.
+ *
+ * The band runs ONE control height and ONE radius; FilterPill is taller and
+ * rounder, so a group-by pill next to the scoped search dragged a second height
+ * into a row that had just been flattened to one. Same shape as the filter
+ * controls in the tray, because they belong to the same band.
+ */
+function HeaderMenuButton({ icon: Icon, label, active, open, onClick, accent = HUE_PROJECT }) {
+  const { t, a } = useTheme();
+  const c = a(accent);
+  return (
+    <button
+      onClick={onClick}
+      aria-expanded={open}
+      className={cx('flex items-center gap-1.5 px-2.5 rounded-lg border transition-colors max-w-[14rem]',
+        CONTROL_H, t.bgInput, active ? cx(c.borderStrong, t.text) : cx(t.borderLight, t.textSecondary))}
+    >
+      {Icon && <Icon size={ICON.base} className={cx('flex-shrink-0', active ? c.fg : t.textMuted)} />}
+      <span className="text-xs truncate">{label}</span>
+      <ChevronDown size={ICON.sm} className={cx('flex-shrink-0', t.textMuted, open && 'rotate-180')} />
+    </button>
+  );
+}
+
+function GroupByControl({ value, onChange, accent = HUE_PROJECT }) {
   const [open, setOpen] = useState(false);
   const current = GROUP_BY.find(g => g.value === value) || GROUP_BY[0];
   return (
     <div className="relative">
-      <FilterPill icon={current.icon} label={`Group: ${current.label}`} active open={open} onClick={() => setOpen(o => !o)} />
+      {/* The control names its VALUE, not its category — "Group · Status", the
+          same rule the filter chips follow. */}
+      <HeaderMenuButton icon={current.icon} label={`Group · ${current.label}`} active accent={accent}
+        open={open} onClick={() => setOpen(o => !o)} />
       <Menu open={open} onClose={() => setOpen(false)} align="right" width="w-56">
         <MenuLabel>Group by</MenuLabel>
         {GROUP_BY.map(g => (
@@ -1273,16 +1436,26 @@ function GroupByControl({ value, onChange }) {
   );
 }
 
-function ColumnsControl({ project, hidden, onChange, showSubtasks, onShowSubtasks }) {
+function ColumnsControl({ project, hidden, onChange, showSubtasks, onShowSubtasks, accent = HUE_PROJECT }) {
   const [open, setOpen] = useState(false);
   const toggle = (id) => onChange(prev => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
+  // The control names the columns it is hiding rather than counting them —
+  // "Columns · Estimate +1", the same rule the filter chips follow.
+  const hiddenLabels = [...CORE_COLUMNS, ...(project.fields || [])]
+    .filter(col => hidden.has(col.id))
+    .map(col => col.label);
   return (
     <div className="relative">
-      <FilterPill icon={Columns3} label="Columns" active={hidden.size > 0} open={open} onClick={() => setOpen(o => !o)} />
+      <HeaderMenuButton
+        icon={Columns3}
+        label={hiddenLabels.length
+          ? `Columns · ${hiddenLabels[0]}${hiddenLabels.length > 1 ? ` +${hiddenLabels.length - 1}` : ''}`
+          : 'Columns'}
+        active={hiddenLabels.length > 0} accent={accent} open={open} onClick={() => setOpen(o => !o)} />
       <Menu open={open} onClose={() => setOpen(false)} align="right" width="w-64">
         <MenuLabel>Show columns</MenuLabel>
         {CORE_COLUMNS.map(col => (

@@ -111,9 +111,46 @@ export function SubTabs({ items = [], value, onChange, className }) {
  * switches how the SAME data is drawn rather than which data you are on.
  * ==================================================================== */
 
-export function ViewSwitcher({ items = [], value, onChange, className }) {
+export function ViewSwitcher({ items = [], value, onChange, inline = false, className }) {
   const { t, a } = useTheme();
   const c = a('violet');
+
+  /**
+   * `inline` — for use inside a ModuleHeader's tools cluster.
+   *
+   * The underline treatment below is meaningful as a standalone bar under a
+   * title, but it cannot live in a band flattened to one control height: a
+   * horizontal rule ends up floating through the middle of the row. So at
+   * header scale the distinction from SubTabs is carried differently —
+   * ViewSwitcher is an OUTLINED segmented control, SubTabs is a FILLED inset
+   * one. Same semantic split (how the data is drawn vs which data you are on),
+   * expressed in a way that fits a 30px band.
+   */
+  if (inline) {
+    return (
+      <div className={cx('inline-flex items-center gap-0.5 p-0.5 rounded-lg border h-[30px]',
+        t.bgInput, t.borderLight, className)}>
+        {items.map(item => {
+          const active = value === item.value;
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.value}
+              onClick={() => onChange(item.value)}
+              aria-pressed={active}
+              title={item.label}
+              className={cx('flex items-center gap-1.5 px-2 h-[24px] rounded-md text-xs font-medium transition-colors whitespace-nowrap',
+                active ? cx(c.soft, c.fgOnSoft) : cx(t.textSecondary, t.bgHover))}
+            >
+              {Icon && <Icon size={ICON.sm} className={active ? c.fg : t.textMuted} />}
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div className={cx('flex items-center gap-0.5 border-b', t.border, className)}>
       {items.map(item => {

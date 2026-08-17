@@ -9,10 +9,11 @@ import {
 import {
   useTheme, cx, DENSITY, ICON,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag,
-  EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat, Banner, Divider,
-  Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
-  Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, MenuDivider, FilterPill,
-  SubTabs, PageHeader, Toolbar, PageBody, Breadcrumbs,
+  EmptyState, Card, Panel, Section, GroupLabel, ListRow, Banner, Divider,
+  Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup,
+  Modal, ConfirmDelete,
+  LensBar, PageHeader, PageBody, Breadcrumbs,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, nowISO } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -78,6 +79,49 @@ const AUDIENCE_BY = AUDIENCES.reduce((acc, a) => { acc[a.value] = a; return acc;
 
 function audienceMeta(value) {
   return AUDIENCE_BY[value] || AUDIENCE_BY.internal;
+}
+
+/**
+ * The lens: which of the module's two record types is on screen. It is carried
+ * in the route because the builder deep-links back into the request-form list.
+ */
+const LENSES = [
+  { value: 'portal',   label: 'Portal forms',  icon: FileText,     accent: 'purple', scopeNoun: 'forms' },
+  { value: 'requests', label: 'Request forms', icon: FileQuestion, accent: 'purple', scopeNoun: 'request forms' },
+];
+
+/**
+ * ONE ROW MODEL over the two record types, so a single filter set narrows both.
+ *
+ * A portal form has no destination queue at all, so its routing value is null
+ * and a routing filter never matches it — the same rule the workspace applies to
+ * a task with no queue. "Published" is shared: an unpublished form and a closed
+ * intake are the same fact, because neither is reachable from the portal.
+ */
+function formItem(form) {
+  return {
+    kind: 'portal',
+    id: form.id,
+    record: form,
+    audience: form.audience || 'internal',
+    published: form.published ? 'published' : 'draft',
+    routing: null,
+    searchText: [form.name, form.description, form.headline, form.subhead, form.slug]
+      .filter(Boolean).join(' ').toLowerCase(),
+  };
+}
+
+function subformItem(sf) {
+  return {
+    kind: 'requests',
+    id: sf.id,
+    record: sf,
+    audience: sf.audience || 'internal',
+    published: sf.enabled === false ? 'draft' : 'published',
+    routing: sf.routing?.queueId ? 'routed' : 'general',
+    searchText: [sf.name, sf.description, ...(sf.fields || []).map(f => f.label)]
+      .filter(Boolean).join(' ').toLowerCase(),
+  };
 }
 
 /* ==================================================================== *
@@ -200,18 +244,71 @@ export default function Forms({ route }) {
     assets: s.assets || [],
   }));
 
-  const tab = route?.sub === 'requests' ? 'requests' : 'portal';
-  const openSubform = tab === 'requests' && route?.id
+  const lens = route?.sub === 'requests' ? 'requests' : 'portal';
+  const openSubform = lens === 'requests' && route?.id
     ? subforms.find(s => s.id === route.id) || null
     : null;
 
   const [editingForm, setEditingForm] = useState(null);
   const [deletingForm, setDeletingForm] = useState(null);
+
+  /* One header state: the multi-select filter values, the in-page query, and
+   * whether the tray is showing. The tray forces itself open whenever something
+   * is active, so a filter can never be on while its control is hidden. */
   const [query, setQuery] = useState('');
-  const [audienceFilter, setAudienceFilter] = useState(null);
-  const [queueFilter, setQueueFilter] = useState(null);
+  const [filters, setFilters] = useState({});
+  const [trayOpen, setTrayOpen] = useState(false);
 
   const products = useMemo(() => (catalog || []).filter(n => n.type === 'product'), [catalog]);
+
+  const items = useMemo(
+    () => [...forms.map(formItem), ...subforms.map(subformItem)],
+    [forms, subforms],
+  );
+
+  /* Everything except the lens — so the lens counts reflect the other filters. */
+  const preLens = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return items.filter(it => {
+      if (!passes(filters.audience, it.audience)) return false;
+      if (!passes(filters.published, it.published)) return false;
+      if (!passes(filters.routing, it.routing)) return false;
+      // Search layers ON TOP of the filters rather than replacing them.
+      if (needle && !it.searchText.includes(needle)) return false;
+      return true;
+    });
+  }, [items, filters, query]);
+
+  const visible = useMemo(() => preLens.filter(it => it.kind === lens), [preLens, lens]);
+
+  /* Counts are computed over BOTH collections whole, not the filtered view, so
+   * an option tells you how many records exist rather than how many survive the
+   * filters already set — the latter reads as options vanishing as you work. */
+  const FILTER_DEFS = useMemo(() => {
+    const byAudience = optionCounts(items, it => it.audience);
+    const byPublished = optionCounts(items, it => it.published);
+    const byRouting = optionCounts(items, it => it.routing);
+    return [
+      {
+        id: 'audience', label: 'Audience', icon: Users,
+        options: AUDIENCES.map(a => ({ value: a.value, label: a.label, count: byAudience.get(a.value) || 0 })),
+      },
+      {
+        id: 'published', label: 'Published', icon: Eye,
+        options: [
+          { value: 'published', label: 'Published', count: byPublished.get('published') || 0 },
+          { value: 'draft',     label: 'Draft',     count: byPublished.get('draft') || 0 },
+        ],
+      },
+      {
+        id: 'routing', label: 'Routing', icon: Inbox,
+        options: [
+          { value: 'routed',  label: 'Routed to a queue', count: byRouting.get('routed') || 0 },
+          { value: 'general', label: 'Falls to General',  count: byRouting.get('general') || 0 },
+        ],
+      },
+    ];
+  }, [items]);
 
   /* ---- the builder takes the whole screen ---- */
   if (openSubform) {
@@ -227,15 +324,19 @@ export default function Forms({ route }) {
     );
   }
 
-  const filtered = subforms.filter(sf => {
-    if (audienceFilter && sf.audience !== audienceFilter) return false;
-    if (queueFilter === '__none' && sf.routing?.queueId) return false;
-    if (queueFilter && queueFilter !== '__none' && sf.routing?.queueId !== queueFilter) return false;
-    if (!query.trim()) return true;
-    const q = query.trim().toLowerCase();
-    return [sf.name, sf.description, ...(sf.fields || []).map(f => f.label)]
-      .filter(Boolean).some(v => String(v).toLowerCase().includes(q));
-  });
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+
+  const lensItems = LENSES.map(l => ({ ...l, count: preLens.filter(it => it.kind === l.value).length }));
+  const activeLens = LENSES.find(l => l.value === lens) || LENSES[0];
+  const lensCount = lensItems.find(l => l.value === lens)?.count ?? 0;
+  const shown = visible.map(it => it.record);
+
+  /* The subtitle counts against the LENS's population, not both collections
+   * added together: the two record types are never on screen at once, so
+   * "4 of 42 shown" would compare what you can see to a number you cannot. */
+  const lensTotal = lens === 'portal' ? forms.length : subforms.length;
 
   const unrouted = subforms.filter(sf => !sf.routing?.queueId).length;
 
@@ -266,43 +367,62 @@ export default function Forms({ route }) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
+      <ModuleHeader
         icon={FileText}
         module="forms"
+        accent="purple"
         title="Forms"
-        subtitle="Portal entry points, and the request intakes that sit behind them"
-        actions={
-          <>
-            <Button variant="outline" icon={ExternalLink} onClick={() => navigate('portal')}>Open portal</Button>
-            {tab === 'portal'
-              ? <Button variant="grad" module="forms" icon={Plus} onClick={createForm}>New form</Button>
-              : <Button variant="grad" module="forms" icon={Plus} onClick={createSubform}>New request form</Button>}
-          </>
-        }
-      >
-        <Toolbar>
-          <SubTabs
-            value={tab}
+        /* The subtitle always tells the truth about what is on screen: the
+         * resting label when nothing narrows the module, "9 of 22 shown" when
+         * the lens or a filter does. */
+        subtitle={subsetLabel(
+          visible.length,
+          lensTotal,
+          'Portal entry points, and the request intakes that sit behind them',
+        )}
+        primary={lens === 'portal'
+          ? <Button variant="grad" module="forms" icon={Plus} onClick={createForm}>New form</Button>
+          : <Button variant="grad" module="forms" icon={Plus} onClick={createSubform}>New request form</Button>}
+        actions={<Button variant="outline" icon={ExternalLink} onClick={() => navigate('portal')}>Open portal</Button>}
+        tools={<>
+          <LensBar
+            items={lensItems}
+            value={lens}
             onChange={(v) => navigate('forms', v === 'requests' ? 'requests' : 'portal')}
-            items={[
-              { value: 'portal', label: 'Portal forms', icon: FileText, count: forms.length, accent: 'purple' },
-              { value: 'requests', label: 'Request forms', icon: FileQuestion, count: subforms.length, accent: 'purple' },
-            ]}
+            inline
           />
-          {tab === 'requests' && (
-            <>
-              <SearchInput value={query} onChange={setQuery} placeholder="Search intakes and field labels…" width="w-72" />
-              <AudienceFilter value={audienceFilter} onChange={setAudienceFilter} />
-              <QueueFilter value={queueFilter} onChange={setQueueFilter} queues={queues} unrouted={unrouted} />
-            </>
-          )}
-        </Toolbar>
-      </PageHeader>
+          {/* Names its own scope, so it can never be mistaken for the global
+              field in the bar above: "Search 4 forms…" becomes
+              "Search 18 request forms…" when the lens moves. */}
+          <ScopedSearch
+            value={query}
+            onChange={setQuery}
+            scope={`${lensCount} ${activeLens.scopeNoun}`}
+            accent="purple"
+          />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent="purple"
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray
+            open
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+          />
+        ) : null}
+      />
 
       <PageBody width="max-w-6xl">
-        {tab === 'portal' ? (
+        {lens === 'portal' ? (
           <PortalForms
-            forms={forms}
+            forms={shown}
+            total={forms.length}
             subforms={subforms}
             catalog={catalog}
             onEdit={setEditingForm}
@@ -311,7 +431,7 @@ export default function Forms({ route }) {
           />
         ) : (
           <RequestForms
-            subforms={filtered}
+            subforms={shown}
             total={subforms.length}
             queues={queues}
             policies={policies}
@@ -340,81 +460,13 @@ export default function Forms({ route }) {
 }
 
 /* ==================================================================== *
- * Filters
- * ==================================================================== */
-
-function AudienceFilter({ value, onChange }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <FilterPill
-        icon={Users}
-        label={value ? audienceMeta(value).label : 'Audience'}
-        active={!!value}
-        open={open}
-        onClick={() => setOpen(o => !o)}
-      />
-      <Menu open={open} onClose={() => setOpen(false)} width="w-52">
-        <MenuLabel>Audience</MenuLabel>
-        {AUDIENCES.map(a => (
-          <MenuItem
-            key={a.value}
-            icon={a.icon}
-            label={a.label}
-            hint={a.hint}
-            selected={value === a.value}
-            onClick={() => { onChange(value === a.value ? null : a.value); setOpen(false); }}
-          />
-        ))}
-        <MenuDivider />
-        <MenuItem label="Any audience" onClick={() => { onChange(null); setOpen(false); }} />
-      </Menu>
-    </div>
-  );
-}
-
-function QueueFilter({ value, onChange, queues, unrouted }) {
-  const [open, setOpen] = useState(false);
-  const label = value === '__none' ? 'Unrouted'
-    : value ? (queueName(queues, value) || 'Queue')
-    : 'Destination';
-  return (
-    <div className="relative">
-      <FilterPill icon={Inbox} label={label} active={!!value} open={open} onClick={() => setOpen(o => !o)} />
-      <Menu open={open} onClose={() => setOpen(false)} width="w-60">
-        <MenuLabel>Routes to</MenuLabel>
-        {queues.length === 0 && <MenuItem label="No queues configured yet" />}
-        {queues.map(q => (
-          <MenuItem
-            key={q.id}
-            icon={Inbox}
-            label={q.name}
-            selected={value === q.id}
-            onClick={() => { onChange(value === q.id ? null : q.id); setOpen(false); }}
-          />
-        ))}
-        <MenuDivider />
-        <MenuItem
-          icon={AlertTriangle}
-          label="Unrouted"
-          hint={`${unrouted} fall to the General queue`}
-          selected={value === '__none'}
-          onClick={() => { onChange(value === '__none' ? null : '__none'); setOpen(false); }}
-        />
-        <MenuItem label="Any destination" onClick={() => { onChange(null); setOpen(false); }} />
-      </Menu>
-    </div>
-  );
-}
-
-/* ==================================================================== *
  * Portal forms
  * ==================================================================== */
 
-function PortalForms({ forms, subforms, catalog, onEdit, onDelete, onCreate }) {
+function PortalForms({ forms, total, subforms, catalog, onEdit, onDelete, onCreate }) {
   const { t } = useTheme();
 
-  if (!forms.length) {
+  if (!total) {
     return (
       <EmptyState
         icon={FileText}
@@ -425,8 +477,6 @@ function PortalForms({ forms, subforms, catalog, onEdit, onDelete, onCreate }) {
     );
   }
 
-  const published = forms.filter(f => f.published);
-
   return (
     <div className="space-y-4">
       <Banner accent="purple" icon={AlertCircle} title="A form is an entry point, not a questionnaire">
@@ -435,25 +485,26 @@ function PortalForms({ forms, subforms, catalog, onEdit, onDelete, onCreate }) {
         That split is why one catalog item can offer “Report a problem” and “Request access” side by side.
       </Banner>
 
-      <div className="flex flex-wrap gap-2">
-        <Stat label="forms" value={forms.length} accent="purple" icon={FileText} />
-        <Stat label="published" value={published.length} accent="emerald" />
-        <Stat label="drafts" value={forms.length - published.length} accent="gray" />
-        <Stat label="request forms" value={subforms.length} accent="purple" icon={FileQuestion} />
-      </div>
-
-      <div className={DENSITY.rowGap}>
-        {forms.map(form => (
-          <FormCard
-            key={form.id}
-            form={form}
-            subforms={subforms}
-            catalog={catalog}
-            onEdit={() => onEdit(form)}
-            onDelete={() => onDelete(form)}
-          />
-        ))}
-      </div>
+      {forms.length === 0 ? (
+        <EmptyState
+          icon={Filter}
+          title="Nothing matches those filters"
+          hint="Search composes with the filters in the header rather than replacing them — clearing one may bring results back."
+        />
+      ) : (
+        <div className={DENSITY.rowGap}>
+          {forms.map(form => (
+            <FormCard
+              key={form.id}
+              form={form}
+              subforms={subforms}
+              catalog={catalog}
+              onEdit={() => onEdit(form)}
+              onDelete={() => onDelete(form)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -760,7 +811,11 @@ function RequestForms({ subforms, total, queues, policies, unrouted, onCreate })
       )}
 
       {subforms.length === 0 ? (
-        <EmptyState icon={Filter} title="Nothing matches those filters" hint="Clear the search or the filters above." />
+        <EmptyState
+          icon={Filter}
+          title="Nothing matches those filters"
+          hint="Search composes with the filters in the header rather than replacing them — clearing one may bring results back."
+        />
       ) : (
         groups.map(group => (
           <Section key={group.key} title={group.label} hint={`${group.list.length} intake${group.list.length === 1 ? '' : 's'}`}>

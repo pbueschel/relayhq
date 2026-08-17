@@ -7,12 +7,13 @@ import {
   Info, Scale, CheckCheck, Ban, UserCheck, TriangleAlert, ArrowRight, Undo2,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, LAYOUT, ENTITIES, entityHue, tint,
+  useTheme, cx, ICON, DENSITY, LAYOUT, ENTITIES, entityHue, tint, statusMeta, CONTROL_H,
   Button, Chip, ChipGroup, StatusPill, EntityTag, Avatar, AvatarStack,
-  EmptyState, Card, GroupLabel, ListRow, Stat, Banner, Divider,
+  EmptyState, Card, GroupLabel, ListRow, Banner, Divider,
   Field, Textarea, SearchInput,
-  Modal, Menu, MenuItem, MenuLabel, MenuDivider, FilterPill,
-  LensBar, PageHeader, Toolbar, PageBody,
+  Modal, Menu, MenuItem, MenuLabel, MenuDivider,
+  LensBar, PageBody,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, setCollection, patchIn, NOW } from '@/store/store.js';
 import {
@@ -232,6 +233,56 @@ function inLens(request, lens, actingId) {
     case 'rejected': return request.state === 'rejected' || request.state === 'expired';
     default:         return true;
   }
+}
+
+/* ================================================================== *
+ * Filters
+ *
+ * All multi-select: "awaiting OR expired" and "waiting on me OR on my team"
+ * are the two questions an approver actually asks, and neither can be spelled
+ * with a single-select control. An empty selection matches everything, so the
+ * tray starts as a no-op rather than as a hidden default.
+ * ================================================================== */
+
+/** Every state a request can rest in. Labels and hues come from the DS map. */
+const REQUEST_STATES = ['awaiting', 'approved', 'rejected', 'expired', 'cancelled'];
+
+const WAITING_ON = [
+  { value: 'me',     label: 'Me' },
+  { value: 'team',   label: 'My team' },
+  { value: 'others', label: 'Someone else' },
+];
+
+/** The rule the request is running RIGHT NOW — the one that decides what clears. */
+function currentRule(request) {
+  return request.stages[request.currentStage]?.rule || 'all';
+}
+
+/**
+ * Who a request is waiting on, seen from the acting person's chair.
+ *
+ * A request that has resolved is waiting on nobody, so it lands in no bucket at
+ * all rather than in "others" — "waiting on" names a live obligation, and a
+ * closed request that answered to this filter would be a lie about the queue.
+ * A request can be in several buckets at once: a stage with three outstanding
+ * approvers is waiting on me AND on someone else.
+ */
+function waitingBuckets(request, meId, people) {
+  if (request.state !== 'awaiting' || !request.stages.length) return [];
+  const stage = request.stages[request.currentStage];
+  if (!stage) return [];
+  const decided = new Set((stage.decisions || []).map(d => d.approverId));
+  const pending = (stage.approverIds || []).filter(id => !decided.has(id));
+  const myDept = people.get(meId)?.department || null;
+  const out = new Set();
+  if (canDecide(request, meId)) out.add('me');
+  for (const id of pending) {
+    if (id === meId) continue;
+    const dept = people.get(id)?.department || null;
+    if (myDept && dept === myDept) out.add('team');
+    else out.add('others');
+  }
+  return [...out];
 }
 
 /* ================================================================== *
@@ -466,7 +517,7 @@ export function bootstrapRequests(policies, directory, queues, records, nowMs) {
  * ================================================================== */
 
 export default function Approvals({ route }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
 
   const approvals = useStore(s => s.approvals);
   const policies = useStore(s => s.approvalPolicies);
@@ -479,10 +530,17 @@ export default function Approvals({ route }) {
 
   const [actingId, setActingId] = useState(null);
   const [query, setQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState(null);
-  const [typeMenu, setTypeMenu] = useState(false);
   const [flash, setFlash] = useState(null);
   const bootstrapped = useRef(false);
+
+  /* One header state: the multi-select values, the in-page query, and whether
+   * the tray is showing. The tray forces itself open whenever something is
+   * active, so a filter can never be on while its control is hidden. */
+  const [filters, setFilters] = useState({});
+  const [trayOpen, setTrayOpen] = useState(false);
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
 
   const meId = actingId || currentUser?.id || USR.ADMIN;
   // The demo clock, not the wall clock. Every seeded due time, decision and
@@ -526,12 +584,12 @@ export default function Approvals({ route }) {
 
   const all = useMemo(() => (approvals || []).map(normalizeRequest), [approvals]);
 
+  /* The resting subtitle counts the WHOLE inbox, never the filtered view — a
+   * headline number that moves when you filter is a number you cannot trust.
+   * The lens pills carry the per-lens counts, which do follow the filters. */
   const counts = useMemo(() => ({
     mine: all.filter(r => canDecide(r, meId)).length,
     open: all.filter(r => r.state === 'awaiting').length,
-    approved: all.filter(r => r.state === 'approved').length,
-    rejected: all.filter(r => r.state === 'rejected' || r.state === 'expired').length,
-    all: all.length,
   }), [all, meId]);
 
   const overdue = useMemo(() => all.filter(r => isOverdue(r, now)), [all, now]);
@@ -546,12 +604,18 @@ export default function Approvals({ route }) {
     return Array.from(set);
   }, [all]);
 
-  const visible = useMemo(() => {
+  /* Everything except the lens — so the lens counts reflect the other filters
+   * and the scoped search names the set it is actually searching. */
+  const preLens = useMemo(() => {
     const q = query.trim().toLowerCase();
     return all.filter(r => {
-      if (!inLens(r, lens, meId)) return false;
-      if (typeFilter && r.targetType !== typeFilter) return false;
+      if (!passes(filters.state, r.state)) return false;
+      if (!passes(filters.policy, r.policyId || null)) return false;
+      if (!passes(filters.rule, currentRule(r))) return false;
+      if (!passes(filters.waiting, waitingBuckets(r, meId, people))) return false;
+      if (!passes(filters.target, r.targetType || null)) return false;
       if (!q) return true;
+      // Search layers ON TOP of the filters rather than replacing them.
       const hay = [
         r.subject, r.policyName, r.targetType,
         people.get(r.requesterId)?.name,
@@ -559,7 +623,12 @@ export default function Approvals({ route }) {
       ].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     });
-  }, [all, lens, meId, typeFilter, query, people]);
+  }, [all, filters, meId, query, people]);
+
+  const visible = useMemo(
+    () => preLens.filter(r => inLens(r, lens, meId)),
+    [preLens, lens, meId],
+  );
 
   const grouped = useMemo(() => {
     const buckets = new Map(GROUPS.map(g => [g.key, []]));
@@ -650,17 +719,73 @@ export default function Approvals({ route }) {
     setFlash({ id: null, kind: 'swept', count: overdue.length });
   };
 
-  const lensItems = LENSES.map(l => ({ ...l, count: counts[l.value] }));
+  const lensItems = useMemo(
+    () => LENSES.map(l => ({ ...l, count: preLens.filter(r => inLens(r, l.value, meId)).length })),
+    [preLens, meId],
+  );
   const actingPerson = people.get(meId) || currentUser;
   const impersonating = !!currentUser && meId !== currentUser.id;
 
+  /* Counts are computed over the WHOLE inbox, not the filtered view, so an
+   * option tells you how many requests exist rather than how many survive the
+   * filters already set — the latter reads as options vanishing as you work. */
+  const FILTER_DEFS = useMemo(() => {
+    const byState = optionCounts(all, r => r.state);
+    const byPolicy = optionCounts(all, r => r.policyId || null);
+    const byRule = optionCounts(all, r => currentRule(r));
+    const byWaiting = optionCounts(all, r => waitingBuckets(r, meId, people));
+    const byTarget = optionCounts(all, r => r.targetType || null);
+
+    return [
+      {
+        id: 'state', label: 'State', icon: CircleDot,
+        options: REQUEST_STATES.map(s => ({
+          value: s,
+          label: statusMeta(s).label,
+          dot: a(statusMeta(s).hue).dot,
+          count: byState.get(s) || 0,
+        })),
+      },
+      {
+        id: 'policy', label: 'Policy', icon: Scale,
+        options: (policies || []).map(p => ({ value: p.id, label: p.name, count: byPolicy.get(p.id) || 0 })),
+      },
+      {
+        id: 'rule', label: 'Stage rule', icon: Users,
+        options: STAGE_RULES.map(r => ({ value: r.rule, label: r.label, count: byRule.get(r.rule) || 0 })),
+        footer: 'The rule the CURRENT stage runs on, not the whole ladder.',
+      },
+      {
+        id: 'waiting', label: 'Waiting on', icon: UserCheck,
+        options: WAITING_ON.map(w => ({ value: w.value, label: w.label, count: byWaiting.get(w.value) || 0 })),
+        footer: 'Only a running request is waiting on anybody.',
+      },
+      {
+        id: 'target', label: 'Hangs off', icon: Layers,
+        options: targetTypes.map(tt => ({
+          value: tt,
+          label: ENTITIES[targetMeta(tt).kind]?.label || tt,
+          count: byTarget.get(tt) || 0,
+        })),
+      },
+    ];
+  }, [all, policies, targetTypes, meId, people, a]);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
+      <ModuleHeader
         icon={Stamp}
         module={MODULE}
         title="Approvals"
-        subtitle={`${counts.open} running · ${counts.mine} waiting on ${impersonating ? actingPerson?.name?.split(' ')[0] : 'you'} · policies run live, nothing here is a mock-up`}
+        /* The subtitle always tells the truth about what is on screen: the
+         * resting line when nothing narrows the inbox, "9 of 24 shown" when
+         * something does. The stat strip that used to print these same numbers
+         * a second time is gone — the lens already carries the counts. */
+        subtitle={subsetLabel(
+          visible.length,
+          all.length,
+          `${counts.open} running · ${counts.mine} waiting on ${impersonating ? actingPerson?.name?.split(' ')[0] : 'you'} · policies run live, nothing here is a mock-up`,
+        )}
         actions={
           <ActingAsControl
             people={directory || []}
@@ -670,58 +795,38 @@ export default function Approvals({ route }) {
             onPick={(id) => setActingId(id === currentUser?.id ? null : id)}
           />
         }
-      >
-        <div className="space-y-2">
-          <Toolbar>
-            <LensBar items={lensItems} value={lens} onChange={goLens} split={3} />
-          </Toolbar>
-          <Toolbar>
-            <SearchInput value={query} onChange={setQuery} placeholder="Search subject, policy, requester…" width="w-72" accent="amber" />
-            <div className="relative">
-              <FilterPill
-                icon={Layers}
-                label={typeFilter ? `On: ${ENTITIES[targetMeta(typeFilter).kind]?.label || typeFilter}` : 'Any record type'}
-                active={!!typeFilter}
-                open={typeMenu}
-                onClick={() => setTypeMenu(v => !v)}
-              />
-              <Menu open={typeMenu} onClose={() => setTypeMenu(false)} width="w-56">
-                <MenuLabel>Approval hangs off</MenuLabel>
-                {targetTypes.map(tt => {
-                  const meta = targetMeta(tt);
-                  return (
-                    <MenuItem
-                      key={tt}
-                      icon={meta.icon}
-                      label={ENTITIES[meta.kind]?.label || tt}
-                      hint={`${all.filter(r => r.targetType === tt).length} requests`}
-                      selected={typeFilter === tt}
-                      accent="amber"
-                      onClick={() => { setTypeFilter(typeFilter === tt ? null : tt); setTypeMenu(false); }}
-                    />
-                  );
-                })}
-                <MenuDivider />
-                <MenuItem icon={Undo2} label="Any record type" onClick={() => { setTypeFilter(null); setTypeMenu(false); }} />
-              </Menu>
-            </div>
-          </Toolbar>
-        </div>
-      </PageHeader>
+        tools={<>
+          {/* `inline` is not optional here: the container-query shell contains
+              the inline axis, so without it the pills overflow the search box. */}
+          <LensBar items={lensItems} value={lens} onChange={goLens} inline />
+          <ScopedSearch
+            value={query}
+            onChange={setQuery}
+            /* Names its own scope so it can never be mistaken for the global
+               field in the bar above. */
+            scope={`${lensItems.find(l => l.value === lens)?.count ?? all.length} approvals`}
+            accent="amber"
+          />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent="amber"
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray
+            open
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+          />
+        ) : null}
+      />
 
       <PageBody>
         <div className="space-y-4">
-          <div className="flex flex-wrap justify-center gap-2">
-            <Stat label="waiting on you" value={counts.mine} accent="amber" icon={UserCheck}
-              active={lens === 'mine'} onClick={() => goLens('mine')} />
-            <Stat label="in flight" value={counts.open} accent="blue" icon={Hourglass}
-              active={lens === 'open'} onClick={() => goLens('open')} />
-            <Stat label="overdue" value={overdue.length} accent={overdue.length ? 'red' : 'gray'} icon={Timer}
-              onClick={() => goLens('open')} />
-            <Stat label="decided" value={counts.approved + counts.rejected} accent="emerald" icon={CheckCheck}
-              active={lens === 'approved'} onClick={() => goLens('approved')} />
-          </div>
-
           <div className="space-y-2">
             {impersonating && (
               <Banner accent="violet" icon={Users} title={`Viewing this inbox as ${actingPerson?.name}`}>
@@ -777,9 +882,15 @@ export default function Approvals({ route }) {
           {grouped.length === 0 ? (
             <EmptyState
               icon={Stamp}
-              title={emptyTitle(lens, all.length, query || typeFilter)}
-              hint={emptyHint(lens, all.length, policies?.length || 0)}
-              action={lens !== 'all' ? <Button variant="soft" accent="amber" icon={Layers} onClick={() => goLens('all')}>Show everything</Button> : null}
+              title={emptyTitle(lens, all.length, !!query.trim() || activeFilters > 0)}
+              hint={emptyHint(lens, all.length, policies?.length || 0, !!query.trim() || activeFilters > 0)}
+              action={
+                (query.trim() || activeFilters > 0)
+                  ? <Button variant="soft" accent="amber" icon={Undo2} onClick={clearFilters}>Clear filters</Button>
+                  : lens !== 'all'
+                    ? <Button variant="soft" accent="amber" icon={Layers} onClick={() => goLens('all')}>Show everything</Button>
+                    : null
+              }
             />
           ) : (
             <div className="space-y-5">
@@ -843,11 +954,14 @@ function emptyTitle(lens, total, filtered) {
   return 'Nothing here';
 }
 
-function emptyHint(lens, total, policyCount) {
+function emptyHint(lens, total, policyCount, filtered) {
   if (!total) {
     return policyCount
       ? 'Approval requests are created when a submission matches a policy in Business Rules. None are running right now.'
       : 'No approval policies are configured, so nothing can raise an approval. Add one in Business Rules.';
+  }
+  if (filtered) {
+    return 'Search composes with the filters in the tray rather than replacing them — clearing one filter may bring requests back.';
   }
   if (lens === 'mine') return 'Requests appear here the moment a stage resolves to you — including stages you were delegated into.';
   return 'Try another lens.';
@@ -879,18 +993,22 @@ function ActingAsControl({ people, requests, actingId, currentUser, onPick }) {
 
   return (
     <div className="relative">
+      {/* One band, one control height: the chair-switcher condenses to a single
+          line rather than stacking a label over a name at twice the height. */}
       <button
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
-        className={cx('flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-xl border transition-colors',
+        aria-label={`Acting as ${acting?.name || 'unknown'}`}
+        title={`Acting as ${acting?.name || 'unknown'}`}
+        className={cx('flex items-center gap-1.5 pl-1 pr-2 rounded-lg border transition-colors', CONTROL_H,
           impersonating ? tint(TINT_KEY, dark) : cx(t.bgCard, t.borderLight, t.bgHover))}
       >
         <Avatar name={acting?.name} size="md" />
-        <span className="text-left leading-tight hidden sm:block">
-          <span className={cx('text-[10px] block uppercase tracking-wider', t.textMuted)}>Acting as</span>
-          <span className={cx('text-xs block font-medium', t.text)}>{acting?.name || 'Unknown'}</span>
+        <span className={cx('text-[10px] uppercase tracking-wider hidden lg:block', t.textMuted)}>Acting as</span>
+        <span className={cx('text-xs font-medium truncate max-w-[9rem] hidden sm:block', t.text)}>
+          {acting?.name || 'Unknown'}
         </span>
-        <ChevronDown size={ICON.base} className={t.textMuted} />
+        <ChevronDown size={ICON.sm} className={cx('flex-shrink-0', t.textMuted)} />
       </button>
       <Menu open={open} onClose={() => setOpen(false)} align="right" width="w-72">
         <MenuLabel>Approvers with a pending decision</MenuLabel>

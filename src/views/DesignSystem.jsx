@@ -4,6 +4,7 @@ import {
   Key, MapPin, GitBranch, AlertOctagon, Workflow, Stamp, FileQuestion, Folder,
   Layers, Circle, FileText, Plus, Trash2, Edit3, AlertCircle, Check, User,
   Building2, Award, ListChecks, Rocket, MessageSquare, BookMarked, UserCheck,
+  LayoutGrid, Filter, Target,
 } from 'lucide-react';
 import {
   useTheme, cx, ACCENT_HUES, ENTITIES, STATUS, PRIORITY, ICON, DENSITY, GRADIENT,
@@ -13,7 +14,9 @@ import {
   Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
   Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, MenuDivider, FilterPill,
-  LensBar, SubTabs, ViewSwitcher, PageHeader, Toolbar, PageBody, Breadcrumbs,
+  LensBar, SubTabs, ViewSwitcher, PageBody, Breadcrumbs,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, MultiSelectFilter,
+  subsetLabel, optionCounts, passes, countActive,
 } from '@/ds';
 
 /**
@@ -28,31 +31,32 @@ const SECTIONS = [
   { value: 'foundations', label: 'Foundations', icon: Palette },
   { value: 'entities', label: 'Entity colours', icon: Circle },
   { value: 'components', label: 'Components', icon: Layers },
+  { value: 'header', label: 'Header', icon: LayoutGrid },
   { value: 'patterns', label: 'Patterns', icon: FileText },
   { value: 'rules', label: 'Rules', icon: AlertCircle },
 ];
 
 export default function DesignSystem() {
-  const { t } = useTheme();
   const [section, setSection] = useState('foundations');
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
+      {/* The styleguide opens with the same band every module opens with. A page
+          that documents ModuleHeader while wearing the old stacked shell is the
+          exact drift this page exists to make impossible. */}
+      <ModuleHeader
         icon={Palette}
         gradient={GRADIENT.brand}
         title="RelayHQ Design System"
         subtitle="The visual language, rendered live from @/ds — this page cannot drift from the app"
-      >
-        <Toolbar>
-          <SubTabs items={SECTIONS} value={section} onChange={setSection} />
-        </Toolbar>
-      </PageHeader>
+        tools={<SubTabs items={SECTIONS} value={section} onChange={setSection} />}
+      />
 
       <PageBody width="max-w-6xl">
         {section === 'foundations' && <Foundations />}
         {section === 'entities' && <Entities />}
         {section === 'components' && <Components />}
+        {section === 'header' && <Header />}
         {section === 'patterns' && <Patterns />}
         {section === 'rules' && <Rules />}
       </PageBody>
@@ -74,7 +78,7 @@ function Swatch({ label, className, note }) {
 }
 
 function Foundations() {
-  const { t, a, dark } = useTheme();
+  const { t, a } = useTheme();
   return (
     <div className="space-y-8">
       <Section title="Surfaces" hint="Every surface in the app comes from these tokens. No component hardcodes a grey.">
@@ -106,7 +110,9 @@ function Foundations() {
               </tr>
             </thead>
             <tbody>
-              {['rose', 'orange', 'amber', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'green', 'slate', 'gray', 'red', 'lime'].map(hue => {
+              {/* Driven by ACCENT_HUES, never a hand-kept list — a hue added to
+                  accents.js appears here without anyone remembering to add it. */}
+              {ACCENT_HUES.map(hue => {
                 const c = a(hue);
                 return (
                   <tr key={hue} className={cx('border-b last:border-0', t.borderLight)}>
@@ -192,16 +198,19 @@ function Entities() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {Object.entries(ENTITIES).map(([kind, meta]) => {
             const Icon = ENTITY_ICONS[kind] || Circle;
-            const c = a(meta.hue);
+            // The colour comes from entityHue(), the same call a view makes — not
+            // from a second reading of the registry that could drift from it.
+            const hue = entityHue(kind);
+            const c = a(hue);
             return (
               <div key={kind} className={cx('flex items-center gap-3 p-2.5 rounded-lg border', t.bgCard, t.borderLight)}>
                 <span className={cx('w-1 self-stretch min-h-8 rounded-full', c.rail)} />
-                <IconTile icon={Icon} accent={meta.hue} size="sm" />
+                <IconTile icon={Icon} accent={hue} size="sm" />
                 <div className="flex-1 min-w-0">
                   <p className={cx('text-sm font-medium truncate', t.text)}>{meta.label}</p>
                   <p className={cx('text-[11px] font-mono truncate', t.textMuted)}>{kind}</p>
                 </div>
-                <Chip accent={meta.hue}>{meta.hue}</Chip>
+                <Chip accent={hue}>{hue}</Chip>
               </div>
             );
           })}
@@ -440,6 +449,296 @@ function Components() {
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * Header
+ *
+ * Every module used to open with up to four stacked bands: a top bar with an
+ * empty left third, a title band whose primary action sat a pane away from the
+ * title it belonged to, a stat strip, a lens bar and a filter toolbar — five
+ * control radii at three heights, and a stat strip printing the numbers the
+ * lens already carried. It is ONE band plus a tray now.
+ *
+ * These demos drive the real components from @/ds with a small stand-in
+ * collection, and every number they print is computed by the same helpers the
+ * app uses — optionCounts(), passes(), subsetLabel(). A typed-in count is the
+ * first thing on a styleguide to go stale.
+ * ------------------------------------------------------------------ */
+
+const HEADER_QUEUES = [
+  { id: 'q-cs',   name: 'Customer Support' },
+  { id: 'q-it',   name: 'IT Support' },
+  { id: 'q-proc', name: 'Procurement' },
+  { id: 'q-fac',  name: 'Facilities' },
+];
+
+/** Twenty stand-in tickets — small enough to read, big enough for counts to mean something. */
+const HEADER_ROWS = [
+  { queueId: 'q-cs',   status: 'open',        priority: 'urgent' },
+  { queueId: 'q-cs',   status: 'open',        priority: 'high' },
+  { queueId: 'q-cs',   status: 'in_progress', priority: 'medium' },
+  { queueId: 'q-cs',   status: 'in_progress', priority: 'low' },
+  { queueId: 'q-cs',   status: 'resolved',    priority: 'medium' },
+  { queueId: 'q-cs',   status: 'closed',      priority: 'low' },
+  { queueId: 'q-it',   status: 'open',        priority: 'urgent' },
+  { queueId: 'q-it',   status: 'open',        priority: 'medium' },
+  { queueId: 'q-it',   status: 'in_progress', priority: 'high' },
+  { queueId: 'q-it',   status: 'in_progress', priority: 'medium' },
+  { queueId: 'q-it',   status: 'blocked',     priority: 'high' },
+  { queueId: 'q-it',   status: 'resolved',    priority: 'low' },
+  { queueId: 'q-it',   status: 'closed',      priority: 'medium' },
+  { queueId: 'q-proc', status: 'open',        priority: 'medium' },
+  { queueId: 'q-proc', status: 'in_progress', priority: 'low' },
+  { queueId: 'q-proc', status: 'blocked',     priority: 'medium' },
+  { queueId: 'q-proc', status: 'resolved',    priority: 'low' },
+  { queueId: 'q-fac',  status: 'open',        priority: 'low' },
+  { queueId: 'q-fac',  status: 'in_progress', priority: 'medium' },
+  { queueId: 'q-fac',  status: 'resolved',    priority: 'low' },
+];
+
+const HEADER_STATUSES = ['open', 'in_progress', 'blocked', 'resolved', 'closed'];
+
+/** A lens selects by status group, so its counts and the tray never disagree. */
+const HEADER_LENSES = [
+  { value: 'all',    label: 'Everything', icon: Layers,      accent: 'purple',  groups: ['open', 'active', 'done', 'closed'], noun: 'tickets' },
+  { value: 'open',   label: 'Open',       icon: Inbox,       accent: 'rose',    groups: ['open'],                             noun: 'open tickets' },
+  { value: 'active', label: 'In flight',  icon: CheckSquare, accent: 'amber',   groups: ['active'],                           noun: 'tickets in flight' },
+  { value: 'done',   label: 'Settled',    icon: Check,       accent: 'emerald', groups: ['done', 'closed'],                   noun: 'settled tickets' },
+];
+
+/* Counts are computed over the WHOLE collection, never the filtered view — an
+ * option that counts the view reads as options vanishing as you work. */
+const HEADER_COUNTS = {
+  queue: optionCounts(HEADER_ROWS, r => r.queueId),
+  status: optionCounts(HEADER_ROWS, r => r.status),
+  priority: optionCounts(HEADER_ROWS, r => r.priority),
+};
+
+const HEADER_FILTERS = [
+  {
+    id: 'queue', label: 'Queue', icon: Inbox,
+    options: HEADER_QUEUES.map(q => ({ value: q.id, label: q.name, count: HEADER_COUNTS.queue.get(q.id) || 0 })),
+  },
+  {
+    id: 'status', label: 'Status', icon: Target,
+    options: HEADER_STATUSES.map(s => ({ value: s, label: statusMeta(s).label, count: HEADER_COUNTS.status.get(s) || 0 })),
+  },
+  {
+    id: 'priority', label: 'Priority', icon: Filter,
+    options: Object.keys(PRIORITY).map(p => ({ value: p, label: PRIORITY[p].label, count: HEADER_COUNTS.priority.get(p) || 0 })),
+  },
+];
+
+/** The lone filter used by the standalone MultiSelectFilter demo. */
+const HEADER_QUEUE_FILTER = HEADER_FILTERS[0];
+
+/** Everything the tray left, using the same passes() the views use. */
+function headerRows(filters) {
+  return HEADER_ROWS.filter(r =>
+    passes(filters.queue, r.queueId)
+    && passes(filters.status, r.status)
+    && passes(filters.priority, r.priority));
+}
+
+function headerLens(value) {
+  return HEADER_LENSES.find(l => l.value === value) || HEADER_LENSES[0];
+}
+
+/** Lens counts reflect the other filters, so the bar never offers an empty lens. */
+function headerLensItems(rows) {
+  return HEADER_LENSES.map(l => ({
+    ...l,
+    count: rows.filter(r => l.groups.includes(statusMeta(r.status).group)).length,
+  }));
+}
+
+function Header() {
+  const { t } = useTheme();
+
+  /* Two headers, both live: one starts resting, one starts filtering. Nothing on
+   * this page is a picture of a control — every one of them works. */
+  const [restLens, setRestLens] = useState('all');
+  const [restQuery, setRestQuery] = useState('');
+  const [restFilters, setRestFilters] = useState({});
+  const [restTray, setRestTray] = useState(false);
+
+  const [lens, setLens] = useState('all');
+  const [query, setQuery] = useState('');
+  const [filters, setFilters] = useState({ queue: ['q-cs', 'q-it'] });
+  const [trayOpen, setTrayOpen] = useState(true);
+
+  /* The standalone controls. */
+  const [assetQuery, setAssetQuery] = useState('');
+  const [changeQuery, setChangeQuery] = useState('memory');
+  const [toggleA, setToggleA] = useState(false);
+  const [toggleB, setToggleB] = useState(false);
+  const [unsetQueues, setUnsetQueues] = useState([]);
+  const [setQueues, setSetQueues] = useState(['q-cs', 'q-it']);
+  const [inlineLens, setInlineLens] = useState('open');
+  const [inlineQuery, setInlineQuery] = useState('');
+  const [standaloneLens, setStandaloneLens] = useState('open');
+
+  const restActive = countActive(restFilters);
+  const restShowTray = restTray || restActive > 0;
+  const clearRest = () => { setRestFilters({}); setRestQuery(''); setRestTray(false); };
+  const restRows = headerRows(restFilters);
+  const restLensItems = headerLensItems(restRows);
+  const restVisible = restRows.filter(r => headerLens(restLens).groups.includes(statusMeta(r.status).group));
+
+  const activeFilters = countActive(filters);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+  const rows = headerRows(filters);
+  const lensItems = headerLensItems(rows);
+  const visible = rows.filter(r => headerLens(lens).groups.includes(statusMeta(r.status).group));
+
+  /* The lens demo stands on its own, so its counts come from the whole collection. */
+  const allLensItems = headerLensItems(HEADER_ROWS);
+
+  return (
+    <div className="space-y-6">
+      <Banner accent="purple" icon={AlertCircle} title="One band, then a tray that only exists when it is doing something">
+        The old opening was a top bar, a title band, a stat strip, a lens bar and a filter toolbar — five control radii at
+        three heights, centred controls fighting a left-aligned title, and a stat strip printing the numbers the lens
+        already carried. Everything here is one height (<code>CONTROL_H</code>) and one radius. The stat strip is gone on
+        purpose — the lens already carries the counts. Keep <code>Stat</code> for the BODY of a view, where it is content
+        rather than chrome. Both headers below are live and driven by a twenty-record stand-in collection; there is no
+        list underneath them because the band is the subject.
+      </Banner>
+
+      <Demo
+        title="ModuleHeader — resting"
+        code="<ModuleHeader icon module title subtitle primary tools tray />"
+        hint="Identity and the primary action together on the left; the lens, the scoped search and the filter toggle on the right. Nothing is filtered yet, so the subtitle carries the resting label and no tray exists — the tray is a band that only appears when it is doing something. The state behind it is four values: the filter selections, the query, the lens and whether the tray shows. useHeaderFilters() packages them for a view that would rather not spell them out."
+      >
+        <div className={cx('w-full rounded-lg border overflow-hidden', t.borderLight)}>
+          <ModuleHeader
+            icon={Inbox}
+            module="workspace"
+            title="Tickets"
+            subtitle={subsetLabel(restVisible.length, HEADER_ROWS.length, `${HEADER_ROWS.length} tickets across ${HEADER_QUEUES.length} queues`)}
+            primary={<Button variant="grad" module="workspace" icon={Plus}>New ticket</Button>}
+            tools={<>
+              <LensBar items={restLensItems} value={restLens} onChange={setRestLens} inline />
+              <ScopedSearch
+                value={restQuery}
+                onChange={setRestQuery}
+                scope={`${restVisible.length} ${headerLens(restLens).noun}`}
+                accent="teal"
+              />
+              <FilterToggle
+                open={restShowTray}
+                count={restActive}
+                accent="teal"
+                onClick={() => (restActive > 0 ? clearRest() : setRestTray(o => !o))}
+              />
+            </>}
+            tray={restShowTray ? (
+              <FilterTray
+                open
+                filters={HEADER_FILTERS}
+                value={restFilters}
+                onChange={setRestFilters}
+                onClearAll={clearRest}
+              />
+            ) : null}
+          />
+        </div>
+      </Demo>
+
+      <Demo
+        title="ModuleHeader — filtering, tray open"
+        code="tray={showTray ? <FilterTray … /> : null}"
+        hint="Two queues are selected, so three things changed at once and none of them can be missed: the toggle carries its count, the tray is showing the filters that are doing the work, and the subtitle reports the subset rather than the whole. Toggle a filter and watch every number on the band move together."
+      >
+        <div className={cx('w-full rounded-lg border overflow-hidden', t.borderLight)}>
+          <ModuleHeader
+            icon={Inbox}
+            module="workspace"
+            title="Tickets"
+            subtitle={subsetLabel(visible.length, HEADER_ROWS.length, `${HEADER_ROWS.length} tickets across ${HEADER_QUEUES.length} queues`)}
+            primary={<Button variant="grad" module="workspace" icon={Plus}>New ticket</Button>}
+            tools={<>
+              <LensBar items={lensItems} value={lens} onChange={setLens} inline />
+              <ScopedSearch
+                value={query}
+                onChange={setQuery}
+                scope={`${visible.length} ${headerLens(lens).noun}`}
+                accent="teal"
+              />
+              <FilterToggle
+                open={showTray}
+                count={activeFilters}
+                accent="teal"
+                onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+              />
+            </>}
+            tray={showTray ? (
+              <FilterTray
+                open
+                filters={HEADER_FILTERS}
+                value={filters}
+                onChange={setFilters}
+                onClearAll={clearFilters}
+              />
+            ) : null}
+          />
+        </div>
+      </Demo>
+
+      <Demo
+        title="ScopedSearch"
+        code="<ScopedSearch value onChange scope accent />"
+        hint="Two search fields on one screen are confusing unless they announce which is which, so this one names its own scope in the placeholder. ⌘K in the bar above searches everything; this one searches what is on the page, and the scope moves with the lens. Empty on the left, carrying a query on the right — the border and the glyph take the accent once something is typed."
+      >
+        <ScopedSearch value={assetQuery} onChange={setAssetQuery} scope="24 assets" accent="cyan" />
+        <ScopedSearch value={changeQuery} onChange={setChangeQuery} scope="9 changes" accent="orange" />
+      </Demo>
+
+      <Demo
+        title="FilterToggle"
+        code="<FilterToggle open count accent onClick />"
+        hint="At zero it is a quiet control that opens the tray. With filters set it carries the count, so a collapsed tray can never hide the fact that the list is narrowed. In the app the same click clears the filters when any are set — the count is a state you can always get out of."
+      >
+        <FilterToggle open={toggleA} count={0} accent="teal" onClick={() => setToggleA(o => !o)} />
+        <FilterToggle open={toggleB} count={2} accent="teal" onClick={() => setToggleB(o => !o)} />
+        <span className={cx('text-xs', t.textMuted)}>count 0 · count 2</span>
+      </Demo>
+
+      <Demo
+        title="MultiSelectFilter"
+        code="<MultiSelectFilter filter selected onChange />"
+        hint="Multi-select, because “unassigned or mine” is the first question a service desk asks in the morning and a single-select control cannot express it at all. Open either one: the options carry counts over the whole collection, so you can see what a choice costs before you make it. The right-hand control is set, and it shows its VALUES — “Queue · Customer Support +1” — never a bare category name. Same rule as chips."
+      >
+        <MultiSelectFilter filter={HEADER_QUEUE_FILTER} selected={unsetQueues} onChange={setUnsetQueues} />
+        <MultiSelectFilter filter={HEADER_QUEUE_FILTER} selected={setQueues} onChange={setSetQueues} accent="teal" />
+        <span className={cx('text-xs', t.textMuted)}>unset · two selected</span>
+      </Demo>
+
+      <Demo
+        title="LensBar — inline and standalone"
+        code="<LensBar items value onChange inline />"
+        hint="Two shells, one control. The standalone bar centres itself and sizes off its OWN width with container queries; `container-type: inline-size` CONTAINS the inline axis, which is right for a bar that owns its row but means the pills overflow their box and collide with the search beside them inside a flex row. `inline` drops the shell, sizes to content and shrinks by scrolling. A lens in a ModuleHeader is always inline."
+      >
+        <div className="w-full space-y-4">
+          <div>
+            <GroupLabel>inline — sits in the header tools cluster, beside the search</GroupLabel>
+            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+              <LensBar items={allLensItems} value={inlineLens} onChange={setInlineLens} inline />
+              <ScopedSearch value={inlineQuery} onChange={setInlineQuery} scope="20 tickets" accent="teal" />
+            </div>
+          </div>
+          <div>
+            <GroupLabel>standalone — owns its row, centred, container-query sized</GroupLabel>
+            <div className="mt-1.5">
+              <LensBar items={allLensItems} value={standaloneLens} onChange={setStandaloneLens} />
+            </div>
+          </div>
+        </div>
+      </Demo>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 
 function Patterns() {
@@ -494,6 +793,11 @@ function Patterns() {
 const RULES = [
   ['Information density over whitespace', 'When in doubt, tighten. Padding, icon sizes and card heights have been reduced repeatedly. Dense, not cluttered. Start from the DENSITY constants rather than picking a padding.'],
   ['Chips show values, not counts', 'Show the actual names with an overflow badge. Never “3 CC\'d”. Use ChipGroup, which makes the wrong thing impossible.'],
+  ['Filters are multi-select', 'A single-select dropdown cannot express “unassigned or mine”, which is the first question a service desk asks each morning. Every header filter is a MultiSelectFilter, and an empty selection means everything — use passes(selected, value) so the empty case cannot be got wrong.'],
+  ['Filter options carry counts', 'You should see what a choice costs before you make it. optionCounts() computes them over the WHOLE collection, never the filtered view — counting the view makes options appear to vanish as you work.'],
+  ['A set filter shows its values', '“Queue · Customer Support +1”, never a bare “Queue”. Same rule as chips: a control that is doing something has to say what it is doing. MultiSelectFilter renders the label for you, so supply options with real names.'],
+  ['In-page search names its scope', 'Two search fields on one screen are confusing unless they announce which is which. ScopedSearch puts the set in the placeholder — “Search 24 assets…”, “Search 9 changes…” — and ⌘K in the bar above stays the one that searches everything.'],
+  ['The subtitle reports the subset', '“9 of 20 shown” whenever something narrows the list, the resting label when nothing does. subsetLabel() is the only place that decides, so a subset is never read as the whole.'],
   ['Centre the content, cap the width', 'max-w-5xl for list rows, justify-center for lens bars and toolbars.'],
   ['Container queries, not viewport breakpoints', 'md:/lg: respond to the window and fire at the wrong moment inside a nested pane. Use container-type: inline-size with clamp(min, Ncqw, max). LensBar is the reference implementation.'],
   ['Modals are centred popups', 'Pinned header, flex-1 overflow-auto body, pinned footer, border-2 in the entity accent. Rendered through a portal so nesting never clips.'],

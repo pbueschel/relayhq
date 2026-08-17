@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import {
   LayoutGrid, Briefcase, Package, ShoppingBag, FileText, Filter, Server, BookOpen,
   GraduationCap, Workflow, Globe, Palette, GitBranch, AlertOctagon, Stamp,
-  Moon, Sun, PanelLeftClose, PanelLeft, ChevronRight, Search, ChevronDown,
+  Moon, Sun, ChevronRight,
 } from 'lucide-react';
 import { useTheme, cx, ICON, GRADIENT, tint } from '@/ds';
 import { useRoute, navigate } from '@/lib/router.js';
@@ -228,7 +228,8 @@ function Sidebar({ collapsed, setCollapsed, route, dark, toggle }) {
             {!collapsed && <span className={cx('text-sm', t.textSecondary)}>{dark ? 'Dark' : 'Light'}</span>}
           </span>
           {!collapsed && (
-            <span className={cx('relative w-9 h-5 rounded-full transition-colors', dark ? 'bg-purple-500' : t.trackOff)}>
+            <span className={cx('relative w-9 h-5 rounded-full transition-colors',
+              dark ? a('purple').solid : t.trackOff)}>
               <span className={cx('absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
                 dark ? 'translate-x-[18px]' : 'translate-x-0.5')} />
             </span>

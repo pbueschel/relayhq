@@ -19,7 +19,11 @@ const walkCatalog = (nodes, trail = [], out = []) => {
 };
 
 const CATALOG_ICON = { product: Folder, subcategory: Layers, item: Circle };
-const CATALOG_ACCENT = { product: 'amber', subcategory: 'purple', item: 'emerald' };
+
+/* `accent` on a result is an ENTITY KIND, never a hue. Both consumers resolve it
+ * with `entityHue(result.accent)`, so a literal hue ('amber') falls through to
+ * grey — the entity colour has to come from ENTITIES or it silently does not.
+ * A catalog node's `type` is already one of those kinds, so it is passed through. */
 
 export function searchAll(state, raw) {
   const q = (raw || '').trim().toLowerCase();
@@ -68,7 +72,7 @@ export function searchAll(state, raw) {
   for (const { node, trail } of walkCatalog(state.catalog)) {
     if (hit(node.name)) {
       out.push({ group: 'Catalog', icon: CATALOG_ICON[node.type] || Circle,
-        accent: CATALOG_ACCENT[node.type] || 'gray', id: node.id,
+        accent: node.type, id: node.id,
         title: node.name, subtitle: trail.length ? trail.join(' › ') : node.type,
         to: ['catalog', null, node.id] });
     }

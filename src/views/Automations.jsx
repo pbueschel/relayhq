@@ -9,10 +9,11 @@ import {
 import {
   useTheme, cx, ICON, DENSITY, statusMeta, priorityMeta,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, Avatar,
-  EmptyState, Card, Section, GroupLabel, ListRow, Stat, Banner, Divider,
+  EmptyState, Card, Section, GroupLabel, ListRow, Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
   Modal, ConfirmDelete, Menu, MenuItem, MenuDivider, MenuLabel,
-  SubTabs, PageHeader, Toolbar, PageBody, Breadcrumbs,
+  SubTabs, PageBody,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, NOW } from '@/store/store.js';
 import { Q, USR } from '@/store/seed/ids.js';
@@ -751,19 +752,39 @@ export default function Automations({ route }) {
  * LIST
  * ==================================================================== */
 
-const LIST_TABS = [
-  { value: 'all', label: 'All', icon: Layers, accent: 'sky' },
-  { value: 'active', label: 'Active', icon: Zap, accent: 'emerald' },
-  { value: 'paused', label: 'Paused', icon: Power, accent: 'gray' },
-  { value: 'failing', label: 'With errors', icon: AlertCircle, accent: 'red' },
-];
+/**
+ * What starts a workflow. The trigger node's type IS the answer — a workflow
+ * has exactly one, and it is the first thing anybody asks about a list of them.
+ */
+function triggerTypeOf(automation) {
+  return (automation.nodes || []).find(n => categoryOf(n) === 'trigger')?.type || null;
+}
+
+/**
+ * Where the most recent run ended. "Never run" is a state a workflow can be in,
+ * not a missing value — a workflow nobody has fired is the one worth finding.
+ */
+function lastRunState(automation, runsBy) {
+  const last = (runsBy.get(automation.id) || [])[0];
+  if (!last) return 'never';
+  return last.status === 'error' ? 'errored' : 'succeeded';
+}
 
 function AutomationList({ automations, runs, lookup }) {
   const { t } = useTheme();
-  const [tab, setTab] = useState('all');
+  /* One header state: the multi-select filter values, the in-page query and
+   * whether the tray is showing. The old All / Active / Paused / With errors
+   * tabs are gone — they were single-select spellings of two of these filters,
+   * and "paused OR erroring" was a question they could not ask. */
+  const [filters, setFilters] = useState({});
   const [query, setQuery] = useState('');
+  const [trayOpen, setTrayOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(null);
+
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
 
   // Newest first per workflow. `addTo` appends, so a test run started just now
   // lands at the END of the collection — taking runs[0] unsorted would keep
@@ -783,14 +804,15 @@ function AutomationList({ automations, runs, lookup }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return automations.filter(a => {
-      if (tab === 'active' && !a.active) return false;
-      if (tab === 'paused' && a.active) return false;
-      if (tab === 'failing' && !(a.stats?.errors7d > 0)) return false;
+      if (!passes(filters.status, a.active ? 'active' : 'disabled')) return false;
+      if (!passes(filters.trigger, triggerTypeOf(a))) return false;
+      if (!passes(filters.lastRun, lastRunState(a, runsBy))) return false;
+      // Search narrows whatever the filters left rather than replacing them.
       if (!q) return true;
       const hay = `${a.name} ${a.description} ${(a.tags || []).join(' ')} ${(a.nodes || []).map(n => n.name).join(' ')}`;
       return hay.toLowerCase().includes(q);
     });
-  }, [automations, tab, query]);
+  }, [automations, filters, query, runsBy]);
 
   const totals = useMemo(() => automations.reduce((acc, a) => ({
     runs: acc.runs + (a.stats?.runs7d || 0),
@@ -798,9 +820,44 @@ function AutomationList({ automations, runs, lookup }) {
     active: acc.active + (a.active ? 1 : 0),
   }), { runs: 0, errors: 0, active: 0 }), [automations]);
 
+  /* Option counts are computed over EVERY workflow, not the filtered view — an
+   * option that told you how many survive the filters you already set reads as
+   * choices vanishing as you work. */
+  const FILTER_DEFS = useMemo(() => {
+    const byStatus = optionCounts(automations, a => (a.active ? 'active' : 'disabled'));
+    const byTrigger = optionCounts(automations, a => triggerTypeOf(a));
+    const byLastRun = optionCounts(automations, a => lastRunState(a, runsBy));
+    const triggerTypes = [...new Set(automations.map(triggerTypeOf).filter(Boolean))];
+    return [
+      {
+        id: 'status', label: 'Status', icon: Power,
+        options: [
+          { value: 'active', label: 'Active', count: byStatus.get('active') || 0 },
+          { value: 'disabled', label: 'Disabled', count: byStatus.get('disabled') || 0 },
+        ],
+      },
+      {
+        id: 'trigger', label: 'Trigger', icon: Zap,
+        options: triggerTypes.map(type => ({
+          value: type,
+          label: NODE_TYPES[type]?.label || type,
+          count: byTrigger.get(type) || 0,
+        })),
+      },
+      {
+        id: 'lastRun', label: 'Last run', icon: History,
+        options: [
+          { value: 'succeeded', label: 'Succeeded', count: byLastRun.get('succeeded') || 0 },
+          { value: 'errored', label: 'Errored', count: byLastRun.get('errored') || 0 },
+          { value: 'never', label: 'Never run', count: byLastRun.get('never') || 0 },
+        ],
+      },
+    ];
+  }, [automations, runsBy]);
+
   // The execution list follows the filter. Filtering the workflows above while
   // still listing every workflow's runs below reads as a bug.
-  const scoped = tab !== 'all' || query.trim().length > 0;
+  const scoped = activeFilters > 0 || query.trim().length > 0;
   const recent = useMemo(() => {
     const visible = new Set(filtered.map(a => a.id));
     return [...runs]
@@ -811,29 +868,49 @@ function AutomationList({ automations, runs, lookup }) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
+      <ModuleHeader
         icon={Workflow}
         module="automations"
         accent="sky"
         title="Automations"
-        subtitle={`${automations.length} workflows · ${totals.runs} executions in the last 7 days`}
-        actions={
+        /* The subtitle tells the truth about what is on screen: the resting
+         * numbers when nothing narrows the list, "9 of 24 shown" when it does. */
+        subtitle={subsetLabel(
+          filtered.length,
+          automations.length,
+          `${automations.length} workflows · ${totals.active} active · ${totals.runs} runs and ${totals.errors} errors in the last 7 days`,
+        )}
+        primary={
           <Button variant="grad" module="automations" icon={Plus} onClick={() => setCreating(true)}>
             New automation
           </Button>
         }
-      >
-        <Toolbar>
-          <SubTabs items={LIST_TABS.map(x => ({
-            ...x,
-            count: x.value === 'all' ? automations.length
-              : x.value === 'active' ? totals.active
-              : x.value === 'paused' ? automations.length - totals.active
-              : automations.filter(a => a.stats?.errors7d > 0).length,
-          }))} value={tab} onChange={setTab} />
-          <SearchInput value={query} onChange={setQuery} accent="sky" width="w-64" placeholder="Search workflows and nodes…" />
-        </Toolbar>
-      </PageHeader>
+        tools={<>
+          <ScopedSearch
+            value={query}
+            onChange={setQuery}
+            /* Names its own scope so it can never be read as the global ⌘K
+             * field in the bar above. */
+            scope={`${automations.length} automations`}
+            accent="sky"
+          />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent="sky"
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray
+            open
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+          />
+        ) : null}
+      />
 
       <PageBody>
         <div className="space-y-4">
@@ -843,19 +920,16 @@ function AutomationList({ automations, runs, lookup }) {
             leaves the ticket in <strong className={t.text}>General</strong> — the canvas says so rather than failing quietly.
           </Banner>
 
-          <div className="flex flex-wrap gap-2">
-            <Stat label="workflows" value={automations.length} accent="sky" icon={Workflow} />
-            <Stat label="active" value={totals.active} accent="emerald" icon={Zap} />
-            <Stat label="runs / 7d" value={totals.runs} accent="violet" icon={History} />
-            <Stat label="errors / 7d" value={totals.errors} accent="red" icon={AlertCircle} />
-          </div>
-
           {filtered.length === 0 ? (
             <EmptyState
               icon={Workflow}
               title="No workflows match"
-              hint="Automations react to events in RelayHQ — a ticket arriving, an approval deciding, a course being completed — and run a chain of nodes."
-              action={<Button variant="grad" module="automations" icon={Plus} onClick={() => setCreating(true)}>New automation</Button>}
+              hint={scoped
+                ? 'Search composes with the filters rather than replacing them — clearing one may bring workflows back.'
+                : 'Automations react to events in RelayHQ — a ticket arriving, an approval deciding, a course being completed — and run a chain of nodes.'}
+              action={scoped
+                ? <Button variant="soft" accent="sky" onClick={clearFilters}>Clear filters</Button>
+                : <Button variant="grad" module="automations" icon={Plus} onClick={() => setCreating(true)}>New automation</Button>}
             />
           ) : (
             <div className={DENSITY.rowGap}>
@@ -1280,20 +1354,44 @@ function AutomationEditor({ automation, runs, lookup }) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-      <PageHeader
+      {/* Inside the canvas the header is identity plus the run controls. There
+          is nothing to filter here — the workflow IS the selection — so the
+          tray and the scoped search that the list carries are absent. */}
+      <ModuleHeader
         icon={Workflow}
         module="automations"
         accent="sky"
         title={automation.name}
-        subtitle={automation.description}
+        subtitle={[
+          automation.description,
+          plural(nodes.filter(n => n.type !== 'util.sticky').length, 'node'),
+          `updated ${relTime(automation.updatedAt)}`,
+        ].filter(Boolean).join(' · ')}
+        primary={
+          <Button variant="grad" module="automations" icon={Play} onClick={() => startRun(null)}>
+            Test workflow
+          </Button>
+        }
         actions={
           <>
+            <Button variant="ghost" icon={ArrowLeft} onClick={() => navigate('automations')}>
+              All workflows
+            </Button>
+            <ChipGroup accent="sky" max={2} items={automation.tags || []} />
             <Button variant="soft" accent="sky" icon={Plus} onClick={() => { setPendingLink(null); setPanel('palette'); }}>
               Add node
             </Button>
-            <Button variant="grad" module="automations" icon={Play} onClick={() => startRun(null)}>
-              Test workflow
-            </Button>
+            <Divider vertical className="h-5" />
+            {/* Label ahead of the switch: the DS toggle's knob travels past the
+                right edge of its track, so a trailing label collides with it. */}
+            <span className={cx('text-xs font-medium', automation.active ? '' : t.textMuted)}>
+              {automation.active ? 'Active' : 'Paused'}
+            </span>
+            <Toggle
+              accent="emerald"
+              checked={!!automation.active}
+              onChange={(v) => patchIn('automations', automation.id, { active: v })}
+            />
             <div className="relative">
               <IconButton icon={Layers} label="Workflow actions" onClick={() => setMenuOpen(v => !v)} />
               <Menu open={menuOpen} onClose={() => setMenuOpen(false)} align="right" width="w-52">
@@ -1306,31 +1404,7 @@ function AutomationEditor({ automation, runs, lookup }) {
             </div>
           </>
         }
-      >
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <Breadcrumbs
-            items={[{ id: 'root', name: 'Automations' }, { id: automation.id, name: automation.name }]}
-            onNavigate={() => navigate('automations')}
-          />
-          <div className="flex items-center justify-end gap-2.5 flex-wrap min-w-0">
-            <ChipGroup accent="sky" max={2} items={automation.tags || []} />
-            <span className={cx('text-xs', t.textMuted)}>
-              {plural(nodes.filter(n => n.type !== 'util.sticky').length, 'node')} · updated {relTime(automation.updatedAt)}
-            </span>
-            <Divider vertical className="h-5" />
-            {/* Label ahead of the switch: the DS toggle's knob travels past the
-                right edge of its track, so a trailing label collides with it. */}
-            <span className={cx('text-xs font-medium', automation.active ? '' : t.textMuted)}>
-              {automation.active ? 'Active' : 'Paused'}
-            </span>
-            <Toggle
-              accent="emerald"
-              checked={!!automation.active}
-              onChange={(v) => patchIn('automations', automation.id, { active: v })}
-            />
-          </div>
-        </div>
-      </PageHeader>
+      />
 
       <div className="flex-1 flex min-h-0 min-w-0">
         <div className="flex-1 flex flex-col min-w-0 min-h-0">

@@ -13,7 +13,8 @@ import {
   Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
   Modal, ConfirmDelete,
-  SubTabs, PageHeader, Toolbar, PageBody,
+  SubTabs, PageBody,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, setCollection, addTo, patchIn, removeFrom, uid } from '@/store/store.js';
 import {
@@ -46,7 +47,7 @@ import { Q, USR, SF, CAT } from '@/store/seed/ids.js';
  * ==================================================================== */
 
 /* The module's signature gradient key — rose→orange, which is what v1 put behind
- * every "New …" action in this module. Read by PageHeader and Button variant="grad". */
+ * every "New …" action in this module. Read by ModuleHeader and Button variant="grad". */
 const MODULE = 'rules';
 
 /* Entity accents come from the ENTITIES registry, never restated as literals —
@@ -67,6 +68,16 @@ const TRIGGERS = [
 ];
 
 const TRIGGER_BY_VALUE = TRIGGERS.reduce((acc, t) => { acc[t.value] = t; return acc; }, {});
+
+/** Queue audience — the three values the queue editor writes, spelled once. */
+const AUDIENCES = [
+  { value: 'internal', label: 'Internal staff' },
+  { value: 'external', label: 'Customers' },
+  { value: 'both', label: 'Both audiences' },
+];
+
+/** The module's accent — the rose half of its rose→orange gradient. */
+const ACCENT = ENTITIES.rule.hue;
 
 const ACTION_TYPES = [
   { value: 'set_priority',   label: 'Set priority',    icon: Flag,       accent: 'orange' },
@@ -327,30 +338,28 @@ export default function BusinessRules({ route }) {
     sla: data.slas.length,
   };
 
+  /**
+   * These stay SubTabs. They switch WHAT you are looking at — queues, routing,
+   * rules, policies, clocks — not how one collection is drawn, which is the job
+   * a lens does. So they ride in the header's tools cluster, and each tab owns
+   * the rest of the band: its own primary action, its own scoped search, and
+   * the filters that make sense for the records it lists.
+   */
+  const tabs = (
+    <SubTabs
+      value={sub}
+      onChange={(v) => navigate('rules', v)}
+      items={TABS.map((x) => ({ ...x, count: counts[x.value] }))}
+    />
+  );
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
-        icon={Filter}
-        module={MODULE}
-        title="Business Rules"
-        subtitle="Where work goes, what happens to it on the way, and who has to say yes"
-      >
-        <Toolbar>
-          <SubTabs
-            value={sub}
-            onChange={(v) => navigate('rules', v)}
-            items={TABS.map((t) => ({ ...t, count: counts[t.value] }))}
-          />
-        </Toolbar>
-      </PageHeader>
-
-      <PageBody width={sub === 'rules' || sub === 'approvals' ? 'max-w-6xl' : 'max-w-5xl'}>
-        {sub === 'queues' && <QueuesTab data={data} routing={routing} />}
-        {sub === 'routing' && <RoutingTab data={data} routing={routing} />}
-        {sub === 'rules' && <RulesTab data={data} />}
-        {sub === 'approvals' && <PoliciesTab data={data} />}
-        {sub === 'sla' && <SlaTab data={data} />}
-      </PageBody>
+      {sub === 'queues' && <QueuesTab data={data} routing={routing} tabs={tabs} />}
+      {sub === 'routing' && <RoutingTab data={data} routing={routing} tabs={tabs} />}
+      {sub === 'rules' && <RulesTab data={data} tabs={tabs} />}
+      {sub === 'approvals' && <PoliciesTab data={data} tabs={tabs} />}
+      {sub === 'sla' && <SlaTab data={data} tabs={tabs} />}
     </div>
   );
 }
@@ -359,12 +368,21 @@ export default function BusinessRules({ route }) {
  * QUEUES
  * ==================================================================== */
 
-function QueuesTab({ data, routing }) {
+function QueuesTab({ data, routing, tabs }) {
   const { t } = useTheme();
   const { queues, rules, directory } = data;
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
-  const [search, setSearch] = useState('');
+  /* One header state: the multi-select filter values, the in-page query, and
+   * whether the tray is showing. The tray forces itself open whenever something
+   * is active, so a filter can never be on while its control is hidden. */
+  const [filters, setFilters] = useState({});
+  const [query, setQuery] = useState('');
+  const [trayOpen, setTrayOpen] = useState(false);
+
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
 
   /* Chips show VALUES, not counts — so these carry the actual form and rule
    * names and ChipGroup collapses the overflow. "4 forms" told you a queue was
@@ -396,10 +414,29 @@ function QueuesTab({ data, routing }) {
   }, [rules]);
 
   const nameOf = useCallback((id) => directory.find((p) => p.id === id)?.name || id, [directory]);
-  const visible = queues.filter((q) =>
-    !search || `${q.name} ${q.description || ''}`.toLowerCase().includes(search.toLowerCase()));
+
+  const needle = query.trim().toLowerCase();
+  const visible = queues.filter((q) => {
+    if (!passes(filters.audience, q.audience || 'internal')) return false;
+    if (!needle) return true;
+    return `${q.name} ${q.description || ''}`.toLowerCase().includes(needle);
+  });
 
   const memberTotal = uniq(queues.flatMap((q) => q.memberIds || [])).length;
+  const routedForms = routing.rows.filter((r) => r.queueId).length;
+
+  /* Counts run over EVERY queue, not the filtered view — an option that reported
+   * how many survive the filters already set reads as choices vanishing. */
+  const FILTER_DEFS = useMemo(() => {
+    const byAudience = optionCounts(queues, (q) => q.audience || 'internal');
+    return [{
+      id: 'audience',
+      label: 'Audience',
+      icon: Users,
+      options: AUDIENCES.map((o) => ({ ...o, count: byAudience.get(o.value) || 0 })),
+      footer: 'An internal queue never appears in the customer portal.',
+    }];
+  }, [queues]);
 
   const onSave = (draft) => {
     if (queues.some((q) => q.id === draft.id)) patchIn('queues', draft.id, draft);
@@ -408,71 +445,92 @@ function QueuesTab({ data, routing }) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
-          <Stat label="queues" value={queues.length} accent="gray" icon={Inbox} />
-          <Stat label="people assigned" value={memberTotal} accent="violet" icon={Users} />
-          <Stat label="forms routed" value={routing.rows.filter((r) => r.queueId).length} accent="purple" icon={Route} />
-        </div>
-        <div className="flex items-center gap-2">
-          <SearchInput value={search} onChange={setSearch} placeholder="Find a queue…" width="w-52" accent="gray" />
-          <Button variant="grad" module={MODULE} icon={Plus} size="sm" onClick={() => setEditing(newQueue())}>
+    <>
+      <ModuleHeader
+        icon={Filter}
+        module={MODULE}
+        title="Business Rules"
+        /* The subtitle tells the truth about what is on screen: the resting
+         * facts when nothing narrows the list, "3 of 6 shown" when something
+         * does. It also carries the numbers the old stat strip printed. */
+        subtitle={subsetLabel(visible.length, queues.length,
+          `${queues.length} queues · ${memberTotal} people assigned · ${routedForms} forms routed`)}
+        primary={
+          <Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newQueue())}>
             New queue
           </Button>
-        </div>
-      </div>
+        }
+        tools={<>
+          {tabs}
+          <ScopedSearch value={query} onChange={setQuery} scope={`${queues.length} queues`} accent={ACCENT} />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent={ACCENT}
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen((o) => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
+        ) : null}
+      />
 
-      <Banner accent="blue" icon={AlertCircle} title="Queues are destinations, not workflows">
-        A queue owns a body of work and a set of people. Nothing here decides what lands in it — that comes from
-        the request form (see <strong className={t.text}>Routing</strong>) and can then be overridden by a rule.
-        <strong className={t.text}> General</strong> is the default: anything that arrives unrouted lands there, and
-        it cannot be deleted for that reason.
-      </Banner>
+      <PageBody>
+        <div className="space-y-4">
+          <Banner accent="blue" icon={AlertCircle} title="Queues are destinations, not workflows">
+            A queue owns a body of work and a set of people. Nothing here decides what lands in it — that comes from
+            the request form (see <strong className={t.text}>Routing</strong>) and can then be overridden by a rule.
+            <strong className={t.text}> General</strong> is the default: anything that arrives unrouted lands there, and
+            it cannot be deleted for that reason.
+          </Banner>
 
-      {visible.length === 0 ? (
-        <EmptyState icon={Inbox} title="No queues match" hint="Clear the search, or create a queue." />
-      ) : (
-        <div className={DENSITY.rowGap}>
-          {visible.map((q) => {
-            const members = (q.memberIds || []).map(nameOf);
-            return (
-              <ListRow
-                key={q.id}
-                accent={q.hue || ENTITIES.queue.hue}
-                icon={Inbox}
-                title={q.name}
-                subtitle={q.description}
-                onClick={() => setEditing(clone(q))}
-                meta={
-                  <>
-                    {q.isDefault && <Chip accent="amber" icon={Target}>Default queue</Chip>}
-                    <AvatarStack names={members} max={4} size="sm" />
-                  </>
-                }
-                actions={
-                  <>
-                    <IconButton icon={Pencil} label="Edit queue"
-                      onClick={(e) => { e.stopPropagation(); setEditing(clone(q)); }} />
-                    {!q.isDefault && (
-                      <IconButton icon={Trash2} label="Delete queue" accent="red"
-                        onClick={(e) => { e.stopPropagation(); setDeleting(q); }} />
-                    )}
-                  </>
-                }
-              >
-                <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                  <ChipGroup items={members} max={3} accent={q.hue || ENTITIES.queue.hue} icon={User}
-                    empty={<span className={cx('text-xs', t.textMuted)}>No members — work here has no owner</span>} />
-                  <ChipGroup items={formsByQueue[q.id] || []} max={2} accent={ENTITIES.subform.hue} icon={Route} />
-                  <ChipGroup items={rulesByQueue[q.id] || []} max={1} accent={ENTITIES.rule.hue} icon={Filter} />
-                  {q.inbox && <span className={cx('text-[11px] font-mono', t.textMuted)}>{q.inbox}</span>}
-                </div>
-              </ListRow>
-            );
-          })}
+          {visible.length === 0 ? (
+            <EmptyState icon={Inbox} title="No queues match"
+              hint="Search composes with the filters rather than replacing them — clearing one may bring queues back."
+              action={<Button variant="soft" accent={ACCENT} icon={Filter} onClick={clearFilters}>Clear filters</Button>} />
+          ) : (
+            <div className={DENSITY.rowGap}>
+              {visible.map((q) => {
+                const members = (q.memberIds || []).map(nameOf);
+                return (
+                  <ListRow
+                    key={q.id}
+                    accent={q.hue || ENTITIES.queue.hue}
+                    icon={Inbox}
+                    title={q.name}
+                    subtitle={q.description}
+                    onClick={() => setEditing(clone(q))}
+                    meta={
+                      <>
+                        {q.isDefault && <Chip accent="amber" icon={Target}>Default queue</Chip>}
+                        <AvatarStack names={members} max={4} size="sm" />
+                      </>
+                    }
+                    actions={
+                      <>
+                        <IconButton icon={Pencil} label="Edit queue"
+                          onClick={(e) => { e.stopPropagation(); setEditing(clone(q)); }} />
+                        {!q.isDefault && (
+                          <IconButton icon={Trash2} label="Delete queue" accent="red"
+                            onClick={(e) => { e.stopPropagation(); setDeleting(q); }} />
+                        )}
+                      </>
+                    }
+                  >
+                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                      <ChipGroup items={members} max={3} accent={q.hue || ENTITIES.queue.hue} icon={User}
+                        empty={<span className={cx('text-xs', t.textMuted)}>No members — work here has no owner</span>} />
+                      <ChipGroup items={formsByQueue[q.id] || []} max={2} accent={ENTITIES.subform.hue} icon={Route} />
+                      <ChipGroup items={rulesByQueue[q.id] || []} max={1} accent={ENTITIES.rule.hue} icon={Filter} />
+                      {q.inbox && <span className={cx('text-[11px] font-mono', t.textMuted)}>{q.inbox}</span>}
+                    </div>
+                  </ListRow>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
+      </PageBody>
 
       {editing && (
         <QueueEditorModal
@@ -492,7 +550,7 @@ function QueuesTab({ data, routing }) {
         onCancel={() => setDeleting(null)}
         onConfirm={() => { removeFrom('queues', deleting.id); setDeleting(null); }}
       />
-    </div>
+    </>
   );
 }
 
@@ -676,95 +734,137 @@ function HuePicker({ value, onChange }) {
  * ROUTING — derived from the catalog and its request forms
  * ==================================================================== */
 
-function RoutingTab({ data, routing }) {
+function RoutingTab({ data, routing, tabs }) {
   const { t } = useTheme();
   const { queues, options } = data;
-  const [queueFilter, setQueueFilter] = useState('');
+  const [filters, setFilters] = useState({});
+  const [query, setQuery] = useState('');
+  const [trayOpen, setTrayOpen] = useState(false);
+
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
 
   const generalId = (queues.find((q) => q.isDefault) || {}).id || Q.GENERAL;
-  const rows = routing.rows.filter((r) => !queueFilter || (r.queueId || generalId) === queueFilter);
+  const needle = query.trim().toLowerCase();
+
+  /* Destination is MULTI-SELECT now. "Customer Support or Billing" is the
+   * question a routing audit actually asks, and the old single-select could not
+   * express it at all. The fallback is a destination like any other, because
+   * that is what it is. */
+  const rows = routing.rows.filter((r) => {
+    if (!passes(filters.destination, r.queueId || generalId)) return false;
+    if (!needle) return true;
+    const hay = [r.subform?.name, r.subform?.description, ...r.path.map((n) => n.name)].filter(Boolean).join(' ');
+    return hay.toLowerCase().includes(needle);
+  });
   const unrouted = routing.rows.filter((r) => !r.queueId).length;
 
+  const FILTER_DEFS = useMemo(() => {
+    const byQueue = optionCounts(routing.rows, (r) => r.queueId || generalId);
+    return [{
+      id: 'destination',
+      label: 'Destination',
+      icon: Inbox,
+      options: queues.map((q) => ({ value: q.id, label: q.name, count: byQueue.get(q.id) || 0 })),
+      footer: 'A form with no queue set counts against the default.',
+    }];
+  }, [queues, routing.rows, generalId]);
+
   return (
-    <div className="space-y-4">
-      <Banner accent="purple" icon={Route} title="Routing is derived, not authored">
-        There is no separate routing table to keep in step with the catalog. A ticket's queue comes from the request
-        form it was submitted through — <code className={t.text}>subform.routing.queueId</code> — so this page is a
-        read-out of what the catalog already says. Change a form's queue in{' '}
-        <button className={cx('underline', t.text)} onClick={() => navigate('forms')}>Forms</button> and this table
-        follows. Anything with no queue set falls to{' '}
-        <strong className={t.text}>{queues.find((q) => q.isDefault)?.name || 'General'}</strong>, which is why that
-        queue exists.
-      </Banner>
+    <>
+      <ModuleHeader
+        icon={Filter}
+        module={MODULE}
+        title="Business Rules"
+        subtitle={subsetLabel(rows.length, routing.rows.length,
+          `${routing.rows.length} routed forms · ${unrouted} fall to the default queue · ${routing.orphans.length} unattached`)}
+        tools={<>
+          {tabs}
+          <ScopedSearch value={query} onChange={setQuery} scope={`${routing.rows.length} routes`} accent={ACCENT} />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent={ACCENT}
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen((o) => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
+        ) : null}
+      />
 
-      {routing.rows.length === 0 ? (
-        <EmptyState
-          icon={Route}
-          title="Nothing to route yet"
-          hint="Routing appears once the catalog has items with request forms attached. Each form contributes one row: product › subcategory › item › form → queue."
-          action={<Button variant="soft" accent="amber" icon={Folder} onClick={() => navigate('catalog')}>Open the catalog</Button>}
-        />
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap gap-2">
-              <Stat label="routed forms" value={routing.rows.length} accent="purple" icon={Route} />
-              <Stat label="fall to default" value={unrouted} accent={unrouted ? 'amber' : 'emerald'} icon={Target} />
-              <Stat label="unattached forms" value={routing.orphans.length} accent={routing.orphans.length ? 'amber' : 'gray'} icon={FileQuestion} />
-            </div>
-            <div className="w-56">
-              <Select
-                accent="purple"
-                value={queueFilter}
-                placeholder="All destinations"
-                onChange={(e) => setQueueFilter(e.target.value)}
-                options={options.queues}
-              />
-            </div>
-          </div>
+      <PageBody>
+        <div className="space-y-4">
+          <Banner accent="purple" icon={Route} title="Routing is derived, not authored">
+            There is no separate routing table to keep in step with the catalog. A ticket's queue comes from the request
+            form it was submitted through — <code className={t.text}>subform.routing.queueId</code> — so this page is a
+            read-out of what the catalog already says. Change a form's queue in{' '}
+            <button className={cx('underline', t.text)} onClick={() => navigate('forms')}>Forms</button> and this table
+            follows. Anything with no queue set falls to{' '}
+            <strong className={t.text}>{queues.find((q) => q.isDefault)?.name || 'General'}</strong>, which is why that
+            queue exists.
+          </Banner>
 
-          {unrouted > 0 && (
-            <Banner accent="amber" icon={AlertTriangle}>
-              <strong className={t.text}>{unrouted}</strong> request form{unrouted === 1 ? '' : 's'} below have no queue
-              configured. Their tickets will land in the default queue rather than being lost — but nobody chose that.
-            </Banner>
+          {routing.rows.length === 0 ? (
+            <EmptyState
+              icon={Route}
+              title="Nothing to route yet"
+              hint="Routing appears once the catalog has items with request forms attached. Each form contributes one row: product › subcategory › item › form → queue."
+              action={<Button variant="soft" accent="amber" icon={Folder} onClick={() => navigate('catalog')}>Open the catalog</Button>}
+            />
+          ) : (
+            <>
+              {unrouted > 0 && (
+                <Banner accent="amber" icon={AlertTriangle}>
+                  <strong className={t.text}>{unrouted}</strong> request form{unrouted === 1 ? '' : 's'} below have no queue
+                  configured. Their tickets will land in the default queue rather than being lost — but nobody chose that.
+                </Banner>
+              )}
+
+              {rows.length === 0 ? (
+                <EmptyState icon={Route} title="No routes match"
+                  hint="Search composes with the destination filter rather than replacing it — clearing one may bring routes back."
+                  action={<Button variant="soft" accent={ACCENT} icon={Filter} onClick={clearFilters}>Clear filters</Button>} />
+              ) : (
+                <div className={DENSITY.rowGap}>
+                  {rows.map((r) => (
+                    <RoutingRow
+                      key={r.key}
+                      row={r}
+                      queue={queues.find((q) => q.id === (r.queueId || generalId))}
+                      policyOptions={options.policies}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {routing.orphans.length > 0 && (
+                <Section title="Forms not attached to a catalog item"
+                  hint="These exist but no customer can reach them from the portal. They still route if a rule or a deep link submits one.">
+                  <div className={DENSITY.rowGap}>
+                    {routing.orphans.map((sf) => (
+                      <ListRow
+                        key={sf.id}
+                        accent="purple"
+                        icon={FileQuestion}
+                        title={sf.name}
+                        subtitle={sf.description}
+                        meta={
+                          <Chip accent={queues.find((q) => q.id === sf.routing?.queueId)?.hue || 'gray'} icon={Inbox}>
+                            {queues.find((q) => q.id === sf.routing?.queueId)?.name || 'General (fallback)'}
+                          </Chip>
+                        }
+                      />
+                    ))}
+                  </div>
+                </Section>
+              )}
+            </>
           )}
-
-          <div className={DENSITY.rowGap}>
-            {rows.map((r) => (
-              <RoutingRow
-                key={r.key}
-                row={r}
-                queue={queues.find((q) => q.id === (r.queueId || generalId))}
-                policyOptions={options.policies}
-              />
-            ))}
-          </div>
-
-          {routing.orphans.length > 0 && (
-            <Section title="Forms not attached to a catalog item"
-              hint="These exist but no customer can reach them from the portal. They still route if a rule or a deep link submits one.">
-              <div className={DENSITY.rowGap}>
-                {routing.orphans.map((sf) => (
-                  <ListRow
-                    key={sf.id}
-                    accent="purple"
-                    icon={FileQuestion}
-                    title={sf.name}
-                    subtitle={sf.description}
-                    meta={
-                      <Chip accent={queues.find((q) => q.id === sf.routing?.queueId)?.hue || 'gray'} icon={Inbox}>
-                        {queues.find((q) => q.id === sf.routing?.queueId)?.name || 'General (fallback)'}
-                      </Chip>
-                    }
-                  />
-                ))}
-              </div>
-            </Section>
-          )}
-        </>
-      )}
-    </div>
+        </div>
+      </PageBody>
+    </>
   );
 }
 
@@ -809,7 +909,7 @@ function RoutingRow({ row, queue, policyOptions }) {
  * RULES
  * ==================================================================== */
 
-function RulesTab({ data }) {
+function RulesTab({ data, tabs }) {
   const { t } = useTheme();
   const { rules, queues, options, directory } = data;
   const [editing, setEditing] = useState(null);
@@ -817,8 +917,47 @@ function RulesTab({ data }) {
   const [testerOpen, setTesterOpen] = useState(false);
   const [sample, setSample] = useState(() => clone(SAMPLE_PRESETS[0].ctx));
   const [event, setEvent] = useState('on_create');
+  const [filters, setFilters] = useState({});
+  const [query, setQuery] = useState('');
+  const [trayOpen, setTrayOpen] = useState(false);
+
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
 
   const enabled = rules.filter((r) => r.enabled).length;
+
+  /* The list keeps its authored ORDER — rules run top to bottom and a later one
+   * overwrites an earlier one's assignment, so the index shown beside each row
+   * is its real position in the run, not its position in the filtered view. */
+  const needle = query.trim().toLowerCase();
+  const visible = rules
+    .map((rule, index) => ({ rule, index }))
+    .filter(({ rule }) => {
+      if (!passes(filters.trigger, rule.trigger)) return false;
+      if (!passes(filters.enabled, rule.enabled ? 'on' : 'off')) return false;
+      if (!needle) return true;
+      const hay = [rule.name, rule.description, readableSummary(rule.conditions, options)].join(' ');
+      return hay.toLowerCase().includes(needle);
+    });
+
+  const FILTER_DEFS = useMemo(() => {
+    const byTrigger = optionCounts(rules, (r) => r.trigger);
+    const byEnabled = optionCounts(rules, (r) => (r.enabled ? 'on' : 'off'));
+    return [
+      {
+        id: 'trigger', label: 'Trigger', icon: Zap,
+        options: TRIGGERS.map((x) => ({ value: x.value, label: x.label, count: byTrigger.get(x.value) || 0 })),
+      },
+      {
+        id: 'enabled', label: 'Enabled', icon: Play,
+        options: [
+          { value: 'on', label: 'Enabled', count: byEnabled.get('on') || 0 },
+          { value: 'off', label: 'Disabled', count: byEnabled.get('off') || 0 },
+        ],
+      },
+    ];
+  }, [rules]);
 
   const move = (index, delta) => setCollection('rules', (list) => moveIn(list, index, delta));
   const onSave = (draft) => {
@@ -828,113 +967,139 @@ function RulesTab({ data }) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
-          <Stat label="enabled" value={enabled} accent="rose" icon={Filter} />
-          <Stat label="off" value={rules.length - enabled} accent="gray" icon={Ban} />
-          <Stat label="scheduled" value={rules.filter((r) => r.trigger === 'scheduled').length} accent="sky" icon={Clock} />
-        </div>
-        <div className="flex items-center gap-2">
+    <>
+      <ModuleHeader
+        icon={Filter}
+        module={MODULE}
+        title="Business Rules"
+        subtitle={subsetLabel(visible.length, rules.length,
+          `${rules.length} rules · ${enabled} enabled · ${rules.length - enabled} off`)}
+        primary={
+          <Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newRule())}>
+            New rule
+          </Button>
+        }
+        tools={<>
+          {tabs}
+          <ScopedSearch value={query} onChange={setQuery} scope={`${rules.length} rules`} accent={ACCENT} />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent={ACCENT}
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen((o) => !o))}
+          />
+        </>}
+        actions={
           <Button variant={testerOpen ? 'solid' : 'soft'} accent="emerald" size="sm" icon={FlaskConical}
             onClick={() => setTesterOpen((v) => !v)}>
             {testerOpen ? 'Hide tester' : 'Test rules'}
           </Button>
-          <Button variant="grad" module={MODULE} size="sm" icon={Plus} onClick={() => setEditing(newRule())}>
-            New rule
-          </Button>
-        </div>
-      </div>
+        }
+        tray={showTray ? (
+          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
+        ) : null}
+      />
 
-      <Banner accent="rose" icon={Filter} title="Order matters">
-        Rules run top to bottom on every matching event and a later rule overwrites an earlier one's assignment.
-        That is why the order is editable rather than alphabetical — and why the tester reports which rule set each
-        field, not just the final answer.
-      </Banner>
+      <PageBody width="max-w-6xl">
+        <div className="space-y-4">
+          <Banner accent="rose" icon={Filter} title="Order matters">
+            Rules run top to bottom on every matching event and a later rule overwrites an earlier one's assignment.
+            That is why the order is editable rather than alphabetical — and why the tester reports which rule set each
+            field, not just the final answer.
+          </Banner>
 
-      {testerOpen && (
-        <RuleTester
-          rules={rules}
-          data={data}
-          sample={sample}
-          onSample={setSample}
-          event={event}
-          onEvent={setEvent}
-        />
-      )}
+          {testerOpen && (
+            <RuleTester
+              rules={rules}
+              data={data}
+              sample={sample}
+              onSample={setSample}
+              event={event}
+              onEvent={setEvent}
+            />
+          )}
 
-      {rules.length === 0 ? (
-        <EmptyState icon={Filter} title="No rules yet"
-          hint="A rule is a trigger, a condition tree and a list of actions. Start with something narrow — auto-labelling billing questions is the usual first one."
-          action={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newRule())}>New rule</Button>} />
-      ) : (
-        <div className={DENSITY.rowGap}>
-          {rules.map((rule, i) => {
-            const trig = TRIGGER_BY_VALUE[rule.trigger] || TRIGGERS[0];
-            const TrigIcon = trig.icon;
-            return (
-              <ListRow
-                key={rule.id}
-                accent={rule.enabled ? 'rose' : 'gray'}
-                icon={Filter}
-                title={rule.name}
-                subtitle={readableSummary(rule.conditions, options)}
-                onClick={() => setEditing(clone(rule))}
-                meta={
-                  <>
-                    <span className={cx('text-[11px] tabular-nums w-5 text-right', t.textMuted)}>{i + 1}</span>
-                    <Chip accent={rule.enabled ? 'sky' : 'gray'} icon={TrigIcon}>{trig.label}</Chip>
-                    {/* The row itself opens the editor, so inline controls must not bubble. */}
-                    <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                      <Toggle
-                        checked={!!rule.enabled}
-                        accent="rose"
-                        onChange={(v) => patchIn('rules', rule.id, { enabled: v })}
-                      />
-                    </span>
-                    <div className="flex flex-col">
-                      <button aria-label="Move up" title="Move up" disabled={i === 0}
-                        onClick={(e) => { e.stopPropagation(); move(i, -1); }}
-                        className={cx('px-1 rounded', t.bgHover, i === 0 ? 'opacity-30' : t.textSecondary)}>
-                        <ChevronUp size={ICON.sm} />
-                      </button>
-                      <button aria-label="Move down" title="Move down" disabled={i === rules.length - 1}
-                        onClick={(e) => { e.stopPropagation(); move(i, 1); }}
-                        className={cx('px-1 rounded', t.bgHover, i === rules.length - 1 ? 'opacity-30' : t.textSecondary)}>
-                        <ChevronDown size={ICON.sm} />
-                      </button>
+          {visible.length === 0 ? (
+            rules.length === 0 ? (
+              <EmptyState icon={Filter} title="No rules yet"
+                hint="A rule is a trigger, a condition tree and a list of actions. Start with something narrow — auto-labelling billing questions is the usual first one."
+                action={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newRule())}>New rule</Button>} />
+            ) : (
+              <EmptyState icon={Filter} title="No rules match"
+                hint="Search composes with the filters rather than replacing them — clearing one may bring rules back."
+                action={<Button variant="soft" accent={ACCENT} icon={Filter} onClick={clearFilters}>Clear filters</Button>} />
+            )
+          ) : (
+            <div className={DENSITY.rowGap}>
+              {visible.map(({ rule, index: i }) => {
+                const trig = TRIGGER_BY_VALUE[rule.trigger] || TRIGGERS[0];
+                const TrigIcon = trig.icon;
+                return (
+                  <ListRow
+                    key={rule.id}
+                    accent={rule.enabled ? 'rose' : 'gray'}
+                    icon={Filter}
+                    title={rule.name}
+                    subtitle={readableSummary(rule.conditions, options)}
+                    onClick={() => setEditing(clone(rule))}
+                    meta={
+                      <>
+                        <span className={cx('text-[11px] tabular-nums w-5 text-right', t.textMuted)}>{i + 1}</span>
+                        <Chip accent={rule.enabled ? 'sky' : 'gray'} icon={TrigIcon}>{trig.label}</Chip>
+                        {/* The row itself opens the editor, so inline controls must not bubble. */}
+                        <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                          <Toggle
+                            checked={!!rule.enabled}
+                            accent="rose"
+                            onChange={(v) => patchIn('rules', rule.id, { enabled: v })}
+                          />
+                        </span>
+                        <div className="flex flex-col">
+                          <button aria-label="Move up" title="Move up" disabled={i === 0}
+                            onClick={(e) => { e.stopPropagation(); move(i, -1); }}
+                            className={cx('px-1 rounded', t.bgHover, i === 0 ? 'opacity-30' : t.textSecondary)}>
+                            <ChevronUp size={ICON.sm} />
+                          </button>
+                          <button aria-label="Move down" title="Move down" disabled={i === rules.length - 1}
+                            onClick={(e) => { e.stopPropagation(); move(i, 1); }}
+                            className={cx('px-1 rounded', t.bgHover, i === rules.length - 1 ? 'opacity-30' : t.textSecondary)}>
+                            <ChevronDown size={ICON.sm} />
+                          </button>
+                        </div>
+                      </>
+                    }
+                    actions={
+                      <>
+                        <IconButton icon={Pencil} label="Edit rule"
+                          onClick={(e) => { e.stopPropagation(); setEditing(clone(rule)); }} />
+                        <IconButton icon={Trash2} label="Delete rule" accent="red"
+                          onClick={(e) => { e.stopPropagation(); setDeleting(rule); }} />
+                      </>
+                    }
+                  >
+                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                      {(rule.actions || []).map((a, k) => {
+                        const meta = ACTION_BY_TYPE[a.type];
+                        if (!meta) return null;
+                        const text = describeAction(a, { queues, options, directory });
+                        return (
+                          <Chip key={k} accent={actionAccent(a, { queues })} icon={meta.icon} title={text}>
+                            {text}
+                          </Chip>
+                        );
+                      })}
+                      {!(rule.actions || []).length && (
+                        <span className={cx('text-xs', t.textMuted)}>No actions — this rule matches and then does nothing.</span>
+                      )}
                     </div>
-                  </>
-                }
-                actions={
-                  <>
-                    <IconButton icon={Pencil} label="Edit rule"
-                      onClick={(e) => { e.stopPropagation(); setEditing(clone(rule)); }} />
-                    <IconButton icon={Trash2} label="Delete rule" accent="red"
-                      onClick={(e) => { e.stopPropagation(); setDeleting(rule); }} />
-                  </>
-                }
-              >
-                <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                  {(rule.actions || []).map((a, k) => {
-                    const meta = ACTION_BY_TYPE[a.type];
-                    if (!meta) return null;
-                    const text = describeAction(a, { queues, options, directory });
-                    return (
-                      <Chip key={k} accent={actionAccent(a, { queues })} icon={meta.icon} title={text}>
-                        {text}
-                      </Chip>
-                    );
-                  })}
-                  {!(rule.actions || []).length && (
-                    <span className={cx('text-xs', t.textMuted)}>No actions — this rule matches and then does nothing.</span>
-                  )}
-                </div>
-              </ListRow>
-            );
-          })}
+                  </ListRow>
+                );
+              })}
+            </div>
+          )}
+
         </div>
-      )}
+      </PageBody>
 
       {editing && (
         <RuleEditorModal
@@ -954,7 +1119,7 @@ function RulesTab({ data }) {
         onCancel={() => setDeleting(null)}
         onConfirm={() => { removeFrom('rules', deleting.id); setDeleting(null); }}
       />
-    </div>
+    </>
   );
 }
 
@@ -2098,13 +2263,21 @@ function OutcomeList({ label, icon: Icon, accent, items, empty }) {
  * APPROVAL POLICIES
  * ==================================================================== */
 
-function PoliciesTab({ data }) {
+function PoliciesTab({ data, tabs }) {
   const { t } = useTheme();
   const { policies, queues, directory } = data;
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [query, setQuery] = useState('');
 
   const ctx = useMemo(() => ({ directory, queues }), [directory, queues]);
+
+  const needle = query.trim().toLowerCase();
+  const visible = policies.filter((p) => !needle
+    || [p.name, p.description, readableSummary(p.appliesWhen, data.options)].join(' ').toLowerCase().includes(needle));
+
+  const stageTotal = policies.reduce((n, p) => n + (p.stages || []).length, 0);
+  const multiStage = policies.filter((p) => (p.stages || []).length > 1).length;
 
   const onSave = (draft) => {
     if (policies.some((p) => p.id === draft.id)) patchIn('approvalPolicies', draft.id, draft);
@@ -2113,77 +2286,91 @@ function PoliciesTab({ data }) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
-          <Stat label="policies" value={policies.length} accent="amber" icon={Stamp} />
-          <Stat label="stages total" value={policies.reduce((n, p) => n + (p.stages || []).length, 0)} accent="violet" icon={Layers} />
-          <Stat label="multi-stage" value={policies.filter((p) => (p.stages || []).length > 1).length} accent="teal" icon={ArrowRight} />
-        </div>
-        <Button variant="grad" module={MODULE} size="sm" icon={Plus} onClick={() => setEditing(newPolicy())}>
-          New policy
-        </Button>
-      </div>
+    <>
+      <ModuleHeader
+        icon={Filter}
+        module={MODULE}
+        title="Business Rules"
+        subtitle={subsetLabel(visible.length, policies.length,
+          `${policies.length} policies · ${stageTotal} stages · ${multiStage} multi-stage`)}
+        primary={
+          <Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newPolicy())}>
+            New policy
+          </Button>
+        }
+        tools={<>
+          {tabs}
+          <ScopedSearch value={query} onChange={setQuery} scope={`${policies.length} policies`} accent={ACCENT} />
+        </>}
+      />
 
-      <Banner accent="amber" icon={Stamp} title="A policy is conditions plus ordered stages">
-        <strong className={t.text}>Applies when</strong> uses the same condition builder as the rules — one engine,
-        one editor. Stages run in order, and approvers are resolved when the request starts, so a reorg later cannot
-        silently change who was asked. A stage that resolves to nobody is a configuration fault, never a skip.
-      </Banner>
+      <PageBody width="max-w-6xl">
+        <div className="space-y-4">
+          <Banner accent="amber" icon={Stamp} title="A policy is conditions plus ordered stages">
+            <strong className={t.text}>Applies when</strong> uses the same condition builder as the rules — one engine,
+            one editor. Stages run in order, and approvers are resolved when the request starts, so a reorg later cannot
+            silently change who was asked. A stage that resolves to nobody is a configuration fault, never a skip.
+          </Banner>
 
-      {policies.length === 0 ? (
-        <EmptyState icon={Stamp} title="No approval policies"
-          action={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newPolicy())}>New policy</Button>} />
-      ) : (
-        <div className="space-y-2">
-          {policies.map((p) => (
-            <Panel
-              key={p.id}
-              icon={Stamp}
-              accent="amber"
-              title={p.name}
-              subtitle={p.description}
-              action={
-                <div className="flex items-center gap-1">
-                  <Chip accent="purple" icon={Split}>{countRows(p.appliesWhen)} conditions</Chip>
-                  <IconButton icon={Pencil} label="Edit policy" onClick={() => setEditing(clone(p))} />
-                  <IconButton icon={Trash2} label="Delete policy" accent="red" onClick={() => setDeleting(p)} />
-                </div>
-              }
-            >
-              <div className="px-4 py-2.5 space-y-2">
-                <p className={cx('text-xs', t.textSecondary)}>
-                  <span className={cx('font-semibold uppercase tracking-wider text-[10px] mr-1.5', t.textMuted)}>When</span>
-                  {readableSummary(p.appliesWhen, data.options)}
-                </p>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {(p.stages || []).map((stage, i) => (
-                    <React.Fragment key={stage.id}>
-                      {i > 0 && <ArrowRight size={ICON.sm} className={t.textMuted} />}
-                      <span className={cx('rounded-lg border px-2 py-1', t.bgCard, t.borderLight)}>
-                        <span className={cx('text-xs font-medium block', t.text)}>{stage.name}</span>
-                        <span className="flex items-center gap-1 mt-0.5 flex-wrap">
-                          <ChipGroup
-                            max={2}
-                            accent="violet"
-                            icon={User}
-                            items={(stage.approvers || []).map((spec) => describeApprover(spec, ctx))}
-                          />
-                          <Chip accent="gray" icon={ruleIcon(stage.rule)}>{stageRuleLabel(stage)}</Chip>
-                          <Chip accent="sky" icon={Hourglass}>{stage.dueInHours}h</Chip>
-                        </span>
-                      </span>
-                    </React.Fragment>
-                  ))}
-                  {!(p.stages || []).length && (
-                    <span className={cx('text-xs', t.textMuted)}>No stages — this policy approves instantly.</span>
-                  )}
-                </div>
-              </div>
-            </Panel>
-          ))}
+          {visible.length === 0 ? (
+            <EmptyState icon={Stamp} title={policies.length === 0 ? 'No approval policies' : 'No policies match'}
+              hint={policies.length === 0 ? undefined : 'Clear the search to see every policy.'}
+              action={policies.length === 0
+                ? <Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newPolicy())}>New policy</Button>
+                : <Button variant="soft" accent={ACCENT} onClick={() => setQuery('')}>Clear search</Button>} />
+          ) : (
+            <div className="space-y-2">
+              {visible.map((p) => (
+                <Panel
+                  key={p.id}
+                  icon={Stamp}
+                  accent="amber"
+                  title={p.name}
+                  subtitle={p.description}
+                  action={
+                    <div className="flex items-center gap-1">
+                      <Chip accent="purple" icon={Split}>{countRows(p.appliesWhen)} conditions</Chip>
+                      <IconButton icon={Pencil} label="Edit policy" onClick={() => setEditing(clone(p))} />
+                      <IconButton icon={Trash2} label="Delete policy" accent="red" onClick={() => setDeleting(p)} />
+                    </div>
+                  }
+                >
+                  <div className="px-4 py-2.5 space-y-2">
+                    <p className={cx('text-xs', t.textSecondary)}>
+                      <span className={cx('font-semibold uppercase tracking-wider text-[10px] mr-1.5', t.textMuted)}>When</span>
+                      {readableSummary(p.appliesWhen, data.options)}
+                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(p.stages || []).map((stage, i) => (
+                        <React.Fragment key={stage.id}>
+                          {i > 0 && <ArrowRight size={ICON.sm} className={t.textMuted} />}
+                          <span className={cx('rounded-lg border px-2 py-1', t.bgCard, t.borderLight)}>
+                            <span className={cx('text-xs font-medium block', t.text)}>{stage.name}</span>
+                            <span className="flex items-center gap-1 mt-0.5 flex-wrap">
+                              <ChipGroup
+                                max={2}
+                                accent="violet"
+                                icon={User}
+                                items={(stage.approvers || []).map((spec) => describeApprover(spec, ctx))}
+                              />
+                              <Chip accent="gray" icon={ruleIcon(stage.rule)}>{stageRuleLabel(stage)}</Chip>
+                              <Chip accent="sky" icon={Hourglass}>{stage.dueInHours}h</Chip>
+                            </span>
+                          </span>
+                        </React.Fragment>
+                      ))}
+                      {!(p.stages || []).length && (
+                        <span className={cx('text-xs', t.textMuted)}>No stages — this policy approves instantly.</span>
+                      )}
+                    </div>
+                  </div>
+                </Panel>
+              ))}
+            </div>
+          )}
+
         </div>
-      )}
+      </PageBody>
 
       {editing && (
         <PolicyEditorModal
@@ -2203,7 +2390,7 @@ function PoliciesTab({ data }) {
         onCancel={() => setDeleting(null)}
         onConfirm={() => { removeFrom('approvalPolicies', deleting.id); setDeleting(null); }}
       />
-    </div>
+    </>
   );
 }
 
@@ -2630,13 +2817,20 @@ function PolicyPreview({ policy, data }) {
  * SLA
  * ==================================================================== */
 
-function SlaTab({ data }) {
+function SlaTab({ data, tabs }) {
   const { t } = useTheme();
   const { slas, settings } = data;
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [query, setQuery] = useState('');
 
   const bh = settings.businessHours || {};
+
+  const needle = query.trim().toLowerCase();
+  const visible = slas.filter((s) => !needle
+    || [s.name, s.description, s.appliesTo?.plan].filter(Boolean).join(' ').toLowerCase().includes(needle));
+
+  const calendar = slas.filter((s) => s.clock === 'calendar').length;
 
   const onSave = (draft) => {
     if (slas.some((s) => s.id === draft.id)) patchIn('slaPolicies', draft.id, draft);
@@ -2645,71 +2839,87 @@ function SlaTab({ data }) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
-          <Stat label="policies" value={slas.length} accent="emerald" icon={Timer} />
-          <Stat label="round the clock" value={slas.filter((s) => s.clock === 'calendar').length} accent="rose" icon={Clock} />
-          <Stat label="business hours" value={slas.filter((s) => s.clock !== 'calendar').length} accent="sky" icon={Building2} />
-        </div>
-        <Button variant="grad" module={MODULE} size="sm" icon={Plus} onClick={() => setEditing(newSla())}>
-          New SLA policy
-        </Button>
-      </div>
+    <>
+      <ModuleHeader
+        icon={Filter}
+        module={MODULE}
+        title="Business Rules"
+        subtitle={subsetLabel(visible.length, slas.length,
+          `${slas.length} SLA policies · ${calendar} on a 24×7 clock · ${slas.length - calendar} on business hours`)}
+        primary={
+          <Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newSla())}>
+            New SLA policy
+          </Button>
+        }
+        tools={<>
+          {tabs}
+          <ScopedSearch value={query} onChange={setQuery} scope={`${slas.length} SLA policies`} accent={ACCENT} />
+        </>}
+      />
 
-      <Banner accent="emerald" icon={Clock} title="Business hours are not a per-policy setting">
-        Policies on the business-hours clock use the one working calendar configured for the instance —{' '}
-        <strong className={t.text}>{bh.start || '09:00'}–{bh.end || '17:00'}, Mon–Fri, {bh.tz || 'America/Chicago'}</strong>.
-        A calendar-clock policy ignores it entirely and counts wall time, weekends included.
-      </Banner>
+      <PageBody>
+        <div className="space-y-4">
+          <Banner accent="emerald" icon={Clock} title="Business hours are not a per-policy setting">
+            Policies on the business-hours clock use the one working calendar configured for the instance —{' '}
+            <strong className={t.text}>{bh.start || '09:00'}–{bh.end || '17:00'}, Mon–Fri, {bh.tz || 'America/Chicago'}</strong>.
+            A calendar-clock policy ignores it entirely and counts wall time, weekends included.
+          </Banner>
 
-      {slas.length === 0 ? (
-        <EmptyState icon={Timer} title="No SLA policies" hint="Without one, no ticket has a target and nothing can be at risk." />
-      ) : (
-        <div className="space-y-2">
-          {slas.map((s) => (
-            <Panel
-              key={s.id}
-              icon={Timer}
-              accent={s.clock === 'calendar' ? 'rose' : 'emerald'}
-              title={s.name}
-              subtitle={s.description}
-              action={
-                <div className="flex items-center gap-1">
-                  <Chip accent={s.appliesTo?.kind === 'internal' ? 'blue' : 'purple'}
-                    icon={s.appliesTo?.kind === 'internal' ? Building2 : Users}>
-                    {s.appliesTo?.kind === 'internal' ? 'Internal staff' : `${s.appliesTo?.plan || 'Any'} plan`}
-                  </Chip>
-                  <IconButton icon={Pencil} label="Edit SLA" onClick={() => setEditing(clone(s))} />
-                  <IconButton icon={Trash2} label="Delete SLA" accent="red" onClick={() => setDeleting(s)} />
-                </div>
-              }
-            >
-              <div className="px-4 py-3 space-y-2.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Chip accent="amber" icon={Send}>First response {s.firstResponseHours}h</Chip>
-                  <Chip accent="emerald" icon={Check}>Resolution {s.resolutionHours}h</Chip>
-                  <Chip accent={s.clock === 'calendar' ? 'rose' : 'sky'} icon={s.clock === 'calendar' ? Clock : Building2}>
-                    {s.clock === 'calendar' ? 'Calendar hours (24×7)' : 'Business hours only'}
-                  </Chip>
-                </div>
-                {s.targets && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {Object.keys(PRIORITY).map((p) => (
-                      <div key={p} className={cx('rounded-lg border px-2.5 py-1.5', t.bgCard, t.borderLight)}>
-                        <PriorityFlag priority={p} />
-                        <p className={cx('text-[11px] mt-1 tabular-nums', t.textSecondary)}>
-                          {s.targets[p]?.first ?? s.firstResponseHours}h first · {s.targets[p]?.resolve ?? s.resolutionHours}h resolve
-                        </p>
+          {visible.length === 0 ? (
+            <EmptyState icon={Timer} title={slas.length === 0 ? 'No SLA policies' : 'No SLA policies match'}
+              hint={slas.length === 0
+                ? 'Without one, no ticket has a target and nothing can be at risk.'
+                : 'Clear the search to see every policy.'}
+              action={slas.length === 0 ? undefined
+                : <Button variant="soft" accent={ACCENT} onClick={() => setQuery('')}>Clear search</Button>} />
+          ) : (
+            <div className="space-y-2">
+              {visible.map((s) => (
+                <Panel
+                  key={s.id}
+                  icon={Timer}
+                  accent={s.clock === 'calendar' ? 'rose' : 'emerald'}
+                  title={s.name}
+                  subtitle={s.description}
+                  action={
+                    <div className="flex items-center gap-1">
+                      <Chip accent={s.appliesTo?.kind === 'internal' ? 'blue' : 'purple'}
+                        icon={s.appliesTo?.kind === 'internal' ? Building2 : Users}>
+                        {s.appliesTo?.kind === 'internal' ? 'Internal staff' : `${s.appliesTo?.plan || 'Any'} plan`}
+                      </Chip>
+                      <IconButton icon={Pencil} label="Edit SLA" onClick={() => setEditing(clone(s))} />
+                      <IconButton icon={Trash2} label="Delete SLA" accent="red" onClick={() => setDeleting(s)} />
+                    </div>
+                  }
+                >
+                  <div className="px-4 py-3 space-y-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Chip accent="amber" icon={Send}>First response {s.firstResponseHours}h</Chip>
+                      <Chip accent="emerald" icon={Check}>Resolution {s.resolutionHours}h</Chip>
+                      <Chip accent={s.clock === 'calendar' ? 'rose' : 'sky'} icon={s.clock === 'calendar' ? Clock : Building2}>
+                        {s.clock === 'calendar' ? 'Calendar hours (24×7)' : 'Business hours only'}
+                      </Chip>
+                    </div>
+                    {s.targets && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {Object.keys(PRIORITY).map((p) => (
+                          <div key={p} className={cx('rounded-lg border px-2.5 py-1.5', t.bgCard, t.borderLight)}>
+                            <PriorityFlag priority={p} />
+                            <p className={cx('text-[11px] mt-1 tabular-nums', t.textSecondary)}>
+                              {s.targets[p]?.first ?? s.firstResponseHours}h first · {s.targets[p]?.resolve ?? s.resolutionHours}h resolve
+                            </p>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
-              </div>
-            </Panel>
-          ))}
+                </Panel>
+              ))}
+            </div>
+          )}
+
         </div>
-      )}
+      </PageBody>
 
       {editing && (
         <SlaEditorModal
@@ -2729,7 +2939,7 @@ function SlaTab({ data }) {
         onCancel={() => setDeleting(null)}
         onConfirm={() => { removeFrom('slaPolicies', deleting.id); setDeleting(null); }}
       />
-    </div>
+    </>
   );
 }
 

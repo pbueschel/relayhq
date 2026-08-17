@@ -14,7 +14,8 @@ import {
   Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
   Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, FilterPill,
-  SubTabs, PageHeader, Toolbar, PageBody, Breadcrumbs,
+  SubTabs, PageBody,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -59,6 +60,21 @@ const TAB_IDS = TABS.map(x => x.value);
 
 const AUDIENCE_LABEL = { internal: 'Internal staff', external: 'External customers', both: 'Both audiences' };
 const AUDIENCE_HUE = { internal: 'violet', external: 'green', both: 'teal' };
+
+/* Filter vocabularies. Every one of these is MULTI-SELECT: "internal or both"
+ * and "not started or overdue" are the questions a programme owner actually
+ * asks, and the single-select dropdowns these replace could not put them. */
+const AUDIENCE_OPTIONS = ['internal', 'external', 'both'].map(v => ({ value: v, label: AUDIENCE_LABEL[v] }));
+
+const PROGRESS_OPTIONS = [
+  { value: 'not_started', label: 'Not started' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'completed',   label: 'Completed' },
+  { value: 'overdue',     label: 'Overdue' },
+];
+
+/** The module's own accent — indigo, the hue the whole learning domain wears. */
+const ACCENT = ENTITIES.curriculum.hue;
 
 function indexById(list) {
   const m = new Map();
@@ -136,6 +152,22 @@ function progressOf(enrollment, course) {
   if (!total) return 0;
   const done = (enrollment?.completedLessonIds || []).filter(id => lessonIdsOf(course).includes(id));
   return Math.round((done.length / total) * 100);
+}
+
+/**
+ * The progress states a learner's enrollments sit in. One person can be in more
+ * than one at once — two courses under way and a third overdue — so this is a
+ * set of values rather than a single bucket, and `passes` matches any of them.
+ */
+function progressStates(list) {
+  const out = new Set();
+  for (const e of list || []) {
+    if (isOverdue(e)) out.add('overdue');
+    if (isDone(e)) out.add('completed');
+    else if ((e.completedLessonIds || []).length || e.startedAt) out.add('in_progress');
+    else out.add('not_started');
+  }
+  return [...out];
 }
 
 function enrollmentStatus(enrollment) {
@@ -394,9 +426,7 @@ function Fact({ label, value, hint }) {
  * ==================================================================== */
 
 export default function Learning({ route }) {
-  const { t } = useTheme();
   const s = useStore(pickLearning);
-  const [newCourse, setNewCourse] = useState(false);
 
   const tab = TAB_IDS.includes(route?.sub) ? route.sub : 'curricula';
   const openId = route?.id || null;
@@ -408,103 +438,62 @@ export default function Learning({ route }) {
   const contactIndex = useMemo(() => indexById(s.contacts), [s.contacts]);
   const orgIndex = useMemo(() => indexById(s.organizations), [s.organizations]);
 
-  const totalLessons = useMemo(
-    () => new Set(s.courses.flatMap(c => lessonIdsOf(c))).size, [s.courses]);
-  const reusedAtoms = useMemo(() => {
-    const seen = new Map();
-    for (const c of s.courses) for (const id of new Set(lessonIdsOf(c))) seen.set(id, (seen.get(id) || 0) + 1);
-    return [...seen.values()].filter(n => n > 1).length;
-  }, [s.courses]);
-
   const openCourse = tab === 'courses' && openId ? courseIndex.get(openId) : null;
   const openCurriculum = tab === 'curricula' && openId ? s.curricula.find(c => c.id === openId) : null;
 
+  /**
+   * These stay SubTabs. Curricula, courses, learners and one person's own
+   * enrollments are four different collections — they change WHAT you are
+   * looking at, not how one list is drawn. They ride in the header's tools
+   * cluster; each tab owns the rest of the band, because the filters that make
+   * sense for a course are not the ones that make sense for a learner.
+   */
+  const tabs = (
+    <SubTabs
+      items={TABS.map(x => ({ ...x, count: tabCount(x.value, s) }))}
+      value={tab}
+      onChange={(v) => navigate('learning', v)}
+    />
+  );
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
-        icon={GraduationCap}
-        module="learning"
-        accent={ENTITIES.curriculum.hue}
-        title="Learning"
-        subtitle={`${s.curricula.length} curricula · ${s.courses.length} courses · ${totalLessons} distinct atoms in use · ${reusedAtoms} of them in more than one place`}
-        actions={
-          <>
-            {tab === 'courses' && !openCourse && (
-              <Button variant="grad" module="learning" icon={Plus} size="sm" onClick={() => setNewCourse(true)}>
-                New course
-              </Button>
-            )}
-            {openCourse && (
-              <Button variant="outline" size="sm" icon={ArrowLeft} onClick={() => navigate('learning', 'courses')}>
-                All courses
-              </Button>
-            )}
-            {openCurriculum && (
-              <Button variant="outline" size="sm" icon={ArrowLeft} onClick={() => navigate('learning', 'curricula')}>
-                All curricula
-              </Button>
-            )}
-          </>
-        }
-      >
-        <Toolbar>
-          <SubTabs
-            items={TABS.map(x => ({ ...x, count: tabCount(x.value, s) }))}
-            value={tab}
-            onChange={(v) => navigate('learning', v)}
-          />
-        </Toolbar>
-      </PageHeader>
-
       {tab === 'curricula' && !openCurriculum && (
-        <PageBody width="max-w-6xl">
-          <CurriculaList curricula={s.curricula} courseIndex={courseIndex} kb={kb}
-            enrollments={s.enrollments} jobFunctions={s.jobFunctions}
-            dirIndex={dirIndex} contactIndex={contactIndex} orgIndex={orgIndex} />
-        </PageBody>
+        <CurriculaList curricula={s.curricula} courseIndex={courseIndex} kb={kb}
+          enrollments={s.enrollments} jobFunctions={s.jobFunctions}
+          dirIndex={dirIndex} contactIndex={contactIndex} orgIndex={orgIndex} tabs={tabs} />
       )}
 
       {tab === 'curricula' && openCurriculum && (
-        <PageBody width="max-w-6xl">
-          <CurriculumDetail curriculum={openCurriculum} courseIndex={courseIndex} kb={kb}
-            enrollments={s.enrollments} jobFunctions={s.jobFunctions} directory={s.directory}
-            contacts={s.contacts} dirIndex={dirIndex} contactIndex={contactIndex} orgIndex={orgIndex}
-            items={items} />
-        </PageBody>
+        <CurriculumDetail curriculum={openCurriculum} courseIndex={courseIndex} kb={kb}
+          enrollments={s.enrollments} jobFunctions={s.jobFunctions} directory={s.directory}
+          contacts={s.contacts} dirIndex={dirIndex} contactIndex={contactIndex} orgIndex={orgIndex}
+          items={items} />
       )}
 
       {tab === 'courses' && !openCourse && (
-        <PageBody width="max-w-6xl">
-          <CoursesList courses={s.courses} kb={kb} curricula={s.curricula}
-            jobFunctions={s.jobFunctions} enrollments={s.enrollments} items={items} />
-        </PageBody>
+        <CoursesList courses={s.courses} kb={kb} curricula={s.curricula}
+          jobFunctions={s.jobFunctions} enrollments={s.enrollments} items={items} tabs={tabs} />
       )}
 
       {tab === 'courses' && openCourse && (
-        <PageBody width="max-w-7xl">
-          <CourseBuilder course={openCourse} courses={s.courses} kb={kb} knowledge={s.knowledge}
-            items={items} curricula={s.curricula} jobFunctions={s.jobFunctions}
-            enrollments={s.enrollments} dirIndex={dirIndex} />
-        </PageBody>
+        <CourseBuilder course={openCourse} courses={s.courses} kb={kb} knowledge={s.knowledge}
+          items={items} curricula={s.curricula} jobFunctions={s.jobFunctions}
+          enrollments={s.enrollments} dirIndex={dirIndex} />
       )}
 
       {tab === 'learners' && (
-        <PageBody width="max-w-7xl">
-          <Learners curricula={s.curricula} courses={s.courses} courseIndex={courseIndex} kb={kb}
-            enrollments={s.enrollments} directory={s.directory} contacts={s.contacts}
-            jobFunctions={s.jobFunctions} dirIndex={dirIndex} contactIndex={contactIndex} orgIndex={orgIndex} />
-        </PageBody>
+        <Learners curricula={s.curricula} courses={s.courses} courseIndex={courseIndex} kb={kb}
+          enrollments={s.enrollments} directory={s.directory} contacts={s.contacts}
+          jobFunctions={s.jobFunctions} dirIndex={dirIndex} contactIndex={contactIndex} orgIndex={orgIndex}
+          tabs={tabs} />
       )}
 
       {tab === 'my' && (
-        <PageBody width="max-w-5xl">
-          <MyLearning currentUser={s.currentUser} enrollments={s.enrollments} courseIndex={courseIndex}
-            curricula={s.curricula} kb={kb} directory={s.directory} contacts={s.contacts}
-            dirIndex={dirIndex} contactIndex={contactIndex} orgIndex={orgIndex} />
-        </PageBody>
+        <MyLearning currentUser={s.currentUser} enrollments={s.enrollments} courseIndex={courseIndex}
+          curricula={s.curricula} kb={kb} directory={s.directory} contacts={s.contacts}
+          dirIndex={dirIndex} contactIndex={contactIndex} orgIndex={orgIndex} tabs={tabs} />
       )}
-
-      <NewCourseModal open={newCourse} onClose={() => setNewCourse(false)} jobFunctions={s.jobFunctions} />
     </div>
   );
 }
@@ -520,28 +509,101 @@ function tabCount(value, s) {
  * CURRICULA
  * ==================================================================== */
 
-function CurriculaList({ curricula, courseIndex, kb, enrollments, jobFunctions, dirIndex, contactIndex, orgIndex }) {
+function CurriculaList({ curricula, courseIndex, kb, enrollments, jobFunctions, dirIndex, contactIndex, orgIndex, tabs }) {
   const { t } = useTheme();
-  if (!curricula.length) {
-    return <EmptyState icon={GraduationCap} title="No curricula yet"
-      hint="A curriculum is the whole reading list for one job function." />;
-  }
-  return (
-    <div className="space-y-6">
-      <Banner accent="indigo" icon={Target} title="A curriculum teaches a job function, not a topic">
-        Each one below is an argument: <strong className={t.text}>here is everything this role must know</strong>, in
-        order, with a competency map showing which course covers what. Every lesson inside is a knowledge atom the
-        help centre already publishes — the curriculum is the sequence, not the content.
-      </Banner>
+  /* One header state: the multi-select filter values, the in-page query and
+   * whether the tray is showing. The tray opens itself whenever a filter is
+   * active, so a filter can never be on with its control hidden. */
+  const [filters, setFilters] = useState({});
+  const [query, setQuery] = useState('');
+  const [trayOpen, setTrayOpen] = useState(false);
 
-      <div className="grid gap-3 @container">
-        {curricula.map(cur => (
-          <CurriculumCard key={cur.id} curriculum={cur} courseIndex={courseIndex} kb={kb}
-            enrollments={enrollments} jobFunctions={jobFunctions}
-            dirIndex={dirIndex} contactIndex={contactIndex} orgIndex={orgIndex} />
-        ))}
-      </div>
-    </div>
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+
+  const needle = query.trim().toLowerCase();
+  const visible = curricula.filter(cur => {
+    if (!passes(filters.audience, cur.audience)) return false;
+    if (!passes(filters.jobFunction, cur.jobFunction)) return false;
+    if (!needle) return true;
+    return `${cur.name} ${cur.summary || ''}`.toLowerCase().includes(needle);
+  });
+
+  /* Counts run over EVERY curriculum, not the filtered view — options that
+   * reported the survivors of the filters already set would read as choices
+   * disappearing as you work. */
+  const FILTER_DEFS = useMemo(() => {
+    const byAudience = optionCounts(curricula, c => c.audience);
+    const byJf = optionCounts(curricula, c => c.jobFunction);
+    return [
+      {
+        id: 'audience', label: 'Audience', icon: Users,
+        options: AUDIENCE_OPTIONS.map(o => ({ ...o, count: byAudience.get(o.value) || 0 })),
+      },
+      {
+        id: 'jobFunction', label: 'Job function', icon: Target,
+        options: jobFunctions.map(j => ({ value: j.id, label: j.label, count: byJf.get(j.id) || 0 })),
+      },
+    ];
+  }, [curricula, jobFunctions]);
+
+  const courseCount = new Set(curricula.flatMap(c => c.courseIds || [])).size;
+
+  return (
+    <>
+      <ModuleHeader
+        icon={GraduationCap}
+        module="learning"
+        accent={ACCENT}
+        title="Learning"
+        /* The subtitle tells the truth about what is on screen: the resting
+         * facts when nothing narrows the list, "2 of 5 shown" when it does. */
+        subtitle={subsetLabel(visible.length, curricula.length,
+          `${curricula.length} curricula covering ${courseCount} courses`)}
+        tools={<>
+          {tabs}
+          <ScopedSearch value={query} onChange={setQuery} scope={`${curricula.length} curricula`} accent={ACCENT} />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent={ACCENT}
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
+        ) : null}
+      />
+
+      <PageBody width="max-w-6xl">
+        <div className="space-y-6">
+          <Banner accent="indigo" icon={Target} title="A curriculum teaches a job function, not a topic">
+            Each one below is an argument: <strong className={t.text}>here is everything this role must know</strong>, in
+            order, with a competency map showing which course covers what. Every lesson inside is a knowledge atom the
+            help centre already publishes — the curriculum is the sequence, not the content.
+          </Banner>
+
+          {visible.length === 0 ? (
+            <EmptyState icon={GraduationCap}
+              title={curricula.length === 0 ? 'No curricula yet' : 'No curricula match'}
+              hint={curricula.length === 0
+                ? 'A curriculum is the whole reading list for one job function.'
+                : 'Search composes with the filters rather than replacing them — clearing one may bring curricula back.'}
+              action={curricula.length === 0 ? undefined
+                : <Button variant="soft" accent={ACCENT} onClick={clearFilters}>Clear filters</Button>} />
+          ) : (
+            <div className="grid gap-3 @container">
+              {visible.map(cur => (
+                <CurriculumCard key={cur.id} curriculum={cur} courseIndex={courseIndex} kb={kb}
+                  enrollments={enrollments} jobFunctions={jobFunctions}
+                  dirIndex={dirIndex} contactIndex={contactIndex} orgIndex={orgIndex} />
+              ))}
+            </div>
+          )}
+        </div>
+      </PageBody>
+    </>
   );
 }
 
@@ -643,113 +705,129 @@ function CurriculumDetail({
   const completeCount = team.filter(x => x.record?.complete).length;
 
   return (
-    <div className="space-y-5">
-      <Breadcrumbs
-        items={[{ id: 'root', name: 'Curricula' }, { id: curriculum.id, name: curriculum.name }]}
-        onNavigate={() => navigate('learning', 'curricula')}
+    <>
+      {/* A detail view's band is identity and the way back — there is nothing
+          to filter when the record IS the selection. */}
+      <ModuleHeader
+        icon={GraduationCap}
+        module="learning"
+        accent={ACCENT}
+        title={curriculum.name}
+        subtitle={[
+          curriculum.summary,
+          `${totals.courses.length} courses`,
+          `${totals.lessons} lessons`,
+          fmtMinutes(totals.minutes),
+        ].filter(Boolean).join(' · ')}
+        actions={
+          <Button variant="outline" icon={ArrowLeft} onClick={() => navigate('learning', 'curricula')}>
+            All curricula
+          </Button>
+        }
       />
 
-      {/* The @container lives on the CARD, never on the grid that queries it —
-          an element cannot answer its own container query. */}
-      <Card className={cx(DENSITY.cardPad, 'flex items-start gap-3 @container')}>
-        <span className={cx('w-1 self-stretch min-h-16 rounded-full flex-shrink-0', c.rail)} />
-        <IconTile icon={GraduationCap} accent={ENTITIES.curriculum.hue} size="lg" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className={cx('text-lg font-semibold', t.text)}>{curriculum.name}</h2>
-            <StatusPill status={curriculum.status} />
-            <Chip accent={AUDIENCE_HUE[curriculum.audience]}>{AUDIENCE_LABEL[curriculum.audience]}</Chip>
-            {curriculum.certificate && (
-              <Chip accent={ENTITIES.certificate.hue} icon={Award}>{curriculum.certificateName}</Chip>
-            )}
-          </div>
-          <p className={cx('text-sm mt-1', t.textSecondary)}>{curriculum.summary}</p>
-          <div className="mt-3 grid grid-cols-2 gap-3 @xl:grid-cols-6">
-            <Fact label="Job function" value={jf?.label || '—'} hint={jf?.description} />
-            <Fact label="Courses" value={totals.courses.length} />
-            <Fact label="Modules" value={totals.modules} />
-            <Fact label="Lessons" value={totals.lessons} hint={`${distinct} distinct atoms`} />
-            <Fact label="Est. time" value={fmtMinutes(totals.minutes)} hint="summed from lessons" />
-            <Fact label="Target" value={`${curriculum.targetDays} days`} hint="for a new starter" />
-          </div>
-        </div>
-      </Card>
+      <PageBody width="max-w-6xl">
+        <div className="space-y-5">
+          {/* The @container lives on the CARD, never on the grid that queries it —
+              an element cannot answer its own container query. */}
+          <Card className={cx(DENSITY.cardPad, 'flex items-start gap-3 @container')}>
+            <span className={cx('w-1 self-stretch min-h-16 rounded-full flex-shrink-0', c.rail)} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <StatusPill status={curriculum.status} />
+                <Chip accent={AUDIENCE_HUE[curriculum.audience]}>{AUDIENCE_LABEL[curriculum.audience]}</Chip>
+                {curriculum.certificate && (
+                  <Chip accent={ENTITIES.certificate.hue} icon={Award}>{curriculum.certificateName}</Chip>
+                )}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 @xl:grid-cols-6">
+                <Fact label="Job function" value={jf?.label || '—'} hint={jf?.description} />
+                <Fact label="Courses" value={totals.courses.length} />
+                <Fact label="Modules" value={totals.modules} />
+                <Fact label="Lessons" value={totals.lessons} hint={`${distinct} distinct atoms`} />
+                <Fact label="Est. time" value={fmtMinutes(totals.minutes)} hint="summed from lessons" />
+                <Fact label="Target" value={`${curriculum.targetDays} days`} hint="for a new starter" />
+              </div>
+            </div>
+          </Card>
 
-      <Banner accent="blue" icon={Repeat2} title="Author once, serve three surfaces">
-        {helpLive} of the {distinct} distinct atoms in this curriculum are live help-centre content right now.
-        Nothing here was written for training — the sequence is the only new artefact.
-      </Banner>
+          <Banner accent="blue" icon={Repeat2} title="Author once, serve three surfaces">
+            {helpLive} of the {distinct} distinct atoms in this curriculum are live help-centre content right now.
+            Nothing here was written for training — the sequence is the only new artefact.
+          </Banner>
 
-      {externalCourses.length > 0 && (
-        <Banner accent="amber" icon={Info} title="This curriculum crosses the audience line — deliberately">
-          <ChipGroup accent="green" icon={BookMarked} max={2} items={externalCourses} render={(x) => x.title} /> is an
-          external academy course inside an internal curriculum. {curriculum.note}
-        </Banner>
-      )}
-
-      <Section
-        title="The programme"
-        hint="Ordered. A new starter works down this list; the order is the pedagogy."
-        action={
-          <div className="relative">
-            <Button variant="soft" accent="indigo" size="sm" icon={Plus} onClick={() => setAddOpen(v => !v)}>
-              Add course
-            </Button>
-            <Menu open={addOpen} onClose={() => setAddOpen(false)} align="right" width="w-72">
-              <MenuLabel>Courses not yet in this curriculum</MenuLabel>
-              {[...courseIndex.values()].filter(x => !(curriculum.courseIds || []).includes(x.id)).map(x => (
-                <MenuItem key={x.id} icon={BookMarked} accent="indigo"
-                  label={shortTitle(x.title)}
-                  hint={`${lessonCount(x)} lessons · ${AUDIENCE_LABEL[x.audience]}`}
-                  onClick={() => {
-                    patchIn('curricula', curriculum.id, { courseIds: [...(curriculum.courseIds || []), x.id] });
-                    setAddOpen(false);
-                  }} />
-              ))}
-            </Menu>
-          </div>
-        }
-      >
-        <div className={DENSITY.rowGap}>
-          {totals.courses.map((course, i) => (
-            <CurriculumCourseRow key={course.id} index={i} course={course} curriculum={curriculum} kb={kb}
-              enrollments={enrollments} />
-          ))}
-          {!totals.courses.length && (
-            <EmptyState icon={BookMarked} title="No courses in this curriculum yet"
-              hint="Add one from the menu above — courses can appear in more than one curriculum." />
+          {externalCourses.length > 0 && (
+            <Banner accent="amber" icon={Info} title="This curriculum crosses the audience line — deliberately">
+              <ChipGroup accent="green" icon={BookMarked} max={2} items={externalCourses} render={(x) => x.title} /> is an
+              external academy course inside an internal curriculum. {curriculum.note}
+            </Banner>
           )}
+
+          <Section
+            title="The programme"
+            hint="Ordered. A new starter works down this list; the order is the pedagogy."
+            action={
+              <div className="relative">
+                <Button variant="soft" accent="indigo" size="sm" icon={Plus} onClick={() => setAddOpen(v => !v)}>
+                  Add course
+                </Button>
+                <Menu open={addOpen} onClose={() => setAddOpen(false)} align="right" width="w-72">
+                  <MenuLabel>Courses not yet in this curriculum</MenuLabel>
+                  {[...courseIndex.values()].filter(x => !(curriculum.courseIds || []).includes(x.id)).map(x => (
+                    <MenuItem key={x.id} icon={BookMarked} accent="indigo"
+                      label={shortTitle(x.title)}
+                      hint={`${lessonCount(x)} lessons · ${AUDIENCE_LABEL[x.audience]}`}
+                      onClick={() => {
+                        patchIn('curricula', curriculum.id, { courseIds: [...(curriculum.courseIds || []), x.id] });
+                        setAddOpen(false);
+                      }} />
+                  ))}
+                </Menu>
+              </div>
+            }
+          >
+            <div className={DENSITY.rowGap}>
+              {totals.courses.map((course, i) => (
+                <CurriculumCourseRow key={course.id} index={i} course={course} curriculum={curriculum} kb={kb}
+                  enrollments={enrollments} />
+              ))}
+              {!totals.courses.length && (
+                <EmptyState icon={BookMarked} title="No courses in this curriculum yet"
+                  hint="Add one from the menu above — courses can appear in more than one curriculum." />
+              )}
+            </div>
+          </Section>
+
+          <Section title="Coverage" hint="Every competency the role needs, and which course covers it. A blank row is a gap in the programme, not a gap in the person.">
+            <CoverageMatrix curriculum={curriculum} courses={totals.courses} />
+          </Section>
+
+          <Section
+            title="Team readiness"
+            hint={curriculum.audience === 'external'
+              ? `${plural(team.length, 'customer contact', 'customer contacts')} in the academy roster`
+              : `${plural(team.length, 'person holds', 'people hold')} the ${jf?.label || 'role'} job function`}
+          >
+            <Card className={cx(DENSITY.cardPad, 'space-y-3 @container')}>
+              <div className="flex items-center gap-3 flex-wrap">
+                <Stat label="fully complete" value={`${team.length ? Math.round((completeCount / team.length) * 100) : 0}%`}
+                  accent="emerald" icon={ShieldCheck} active />
+                <Stat label="in progress" value={team.filter(x => x.record && !x.record.complete).length} accent="amber" />
+                <Stat label="not started" value={team.filter(x => !x.record).length} accent="gray" />
+                <Stat label="overdue" value={team.filter(x => x.record?.overdue).length} accent="red" />
+              </div>
+              <Divider />
+              <div className={DENSITY.rowGap}>
+                {team.map(({ person, record }) => (
+                  <TeamRow key={person.id} person={person} record={record} curriculum={curriculum}
+                    courseIndex={courseIndex} />
+                ))}
+              </div>
+            </Card>
+          </Section>
         </div>
-      </Section>
-
-      <Section title="Coverage" hint="Every competency the role needs, and which course covers it. A blank row is a gap in the programme, not a gap in the person.">
-        <CoverageMatrix curriculum={curriculum} courses={totals.courses} />
-      </Section>
-
-      <Section
-        title="Team readiness"
-        hint={curriculum.audience === 'external'
-          ? `${plural(team.length, 'customer contact', 'customer contacts')} in the academy roster`
-          : `${plural(team.length, 'person holds', 'people hold')} the ${jf?.label || 'role'} job function`}
-      >
-        <Card className={cx(DENSITY.cardPad, 'space-y-3 @container')}>
-          <div className="flex items-center gap-3 flex-wrap">
-            <Stat label="fully complete" value={`${team.length ? Math.round((completeCount / team.length) * 100) : 0}%`}
-              accent="emerald" icon={ShieldCheck} active />
-            <Stat label="in progress" value={team.filter(x => x.record && !x.record.complete).length} accent="amber" />
-            <Stat label="not started" value={team.filter(x => !x.record).length} accent="gray" />
-            <Stat label="overdue" value={team.filter(x => x.record?.overdue).length} accent="red" />
-          </div>
-          <Divider />
-          <div className={DENSITY.rowGap}>
-            {team.map(({ person, record }) => (
-              <TeamRow key={person.id} person={person} record={record} curriculum={curriculum}
-                courseIndex={courseIndex} />
-            ))}
-          </div>
-        </Card>
-      </Section>
-    </div>
+      </PageBody>
+    </>
   );
 }
 
@@ -927,63 +1005,105 @@ function assignCurriculum(person, curriculum, missingCourses) {
  * COURSES — list
  * ==================================================================== */
 
-function CoursesList({ courses, kb, curricula, jobFunctions, enrollments, items }) {
-  const { t } = useTheme();
-  const [q, setQ] = useState('');
-  const [audience, setAudience] = useState('all');
-  const [jf, setJf] = useState('all');
+function CoursesList({ courses, kb, curricula, jobFunctions, enrollments, items, tabs }) {
+  const [filters, setFilters] = useState({});
+  const [query, setQuery] = useState('');
+  const [trayOpen, setTrayOpen] = useState(false);
+  const [newCourse, setNewCourse] = useState(false);
 
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+
+  const needle = query.trim().toLowerCase();
   const filtered = courses.filter(c => {
-    if (audience !== 'all' && c.audience !== audience) return false;
-    if (jf !== 'all' && c.jobFunction !== jf) return false;
-    if (q) {
-      const hay = `${c.title} ${c.summary}`.toLowerCase();
-      if (!hay.includes(q.toLowerCase())) return false;
-    }
-    return true;
+    if (!passes(filters.audience, c.audience)) return false;
+    if (!passes(filters.jobFunction, c.jobFunction)) return false;
+    if (!needle) return true;
+    return `${c.title} ${c.summary}`.toLowerCase().includes(needle);
   });
 
-  const usedJf = [...new Set(courses.map(c => c.jobFunction))];
+  const FILTER_DEFS = useMemo(() => {
+    const byAudience = optionCounts(courses, c => c.audience);
+    const byJf = optionCounts(courses, c => c.jobFunction);
+    const usedJf = [...new Set(courses.map(c => c.jobFunction).filter(Boolean))];
+    return [
+      {
+        id: 'audience', label: 'Audience', icon: Users,
+        options: AUDIENCE_OPTIONS.map(o => ({ ...o, count: byAudience.get(o.value) || 0 })),
+      },
+      {
+        id: 'jobFunction', label: 'Job function', icon: Target,
+        options: usedJf.map(id => ({
+          value: id,
+          label: jobFunctions.find(j => j.id === id)?.label || id,
+          count: byJf.get(id) || 0,
+        })),
+      },
+    ];
+  }, [courses, jobFunctions]);
+
+  /* The two numbers that make this module's argument, computed from the courses
+   * themselves: how many distinct knowledge atoms are in use, and how many of
+   * them are doing work in more than one place. */
+  const atoms = useMemo(() => {
+    const seen = new Map();
+    for (const c of courses) for (const id of new Set(lessonIdsOf(c))) seen.set(id, (seen.get(id) || 0) + 1);
+    return { distinct: seen.size, reused: [...seen.values()].filter(n => n > 1).length };
+  }, [courses]);
 
   return (
-    <div className="space-y-4">
-      <Toolbar>
-        <SearchInput value={q} onChange={setQ} placeholder="Search courses…" accent="indigo" width="w-64" />
-        <SubTabs
-          value={audience}
-          onChange={setAudience}
-          items={[
-            { value: 'all', label: 'All', icon: Layers, accent: 'indigo' },
-            { value: 'internal', label: 'Internal staff', icon: User, accent: 'violet' },
-            { value: 'external', label: 'External customers', icon: Building2, accent: 'green' },
-          ]}
-        />
-        <Select
-          accent="indigo"
-          value={jf}
-          onChange={(e) => setJf(e.target.value)}
-          className="w-48"
-          options={[{ value: 'all', label: 'Every job function' },
-            ...usedJf.map(id => ({ value: id, label: jobFunctions.find(j => j.id === id)?.label || id }))]}
-        />
-      </Toolbar>
+    <>
+      <ModuleHeader
+        icon={GraduationCap}
+        module="learning"
+        accent={ACCENT}
+        title="Learning"
+        subtitle={subsetLabel(filtered.length, courses.length,
+          `${courses.length} courses · ${atoms.distinct} distinct atoms in use · ${atoms.reused} of them in more than one place`)}
+        primary={
+          <Button variant="grad" module="learning" icon={Plus} onClick={() => setNewCourse(true)}>
+            New course
+          </Button>
+        }
+        tools={<>
+          {tabs}
+          <ScopedSearch value={query} onChange={setQuery} scope={`${courses.length} courses`} accent={ACCENT} />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent={ACCENT}
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
+        ) : null}
+      />
 
-      <Banner accent="indigo" icon={BookMarked} title="A course is an ordering, not a document">
-        Its lessons are references to knowledge atoms. Open one and the builder shows you, per lesson, everywhere
-        else that atom is already doing work — another course, or a help-centre catalog item.
-      </Banner>
+      <PageBody width="max-w-6xl">
+        <div className="space-y-4">
+          <Banner accent="indigo" icon={BookMarked} title="A course is an ordering, not a document">
+            Its lessons are references to knowledge atoms. Open one and the builder shows you, per lesson, everywhere
+            else that atom is already doing work — another course, or a help-centre catalog item.
+          </Banner>
 
-      <div className={DENSITY.rowGap}>
-        {filtered.map(course => (
-          <CourseRow key={course.id} course={course} kb={kb} curricula={curricula}
-            jobFunctions={jobFunctions} enrollments={enrollments} items={items} courses={courses} />
-        ))}
-        {!filtered.length && (
-          <EmptyState icon={BookMarked} title="No courses match"
-            hint="Clear the filters, or create a course and build it from existing atoms." />
-        )}
-      </div>
-    </div>
+          <div className={DENSITY.rowGap}>
+            {filtered.map(course => (
+              <CourseRow key={course.id} course={course} kb={kb} curricula={curricula}
+                jobFunctions={jobFunctions} enrollments={enrollments} items={items} courses={courses} />
+            ))}
+            {!filtered.length && (
+              <EmptyState icon={BookMarked} title="No courses match"
+                hint="Search composes with the filters rather than replacing them — clearing one may bring courses back."
+                action={<Button variant="soft" accent={ACCENT} onClick={clearFilters}>Clear filters</Button>} />
+            )}
+          </div>
+        </div>
+      </PageBody>
+
+      <NewCourseModal open={newCourse} onClose={() => setNewCourse(false)} jobFunctions={jobFunctions} />
+    </>
   );
 }
 
@@ -1052,132 +1172,142 @@ function CourseBuilder({ course, courses, kb, knowledge, items, curricula, jobFu
   };
 
   return (
-    <div className="space-y-4">
-      <Breadcrumbs
-        items={[{ id: 'root', name: 'Courses' }, { id: course.id, name: course.title }]}
-        onNavigate={() => navigate('learning', 'courses')}
+    <>
+      {/* Identity and the way back. The builder edits ONE course, so there is
+          nothing here to search or filter. */}
+      <ModuleHeader
+        icon={BookMarked}
+        module="learning"
+        accent={ENTITIES.course.hue}
+        title={course.title}
+        subtitle={[
+          course.summary,
+          `${(course.modules || []).length} modules`,
+          `${stats.total} lessons`,
+          fmtMinutes(minutesOf(course, kb)),
+        ].filter(Boolean).join(' · ')}
+        actions={
+          <>
+            <Button variant="outline" icon={ArrowLeft} onClick={() => navigate('learning', 'courses')}>
+              All courses
+            </Button>
+            <Button variant="soft" accent="blue" icon={Eye} onClick={() => setPreview({ stepIndex: 0 })}>
+              Preview
+            </Button>
+            <IconButton icon={Trash2} label="Delete course" accent="red"
+              onClick={() => setConfirm({ kind: 'course', id: course.id, name: course.title })} />
+          </>
+        }
       />
 
-      <Card className={cx(DENSITY.cardPad, 'flex items-start gap-3')}>
-        <IconTile icon={BookMarked} accent={ENTITIES.course.hue} size="lg" />
-        <div className="flex-1 min-w-0">
+      <PageBody width="max-w-7xl">
+        <div className="space-y-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className={cx('text-lg font-semibold', t.text)}>{course.title}</h2>
             <EntityTag kind="course" />
             <StatusPill status={course.status} />
             <Chip accent={AUDIENCE_HUE[course.audience]}>{AUDIENCE_LABEL[course.audience]}</Chip>
             <span className={cx('text-[11px]', t.textMuted)}>v{course.version}</span>
-          </div>
-          <p className={cx('text-sm mt-1', t.textSecondary)}>{course.summary}</p>
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
             {owner && <Chip accent="gray" icon={User}>{owner.name}</Chip>}
             <ChipGroup accent="indigo" icon={GraduationCap} max={2} items={inCurricula} render={(x) => x.name}
               empty={<Chip accent="amber" icon={CircleAlert}>Not in any curriculum</Chip>} />
           </div>
-        </div>
-        <Button variant="soft" accent="blue" size="sm" icon={Eye} onClick={() => setPreview({ stepIndex: 0 })}>
-          Preview
-        </Button>
-        <Button variant="outline" size="sm" icon={Trash2}
-          onClick={() => setConfirm({ kind: 'course', id: course.id, name: course.title })}>
-          Delete
-        </Button>
-      </Card>
 
-      {stats.unpublished.length > 0 && (
-        <Banner accent="amber" icon={TriangleAlert} title="Some lessons point at atoms that are not published">
-          <ChipGroup accent="amber" icon={BookOpen} max={3} items={stats.unpublished}
-            render={(id) => kb.get(id)?.title || id} />{' '}
-          — learners see a placeholder until Knowledge publishes them. Nothing is copied here, so publishing there
-          fixes it everywhere at once.
-        </Banner>
-      )}
+          {stats.unpublished.length > 0 && (
+            <Banner accent="amber" icon={TriangleAlert} title="Some lessons point at atoms that are not published">
+              <ChipGroup accent="amber" icon={BookOpen} max={3} items={stats.unpublished}
+                render={(id) => kb.get(id)?.title || id} />{' '}
+              — learners see a placeholder until Knowledge publishes them. Nothing is copied here, so publishing there
+              fixes it everywhere at once.
+            </Banner>
+          )}
 
-      <div className="@container">
-        <div className="grid gap-3 items-start @4xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-          {/* ---------------- OUTLINE ---------------- */}
-          <Card className="overflow-hidden">
-            <div className={cx(DENSITY.sectionPad, 'flex items-center justify-between gap-2 border-b', t.borderLight)}>
-              <div className="flex items-center gap-2 min-w-0">
-                <IconTile icon={Layers} accent={ENTITIES.courseModule.hue} size="sm" />
-                <div className="min-w-0">
-                  <p className={cx('text-sm font-medium', t.text)}>Outline</p>
-                  <p className={cx('text-[11px]', t.textMuted)}>
-                    {(course.modules || []).length} modules · {stats.total} lessons · {fmtMinutes(minutesOf(course, kb))}
-                  </p>
+          <div className="@container">
+            <div className="grid gap-3 items-start @4xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+              {/* ---------------- OUTLINE ---------------- */}
+              <Card className="overflow-hidden">
+                <div className={cx(DENSITY.sectionPad, 'flex items-center justify-between gap-2 border-b', t.borderLight)}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <IconTile icon={Layers} accent={ENTITIES.courseModule.hue} size="sm" />
+                    <div className="min-w-0">
+                      <p className={cx('text-sm font-medium', t.text)}>Outline</p>
+                      <p className={cx('text-[11px]', t.textMuted)}>
+                        {(course.modules || []).length} modules · {stats.total} lessons · {fmtMinutes(minutesOf(course, kb))}
+                      </p>
+                    </div>
+                  </div>
+                  <IconButton icon={Plus} label="Add module" accent="indigo"
+                    onClick={() => { const id = appendModule(course); setSelection({ kind: 'module', moduleId: id, lessonId: null }); }} />
                 </div>
+
+                <div className="p-2 space-y-2">
+                  {(course.modules || []).map((m, mi) => (
+                    <ModuleGroup
+                      key={m.id}
+                      course={course}
+                      module={m}
+                      index={mi}
+                      kb={kb}
+                      courses={courses}
+                      items={items}
+                      collapsed={collapsed.includes(m.id)}
+                      onToggle={() => setCollapsed(list => list.includes(m.id) ? list.filter(x => x !== m.id) : [...list, m.id])}
+                      selection={selection}
+                      onSelect={setSelection}
+                      onAddLesson={() => setPicker(m.id)}
+                      onDeleteModule={() => setConfirm({ kind: 'module', id: m.id, name: m.title })}
+                      drag={drag}
+                      onDropLesson={onDropLesson}
+                    />
+                  ))}
+                  {!(course.modules || []).length && (
+                    <EmptyState icon={Layers} title="No modules yet"
+                      hint="A module groups lessons that belong together and can carry its own quiz."
+                      action={<Button variant="solid" accent="indigo" size="sm" icon={Plus}
+                        onClick={() => appendModule(course)}>Add module</Button>} />
+                  )}
+                </div>
+
+                <div className={cx('px-3 py-2 border-t text-[11px]', t.borderLight, t.textMuted)}>
+                  Drag a lesson between modules, or use the arrows — at the top or bottom of a module the arrow moves it
+                  into the neighbouring one.
+                </div>
+              </Card>
+
+              {/* ---------------- EDITOR ----------------
+                  Its own container, so the field grids inside condense off the
+                  PANE's width rather than the whole builder's. */}
+              <div className="space-y-3 @container">
+                <AuthorOncePanel course={course} stats={stats} kb={kb} items={items} courses={courses} />
+
+                {selection.kind === 'lesson' && selectedAtom && (
+                  <LessonEditor
+                    course={course} atom={selectedAtom} moduleId={selection.moduleId}
+                    courses={courses} items={items} kb={kb}
+                    onClear={() => setSelection({ kind: null, moduleId: null, lessonId: null })}
+                    onPreview={() => {
+                      const steps = stepsOf(course);
+                      const i = steps.findIndex(s => s.kind === 'lesson' && s.lessonId === selectedAtom.id);
+                      setPreview({ stepIndex: Math.max(0, i) });
+                    }}
+                  />
+                )}
+
+                {selection.kind === 'module' && selectedModule && (
+                  <ModuleEditor
+                    course={course} module={selectedModule} kb={kb}
+                    onClear={() => setSelection({ kind: null, moduleId: null, lessonId: null })}
+                    onAddQuestion={() => setQuestionFor(selectedModule.id)}
+                  />
+                )}
+
+                {!selection.kind && (
+                  <CourseSettings course={course} kb={kb} jobFunctions={jobFunctions} enrollments={enrollments} />
+                )}
               </div>
-              <IconButton icon={Plus} label="Add module" accent="indigo"
-                onClick={() => { const id = appendModule(course); setSelection({ kind: 'module', moduleId: id, lessonId: null }); }} />
             </div>
-
-            <div className="p-2 space-y-2">
-              {(course.modules || []).map((m, mi) => (
-                <ModuleGroup
-                  key={m.id}
-                  course={course}
-                  module={m}
-                  index={mi}
-                  kb={kb}
-                  courses={courses}
-                  items={items}
-                  collapsed={collapsed.includes(m.id)}
-                  onToggle={() => setCollapsed(list => list.includes(m.id) ? list.filter(x => x !== m.id) : [...list, m.id])}
-                  selection={selection}
-                  onSelect={setSelection}
-                  onAddLesson={() => setPicker(m.id)}
-                  onDeleteModule={() => setConfirm({ kind: 'module', id: m.id, name: m.title })}
-                  drag={drag}
-                  onDropLesson={onDropLesson}
-                />
-              ))}
-              {!(course.modules || []).length && (
-                <EmptyState icon={Layers} title="No modules yet"
-                  hint="A module groups lessons that belong together and can carry its own quiz."
-                  action={<Button variant="solid" accent="indigo" size="sm" icon={Plus}
-                    onClick={() => appendModule(course)}>Add module</Button>} />
-              )}
-            </div>
-
-            <div className={cx('px-3 py-2 border-t text-[11px]', t.borderLight, t.textMuted)}>
-              Drag a lesson between modules, or use the arrows — at the top or bottom of a module the arrow moves it
-              into the neighbouring one.
-            </div>
-          </Card>
-
-          {/* ---------------- EDITOR ----------------
-              Its own container, so the field grids inside condense off the
-              PANE's width rather than the whole builder's. */}
-          <div className="space-y-3 @container">
-            <AuthorOncePanel course={course} stats={stats} kb={kb} items={items} courses={courses} />
-
-            {selection.kind === 'lesson' && selectedAtom && (
-              <LessonEditor
-                course={course} atom={selectedAtom} moduleId={selection.moduleId}
-                courses={courses} items={items} kb={kb}
-                onClear={() => setSelection({ kind: null, moduleId: null, lessonId: null })}
-                onPreview={() => {
-                  const steps = stepsOf(course);
-                  const i = steps.findIndex(s => s.kind === 'lesson' && s.lessonId === selectedAtom.id);
-                  setPreview({ stepIndex: Math.max(0, i) });
-                }}
-              />
-            )}
-
-            {selection.kind === 'module' && selectedModule && (
-              <ModuleEditor
-                course={course} module={selectedModule} kb={kb}
-                onClear={() => setSelection({ kind: null, moduleId: null, lessonId: null })}
-                onAddQuestion={() => setQuestionFor(selectedModule.id)}
-              />
-            )}
-
-            {!selection.kind && (
-              <CourseSettings course={course} kb={kb} jobFunctions={jobFunctions} enrollments={enrollments} />
-            )}
           </div>
         </div>
-      </div>
+      </PageBody>
 
       <LessonPicker
         open={!!picker}
@@ -1227,7 +1357,7 @@ function CourseBuilder({ course, courses, kb, knowledge, items, curricula, jobFu
           startStepIndex={preview.stepIndex}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -2024,33 +2154,88 @@ function NewCourseModal({ open, onClose, jobFunctions }) {
 
 function Learners({
   curricula, courses, courseIndex, kb, enrollments, directory, contacts,
-  jobFunctions, dirIndex, contactIndex, orgIndex,
+  jobFunctions, dirIndex, contactIndex, orgIndex, tabs,
 }) {
   const { t } = useTheme();
-  const [jf, setJf] = useState('all');
-  const [courseId, setCourseId] = useState('all');
+  const [filters, setFilters] = useState({});
+  const [query, setQuery] = useState('');
+  const [trayOpen, setTrayOpen] = useState(false);
   const [expanded, setExpanded] = useState(null);
 
-  const byLearner = new Map();
-  for (const e of enrollments) {
-    if (!byLearner.has(e.learnerId)) byLearner.set(e.learnerId, []);
-    byLearner.get(e.learnerId).push(e);
-  }
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
 
-  const rows = [...byLearner.entries()]
-    .map(([id, list]) => ({ person: personRecord(id, dirIndex, contactIndex, orgIndex), enrollments: list }))
-    .filter(r => {
-      if (jf !== 'all' && r.person.jobFunction !== jf) return false;
-      if (courseId !== 'all' && !r.enrollments.some(e => e.courseId === courseId)) return false;
-      return true;
-    })
-    .sort((a, b) => a.person.name.localeCompare(b.person.name));
+  const everyone = useMemo(() => {
+    const byLearner = new Map();
+    for (const e of enrollments) {
+      if (!byLearner.has(e.learnerId)) byLearner.set(e.learnerId, []);
+      byLearner.get(e.learnerId).push(e);
+    }
+    return [...byLearner.entries()]
+      .map(([id, list]) => ({ person: personRecord(id, dirIndex, contactIndex, orgIndex), enrollments: list }))
+      .sort((a, b) => a.person.name.localeCompare(b.person.name));
+  }, [enrollments, dirIndex, contactIndex, orgIndex]);
+
+  const needle = query.trim().toLowerCase();
+  const rows = everyone.filter(r => {
+    if (!passes(filters.jobFunction, r.person.jobFunction)) return false;
+    if (!passes(filters.course, r.enrollments.map(e => e.courseId))) return false;
+    if (!passes(filters.progress, progressStates(r.enrollments))) return false;
+    if (!needle) return true;
+    return [r.person.name, r.person.title, r.person.org].filter(Boolean).join(' ').toLowerCase().includes(needle);
+  });
+
+  const FILTER_DEFS = useMemo(() => {
+    const byJf = optionCounts(everyone, r => r.person.jobFunction);
+    const byCourse = optionCounts(everyone, r => [...new Set(r.enrollments.map(e => e.courseId))]);
+    const byProgress = optionCounts(everyone, r => progressStates(r.enrollments));
+    return [
+      {
+        id: 'jobFunction', label: 'Job function', icon: Target,
+        options: jobFunctions.map(j => ({ value: j.id, label: j.label, count: byJf.get(j.id) || 0 })),
+      },
+      {
+        id: 'course', label: 'Course', icon: BookMarked,
+        options: courses.map(c => ({ value: c.id, label: shortTitle(c.title), count: byCourse.get(c.id) || 0 })),
+      },
+      {
+        id: 'progress', label: 'Progress', icon: CircleCheck,
+        options: PROGRESS_OPTIONS.map(o => ({ ...o, count: byProgress.get(o.value) || 0 })),
+        footer: 'A learner with three courses can be in more than one of these at once.',
+      },
+    ];
+  }, [everyone, jobFunctions, courses]);
 
   const overdueCount = rows.reduce((n, r) => n + r.enrollments.filter(isOverdue).length, 0);
   const certCount = rows.reduce((n, r) => n + r.enrollments.filter(e => e.certified).length, 0);
 
   return (
-    <div className="space-y-5 @container">
+    <>
+      <ModuleHeader
+        icon={GraduationCap}
+        module="learning"
+        accent={ACCENT}
+        title="Learning"
+        subtitle={subsetLabel(rows.length, everyone.length,
+          `${plural(everyone.length, 'person', 'people')} with at least one enrollment · ${overdueCount} overdue · ${plural(certCount, 'certificate', 'certificates')} issued`)}
+        tools={<>
+          {tabs}
+          <ScopedSearch value={query} onChange={setQuery} scope={`${everyone.length} learners`} accent={ACCENT} />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent={ACCENT}
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
+        ) : null}
+      />
+
+      <PageBody width="max-w-7xl">
+        <div className="space-y-5 @container">
       <Section title="Curriculum readiness" hint="The manager's question: can this team do the job yet?">
         <div className="grid gap-3 @2xl:grid-cols-3">
           {curricula.map(cur => (
@@ -2061,15 +2246,6 @@ function Learners({
       </Section>
 
       <Section title="Learners" hint={`${plural(rows.length, 'person', 'people')} with at least one enrollment · ${overdueCount} overdue · ${plural(certCount, 'certificate', 'certificates')} issued`}>
-        <Toolbar className="mb-3">
-          <Select accent="emerald" value={jf} onChange={(e) => setJf(e.target.value)} className="w-52"
-            options={[{ value: 'all', label: 'Every job function' },
-              ...jobFunctions.map(j => ({ value: j.id, label: j.label }))]} />
-          <Select accent="emerald" value={courseId} onChange={(e) => setCourseId(e.target.value)} className="w-64"
-            options={[{ value: 'all', label: 'Every course' },
-              ...courses.map(c => ({ value: c.id, label: shortTitle(c.title) }))]} />
-        </Toolbar>
-
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[52rem]">
@@ -2093,10 +2269,16 @@ function Learners({
               </tbody>
             </table>
           </div>
-          {!rows.length && <EmptyState icon={Users} title="Nobody matches" hint="Clear the filters above." />}
+          {!rows.length && (
+            <EmptyState icon={Users} title="Nobody matches"
+              hint="Search composes with the filters rather than replacing them — clearing one may bring people back."
+              action={<Button variant="soft" accent={ACCENT} onClick={clearFilters}>Clear filters</Button>} />
+          )}
         </Card>
       </Section>
-    </div>
+        </div>
+      </PageBody>
+    </>
   );
 }
 
@@ -2220,7 +2402,7 @@ function LearnerRows({ row, courseIndex, expanded, onToggle }) {
 
 function MyLearning({
   currentUser, enrollments, courseIndex, curricula, kb, directory, contacts,
-  dirIndex, contactIndex, orgIndex,
+  dirIndex, contactIndex, orgIndex, tabs,
 }) {
   const { t } = useTheme();
   // The demo's live learner is Sam, twelve days into the Support Agent
@@ -2230,11 +2412,21 @@ function MyLearning({
   const [viewerId, setViewerId] = useState(demoLearnerId);
   const [menu, setMenu] = useState(false);
   const [player, setPlayer] = useState(null);   // { enrollmentId, stepIndex }
+  const [query, setQuery] = useState('');
 
   const viewer = personRecord(viewerId, dirIndex, contactIndex, orgIndex);
+  /* `mine` is everything assigned to the viewer; `shown` is what survives the
+   * in-page search. The curriculum meter and the resume card read `mine` on
+   * purpose — a progress figure that moved when you searched would be a figure
+   * nobody could trust. Only the two lists follow the search. */
   const mine = enrollments.filter(e => e.learnerId === viewerId);
-  const active = mine.filter(e => !isDone(e));
-  const done = mine.filter(isDone);
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? mine.filter(e => (courseIndex.get(e.courseId)?.title || '').toLowerCase().includes(needle))
+    : mine;
+  const active = shown.filter(e => !isDone(e));
+  const done = shown.filter(isDone);
+  const outstanding = mine.filter(e => !isDone(e)).length;
   const learnerIds = [...new Set(enrollments.map(e => e.learnerId))];
 
   const curriculum = curricula.find(c => mine.some(e => e.curriculumId === c.id));
@@ -2245,7 +2437,8 @@ function MyLearning({
     return n + (e ? (e.completedLessonIds || []).filter(id => lessonIdsOf(c).includes(id)).length : 0);
   }, 0);
 
-  const resume = active.find(e => (e.completedLessonIds || []).length > 0) || active[0] || null;
+  const live = mine.filter(e => !isDone(e));
+  const resume = live.find(e => (e.completedLessonIds || []).length > 0) || live[0] || null;
   const resumeCourse = resume ? courseIndex.get(resume.courseId) : null;
 
   const openPlayer = (enrollment, stepIndex) => setPlayer({ enrollmentId: enrollment.id, stepIndex });
@@ -2253,123 +2446,142 @@ function MyLearning({
   const playerCourse = playerEnrollment ? courseIndex.get(playerEnrollment.courseId) : null;
 
   return (
-    <div className="space-y-5">
-      <Banner accent="blue" icon={Info} title="Viewing as a learner">
-        This tab shows one person's enrollments. It is currently showing{' '}
-        <strong className={t.text}>{viewer.name}</strong>
-        {viewerId === demoLearnerId ? ' — the new support agent, twelve days in, so the demo has a live story' : ''}.
-        {viewerId !== currentUser?.id && (
-          <>
-            {' '}You are signed in as {currentUser?.name}.{' '}
-            <button className={cx('underline', t.text)} onClick={() => setViewerId(currentUser?.id)}>
-              Switch to your own learning
-            </button>.
-          </>
-        )}
-      </Banner>
+    <>
+      <ModuleHeader
+        icon={GraduationCap}
+        module="learning"
+        accent={ACCENT}
+        title="Learning"
+        subtitle={subsetLabel(shown.length, mine.length,
+          `${viewer.name} · ${plural(outstanding, 'course', 'courses')} outstanding · ${mine.length - outstanding} finished`)}
+        tools={<>
+          {tabs}
+          <ScopedSearch value={query} onChange={setQuery}
+            scope={`${mine.length} enrollments`} accent={ACCENT} />
+        </>}
+      />
 
-      <Card className={cx(DENSITY.cardPad, 'flex items-center gap-3 flex-wrap')}>
-        <Avatar name={viewer.name} size="xl" />
-        <div className="min-w-0 flex-1">
-          <p className={cx('font-semibold', t.text)}>{viewer.name}</p>
-          <p className={cx('text-xs', t.textMuted)}>{[viewer.title, viewer.org].filter(Boolean).join(' · ')}</p>
-        </div>
-        <div className="relative">
-          <FilterPill icon={Users} label="View as" active={menu} open={menu} onClick={() => setMenu(v => !v)} />
-          <Menu open={menu} onClose={() => setMenu(false)} align="right" width="w-64">
-            <MenuLabel>Learners with enrollments</MenuLabel>
-            {learnerIds.map(id => {
-              const p = personRecord(id, dirIndex, contactIndex, orgIndex);
-              return (
-                <MenuItem key={id} icon={p.kind === 'contact' ? Building2 : User} accent="blue"
-                  label={p.name} hint={[p.title, p.org].filter(Boolean).join(' · ')}
-                  selected={id === viewerId}
-                  onClick={() => { setViewerId(id); setMenu(false); }} />
-              );
-            })}
-          </Menu>
-        </div>
-      </Card>
+      <PageBody>
+        <div className="space-y-5">
+          <Banner accent="blue" icon={Info} title="Viewing as a learner">
+            This tab shows one person's enrollments. It is currently showing{' '}
+            <strong className={t.text}>{viewer.name}</strong>
+            {viewerId === demoLearnerId ? ' — the new support agent, twelve days in, so the demo has a live story' : ''}.
+            {viewerId !== currentUser?.id && (
+              <>
+                {' '}You are signed in as {currentUser?.name}.{' '}
+                <button className={cx('underline', t.text)} onClick={() => setViewerId(currentUser?.id)}>
+                  Switch to your own learning
+                </button>.
+              </>
+            )}
+          </Banner>
 
-      {curriculum && (
-        <Card className={cx(DENSITY.cardPad, 'space-y-2')}>
-          <div className="flex items-center gap-2 flex-wrap">
-            <IconTile icon={GraduationCap} accent={ENTITIES.curriculum.hue} size="sm" />
-            <span className={cx('text-sm font-medium', t.text)}>{curriculum.name}</span>
-            <Chip accent="indigo">{curCourses.length} courses</Chip>
-            {curriculum.certificate && <Chip accent={ENTITIES.certificate.hue} icon={Award}>{curriculum.certificateName}</Chip>}
-          </div>
-          <Meter value={curLessons ? (curDone / curLessons) * 100 : 0} accent="indigo" />
-          <p className={cx('text-xs', t.textMuted)}>
-            {curDone} of {curLessons} lessons across the whole curriculum ·{' '}
-            {curCourses.filter(c => isDone(mine.find(e => e.courseId === c.id) || {})).length} of {curCourses.length} courses finished
-          </p>
-        </Card>
-      )}
-
-      {resume && resumeCourse && (
-        <Card accent="blue" className="overflow-hidden">
-          <div className={cx(DENSITY.cardPad, 'flex items-center gap-3 flex-wrap')}>
-            <IconTile icon={Play} accent="blue" size="lg" />
-            <div className="flex-1 min-w-0">
-              <GroupLabel>Pick up where you left off</GroupLabel>
-              <p className={cx('text-sm font-medium truncate', t.text)}>
-                {kb.get(resume.currentLessonId)?.title || resumeCourse.title}
-              </p>
-              <p className={cx('text-xs truncate', t.textMuted)}>
-                {resumeCourse.title} · {moduleOfLesson(resumeCourse, resume.currentLessonId)?.title || 'first module'}
-              </p>
+          <Card className={cx(DENSITY.cardPad, 'flex items-center gap-3 flex-wrap')}>
+            <Avatar name={viewer.name} size="xl" />
+            <div className="min-w-0 flex-1">
+              <p className={cx('font-semibold', t.text)}>{viewer.name}</p>
+              <p className={cx('text-xs', t.textMuted)}>{[viewer.title, viewer.org].filter(Boolean).join(' · ')}</p>
             </div>
-            <div className="w-40"><Meter value={progressOf(resume, resumeCourse)} accent="blue" /></div>
-            <Button variant="solid" accent="blue" icon={Play}
-              onClick={() => {
-                const steps = stepsOf(resumeCourse);
-                const i = Math.max(0, steps.findIndex(s => !stepDone(s, resume)));
-                openPlayer(resume, i);
-              }}>
-              Resume
-            </Button>
-          </div>
-        </Card>
-      )}
+            <div className="relative">
+              <FilterPill icon={Users} label="View as" active={menu} open={menu} onClick={() => setMenu(v => !v)} />
+              <Menu open={menu} onClose={() => setMenu(false)} align="right" width="w-64">
+                <MenuLabel>Learners with enrollments</MenuLabel>
+                {learnerIds.map(id => {
+                  const p = personRecord(id, dirIndex, contactIndex, orgIndex);
+                  return (
+                    <MenuItem key={id} icon={p.kind === 'contact' ? Building2 : User} accent="blue"
+                      label={p.name} hint={[p.title, p.org].filter(Boolean).join(' · ')}
+                      selected={id === viewerId}
+                      onClick={() => { setViewerId(id); setMenu(false); }} />
+                  );
+                })}
+              </Menu>
+            </div>
+          </Card>
 
-      <Section title="In progress" hint={`${active.length} course${active.length === 1 ? '' : 's'} assigned and not finished`}>
-        <div className={DENSITY.rowGap}>
-          {active.map(e => (
-            <EnrollmentCard key={e.id} enrollment={e} course={courseIndex.get(e.courseId)} kb={kb}
-              onPlay={(i) => openPlayer(e, i)} />
-          ))}
-          {!active.length && <EmptyState icon={CircleCheck} title="Nothing outstanding" hint="Every assigned course is finished." />}
+          {curriculum && (
+            <Card className={cx(DENSITY.cardPad, 'space-y-2')}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <IconTile icon={GraduationCap} accent={ENTITIES.curriculum.hue} size="sm" />
+                <span className={cx('text-sm font-medium', t.text)}>{curriculum.name}</span>
+                <Chip accent="indigo">{curCourses.length} courses</Chip>
+                {curriculum.certificate && <Chip accent={ENTITIES.certificate.hue} icon={Award}>{curriculum.certificateName}</Chip>}
+              </div>
+              <Meter value={curLessons ? (curDone / curLessons) * 100 : 0} accent="indigo" />
+              <p className={cx('text-xs', t.textMuted)}>
+                {curDone} of {curLessons} lessons across the whole curriculum ·{' '}
+                {curCourses.filter(c => isDone(mine.find(e => e.courseId === c.id) || {})).length} of {curCourses.length} courses finished
+              </p>
+            </Card>
+          )}
+
+          {resume && resumeCourse && (
+            <Card accent="blue" className="overflow-hidden">
+              <div className={cx(DENSITY.cardPad, 'flex items-center gap-3 flex-wrap')}>
+                <IconTile icon={Play} accent="blue" size="lg" />
+                <div className="flex-1 min-w-0">
+                  <GroupLabel>Pick up where you left off</GroupLabel>
+                  <p className={cx('text-sm font-medium truncate', t.text)}>
+                    {kb.get(resume.currentLessonId)?.title || resumeCourse.title}
+                  </p>
+                  <p className={cx('text-xs truncate', t.textMuted)}>
+                    {resumeCourse.title} · {moduleOfLesson(resumeCourse, resume.currentLessonId)?.title || 'first module'}
+                  </p>
+                </div>
+                <div className="w-40"><Meter value={progressOf(resume, resumeCourse)} accent="blue" /></div>
+                <Button variant="solid" accent="blue" icon={Play}
+                  onClick={() => {
+                    const steps = stepsOf(resumeCourse);
+                    const i = Math.max(0, steps.findIndex(s => !stepDone(s, resume)));
+                    openPlayer(resume, i);
+                  }}>
+                  Resume
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          <Section title="In progress" hint={`${active.length} course${active.length === 1 ? '' : 's'} assigned and not finished`}>
+            <div className={DENSITY.rowGap}>
+              {active.map(e => (
+                <EnrollmentCard key={e.id} enrollment={e} course={courseIndex.get(e.courseId)} kb={kb}
+                  onPlay={(i) => openPlayer(e, i)} />
+              ))}
+              {!active.length && <EmptyState icon={CircleCheck} title="Nothing outstanding" hint="Every assigned course is finished." />}
+            </div>
+          </Section>
+
+          {done.length > 0 && (
+            <Section title="Completed" hint={`${done.filter(e => e.certified).length} certificates`}>
+              <div className={DENSITY.rowGap}>
+                {done.map(e => {
+                  const course = courseIndex.get(e.courseId);
+                  if (!course) return null;
+                  return (
+                    <ListRow
+                      key={e.id}
+                      accent="emerald"
+                      icon={CircleCheck}
+                      title={course.title}
+                      subtitle={`Completed ${fmtDate(e.completedAt)} · ${lessonCount(course)} lessons · ${e.attempts} attempt${e.attempts === 1 ? '' : 's'}`}
+                      onClick={() => navigate('learning', 'courses', course.id)}
+                      meta={
+                        <>
+                          {e.score != null && <Chip accent="gray">{e.score}%</Chip>}
+                          {e.certified && <Chip accent={ENTITIES.certificate.hue} icon={Award}>{course.certificateName || 'Certified'}</Chip>}
+                          <StatusPill status={enrollmentStatus(e)} />
+                        </>
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </Section>
+          )}
+
         </div>
-      </Section>
-
-      {done.length > 0 && (
-        <Section title="Completed" hint={`${done.filter(e => e.certified).length} certificates`}>
-          <div className={DENSITY.rowGap}>
-            {done.map(e => {
-              const course = courseIndex.get(e.courseId);
-              if (!course) return null;
-              return (
-                <ListRow
-                  key={e.id}
-                  accent="emerald"
-                  icon={CircleCheck}
-                  title={course.title}
-                  subtitle={`Completed ${fmtDate(e.completedAt)} · ${lessonCount(course)} lessons · ${e.attempts} attempt${e.attempts === 1 ? '' : 's'}`}
-                  onClick={() => navigate('learning', 'courses', course.id)}
-                  meta={
-                    <>
-                      {e.score != null && <Chip accent="gray">{e.score}%</Chip>}
-                      {e.certified && <Chip accent={ENTITIES.certificate.hue} icon={Award}>{course.certificateName || 'Certified'}</Chip>}
-                      <StatusPill status={enrollmentStatus(e)} />
-                    </>
-                  }
-                />
-              );
-            })}
-          </div>
-        </Section>
-      )}
+      </PageBody>
 
       {player && playerEnrollment && playerCourse && (
         <LessonPlayer
@@ -2381,7 +2593,7 @@ function MyLearning({
           startStepIndex={player.stepIndex}
         />
       )}
-    </div>
+    </>
   );
 }
 

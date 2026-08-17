@@ -10,10 +10,11 @@ import {
 import {
   useTheme, cx, ICON, DENSITY, ENTITIES, statusMeta,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag,
-  Avatar, EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat, Banner, Divider,
+  Avatar, EmptyState, Card, Panel, Section, GroupLabel, ListRow, Banner, Divider,
   Field, Input, Textarea, Select, TileGroup, SearchInput,
-  Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, MenuDivider, FilterPill,
-  SubTabs, ViewSwitcher, PageHeader, Toolbar, PageBody, Breadcrumbs,
+  Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, MenuDivider,
+  ViewSwitcher, PageHeader, PageBody, Breadcrumbs,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, NOW } from '@/store/store.js';
 import { startApproval, decide, progress, describeApprover } from '@/lib/approvals.js';
@@ -578,6 +579,21 @@ function endOfDay(value) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
 }
 
+function addDays(value, n) {
+  const d = startOfDay(value);
+  if (!d) return null;
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+/** Weeks run Sunday-first, matching the change calendar's own grid. */
+function startOfWeek(value) {
+  const d = startOfDay(value);
+  if (!d) return null;
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+}
+
 /** datetime-local needs a local, not ISO, string. */
 function toLocalInput(value) {
   const d = toDate(value);
@@ -708,6 +724,38 @@ function conflictsFor(change, all) {
     if (!products.length && !assets.length && !services.length) continue;
     out.push({ other, products, assets, services });
   }
+  return out;
+}
+
+/* ==================================================================== *
+ * The Window filter
+ *
+ * "When is it happening, and is it allowed to?" is one question, so it is one
+ * filter. A change can be BOTH next week and inside a freeze, which is exactly
+ * the combination worth finding, so the bucket function returns every bucket a
+ * change belongs to rather than picking one.
+ * ==================================================================== */
+
+const WINDOW_BUCKETS = [
+  { value: 'this_week',   label: 'This week' },
+  { value: 'next_week',   label: 'Next week' },
+  { value: 'freeze',      label: 'In a freeze' },
+  { value: 'unscheduled', label: 'Unscheduled' },
+];
+
+function windowBuckets(entry) {
+  const out = [];
+  const start = toDate(entry.change.plannedStart);
+  if (!start) {
+    out.push('unscheduled');
+  } else {
+    const thisWeek = startOfWeek(NOW);
+    const nextWeek = addDays(thisWeek, 7);
+    const weekAfter = addDays(thisWeek, 14);
+    if (start >= thisWeek && start < nextWeek) out.push('this_week');
+    else if (start >= nextWeek && start < weekAfter) out.push('next_week');
+  }
+  if (entry.freezes.length) out.push('freeze');
   return out;
 }
 
@@ -849,15 +897,90 @@ const VIEWS = [
   { value: 'calendar', label: 'Calendar', icon: CalendarDays },
 ];
 
+/** The lifecycle states a change can be filtered to, including the withdrawn one. */
+const STATUS_OPTIONS = [
+  ...LIFECYCLE.map(s => ({ key: s.key, label: s.label })),
+  { key: 'cancelled', label: 'Cancelled' },
+];
+
 export default function Changes({ route }) {
   const rawChanges = useStore(s => s.changes || []);
   const [creating, setCreating] = useState(false);
+
+  /* One header state: the multi-select filter values, the in-page query, and
+   * whether the tray is showing. The tray forces itself open whenever something
+   * is active, so a filter can never be on while its control is hidden. */
+  const [filters, setFilters] = useState({});
+  const [search, setSearch] = useState('');
+  const [trayOpen, setTrayOpen] = useState(false);
 
   const view = VIEWS.some(v => v.value === route?.sub) ? route.sub : 'list';
   const selectedId = route?.id || null;
   const selected = selectedId ? rawChanges.find(c => c.id === selectedId) : null;
 
   const changes = useMemo(() => rawChanges.map(normalize), [rawChanges]);
+
+  /* Risk, conflicts and freezes are resolved ONCE, here, against the whole
+   * register. Computing them per view meant the calendar and the list could
+   * disagree about whether a change conflicts, and a filtered view would have
+   * detected conflicts only against the changes that survived the filter. */
+  const enriched = useMemo(() => changes.map(c => ({
+    change: c,
+    risk: effectiveRisk(c).key,
+    conflicts: conflictsFor(c, changes),
+    freezes: freezeClashes(c),
+  })), [changes]);
+
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+
+  const shown = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return enriched.filter(e => {
+      const c = e.change;
+      if (!passes(filters.type, c.changeType)) return false;
+      if (!passes(filters.status, c.status)) return false;
+      if (!passes(filters.risk, e.risk)) return false;
+      if (!passes(filters.window, windowBuckets(e))) return false;
+      // Search layers ON TOP of the filters rather than replacing them.
+      if (needle) {
+        const hay = `${c.key} ${c.title} ${c.description}`.toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+  }, [enriched, filters, search]);
+
+  /* Counts are computed over the WHOLE register, not the filtered view, so an
+   * option says how many changes exist rather than how many survive the filters
+   * already set — the latter reads as options vanishing as you work. */
+  const FILTER_DEFS = useMemo(() => {
+    const byType = optionCounts(enriched, e => e.change.changeType);
+    const byStatus = optionCounts(enriched, e => e.change.status);
+    const byRisk = optionCounts(enriched, e => e.risk);
+    const byWindow = optionCounts(enriched, windowBuckets);
+    return [
+      {
+        id: 'type', label: 'Type', icon: GitBranch,
+        options: TYPE_KEYS.map(k => ({ value: k, label: CHANGE_TYPES[k].label, count: byType.get(k) || 0 })),
+      },
+      {
+        id: 'status', label: 'Status', icon: Route,
+        options: STATUS_OPTIONS.map(s => ({ value: s.key, label: s.label, count: byStatus.get(s.key) || 0 })),
+      },
+      {
+        id: 'risk', label: 'Risk', icon: Gauge,
+        footer: `Risk is derived from the questionnaire — low 0–4, moderate 5–9, high 10+ of ${RISK_MAX} points.`,
+        options: RISK_BANDS.slice().reverse().map(b => ({ value: b.key, label: b.label, count: byRisk.get(b.key) || 0 })),
+      },
+      {
+        id: 'window', label: 'Window', icon: CalendarDays,
+        options: WINDOW_BUCKETS.map(b => ({ value: b.value, label: b.label, count: byWindow.get(b.value) || 0 })),
+      },
+    ];
+  }, [enriched]);
+
+  const clearFilters = () => { setFilters({}); setSearch(''); setTrayOpen(false); };
 
   if (selectedId) {
     return selected
@@ -879,22 +1002,60 @@ export default function Changes({ route }) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
+      <ModuleHeader
         icon={GitBranch}
         module={MODULE}
         accent={HUE}
         title="Change Management"
-        subtitle="Northwind Systems · standard, normal and emergency change enablement"
-        actions={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setCreating(true)}>New change</Button>}
-      >
-        <Toolbar>
-          <ViewSwitcher items={VIEWS} value={view} onChange={(v) => navigate('changes', v)} />
-        </Toolbar>
-      </PageHeader>
+        /* The subtitle always tells the truth about what is on screen: the
+         * resting label when nothing narrows the register, "9 of 24 shown"
+         * when something does. */
+        subtitle={subsetLabel(
+          shown.length,
+          enriched.length,
+          `${enriched.length} changes · standard, normal and emergency change enablement`,
+        )}
+        primary={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setCreating(true)}>New change</Button>}
+        tools={<>
+          <ViewSwitcher items={VIEWS} value={view} onChange={(v) => navigate('changes', v)} inline />
+          <ScopedSearch
+            value={search}
+            onChange={setSearch}
+            /* Names its own scope, so it can never be mistaken for the global
+             * field in the bar above. */
+            scope={`${enriched.length} changes`}
+            accent={HUE}
+          />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent={HUE}
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray
+            open
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+          />
+        ) : null}
+      />
 
-      {view === 'list' && <ListView changes={changes} onNew={() => setCreating(true)} view={view} />}
-      {view === 'board' && <BoardView changes={changes} view={view} />}
-      {view === 'calendar' && <CalendarView changes={changes} view={view} />}
+      {view === 'list' && (
+        <ListView
+          entries={shown}
+          total={enriched.length}
+          onNew={() => setCreating(true)}
+          onClear={clearFilters}
+          view={view}
+          freezeFilter={(filters.window || []).includes('freeze')}
+        />
+      )}
+      {view === 'board' && <BoardView entries={shown} view={view} />}
+      {view === 'calendar' && <CalendarView entries={shown} view={view} />}
 
       <NewChangeModal open={creating} onClose={() => setCreating(false)} existing={rawChanges} />
     </div>
@@ -905,132 +1066,30 @@ export default function Changes({ route }) {
  * LIST
  * ==================================================================== */
 
-const TYPE_TABS = [
-  { value: 'all', label: 'All types', icon: Boxes, accent: HUE },
-  ...TYPE_KEYS.map(k => ({ value: k, label: CHANGE_TYPES[k].label, icon: CHANGE_TYPES[k].icon, accent: CHANGE_TYPES[k].hue })),
-];
-
-function ListView({ changes, onNew, view }) {
+function ListView({ entries, total, onNew, onClear, view, freezeFilter }) {
   const { t } = useTheme();
-  const [type, setType] = useState('all');
-  const [status, setStatus] = useState('open');
-  const [risk, setRisk] = useState('all');
-  const [q, setQ] = useState('');
-  const [statusMenu, setStatusMenu] = useState(false);
-  const [riskMenu, setRiskMenu] = useState(false);
-  const [focus, setFocus] = useState(null);   // stat-driven focus filter
-
-  const enriched = useMemo(() => changes.map(c => ({
-    change: c,
-    risk: effectiveRisk(c).key,
-    conflicts: conflictsFor(c, changes),
-    freezes: freezeClashes(c),
-  })), [changes]);
-
-  const stats = useMemo(() => ({
-    authorize: enriched.filter(e => e.change.status === 'authorize').length,
-    scheduled: enriched.filter(e => e.change.status === 'scheduled').length,
-    inflight: enriched.filter(e => e.change.status === 'implement').length,
-    conflicts: enriched.filter(e => e.conflicts.length).length,
-    freezes: enriched.filter(e => e.freezes.length && e.change.changeType !== 'emergency'
-      && !['closed', 'cancelled'].includes(e.change.status)).length,
-  }), [enriched]);
-
-  const shown = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return enriched.filter(e => {
-      const c = e.change;
-      if (type !== 'all' && c.changeType !== type) return false;
-      if (status === 'open' && ['closed', 'cancelled'].includes(c.status)) return false;
-      if (status === 'closed' && !['closed', 'cancelled'].includes(c.status)) return false;
-      if (!['all', 'open', 'closed'].includes(status) && c.status !== status) return false;
-      if (risk !== 'all' && e.risk !== risk) return false;
-      if (focus === 'conflicts' && !e.conflicts.length) return false;
-      if (focus === 'freezes' && !(e.freezes.length && c.changeType !== 'emergency')) return false;
-      if (needle) {
-        const hay = `${c.key} ${c.title} ${c.description}`.toLowerCase();
-        if (!hay.includes(needle)) return false;
-      }
-      return true;
-    });
-  }, [enriched, type, status, risk, q, focus]);
 
   const grouped = useMemo(() => {
     const order = [...LIFECYCLE_KEYS, 'cancelled'];
     const map = new Map(order.map(k => [k, []]));
-    for (const e of shown) {
+    for (const e of entries) {
       if (!map.has(e.change.status)) map.set(e.change.status, []);
       map.get(e.change.status).push(e);
     }
     return order.filter(k => map.get(k)?.length).map(k => [k, map.get(k)]);
-  }, [shown]);
-
-  const statusOptions = [
-    { value: 'open', label: 'Open changes' },
-    { value: 'all', label: 'Every change' },
-    { value: 'closed', label: 'Closed and cancelled' },
-    ...LIFECYCLE.map(s => ({ value: s.key, label: s.label })),
-  ];
+  }, [entries]);
 
   return (
     <PageBody>
       <div className="space-y-3">
-        <Toolbar>
-          <Stat label="awaiting authorization" value={stats.authorize} accent="amber" icon={Stamp}
-            active={focus === null && status === 'authorize'} onClick={() => { setStatus('authorize'); setFocus(null); }} />
-          <Stat label="scheduled" value={stats.scheduled} accent="violet" icon={CalendarCheck}
-            active={focus === null && status === 'scheduled'} onClick={() => { setStatus('scheduled'); setFocus(null); }} />
-          <Stat label="in flight" value={stats.inflight} accent={HUE} icon={Hammer}
-            active={focus === null && status === 'implement'} onClick={() => { setStatus('implement'); setFocus(null); }} />
-          <Stat label="with conflicts" value={stats.conflicts} accent="red" icon={TriangleAlert}
-            active={focus === 'conflicts'} onClick={() => { setFocus(f => f === 'conflicts' ? null : 'conflicts'); setStatus('open'); }} />
-          <Stat label="inside a freeze" value={stats.freezes} accent="red" icon={Snowflake}
-            active={focus === 'freezes'} onClick={() => { setFocus(f => f === 'freezes' ? null : 'freezes'); setStatus('open'); }} />
-        </Toolbar>
-
-        <Toolbar>
-          <SubTabs items={TYPE_TABS} value={type} onChange={setType} />
-          <div className="relative">
-            <FilterPill icon={Route} label={statusOptions.find(o => o.value === status)?.label || 'Status'}
-              active={status !== 'open'} open={statusMenu} onClick={() => setStatusMenu(v => !v)} />
-            <Menu open={statusMenu} onClose={() => setStatusMenu(false)} width="w-56">
-              <MenuLabel>Lifecycle state</MenuLabel>
-              {statusOptions.map(o => (
-                <MenuItem key={o.value} label={o.label} selected={status === o.value} accent={HUE}
-                  onClick={() => { setStatus(o.value); setStatusMenu(false); }} />
-              ))}
-            </Menu>
-          </div>
-          <div className="relative">
-            <FilterPill icon={Gauge} label={risk === 'all' ? 'Any risk' : `${riskMeta(risk).label} risk`}
-              active={risk !== 'all'} open={riskMenu} onClick={() => setRiskMenu(v => !v)} />
-            <Menu open={riskMenu} onClose={() => setRiskMenu(false)} width="w-52">
-              <MenuLabel>Derived risk</MenuLabel>
-              <MenuItem label="Any risk" selected={risk === 'all'} onClick={() => { setRisk('all'); setRiskMenu(false); }} />
-              <MenuDivider />
-              {RISK_BANDS.map(b => (
-                <MenuItem key={b.key} label={`${b.label} (${b.min}–${b.max} pts)`} accent={b.hue}
-                  selected={risk === b.key} onClick={() => { setRisk(b.key); setRiskMenu(false); }} />
-              ))}
-            </Menu>
-          </div>
-          <SearchInput value={q} onChange={setQ} placeholder="Search changes…" accent={HUE} width="w-56" />
-        </Toolbar>
-
-        {focus === 'conflicts' && (
-          <Banner accent="red" icon={TriangleAlert} title="Showing changes with a scheduling conflict">
-            Two changes conflict when their windows overlap <em>and</em> they touch the same service or asset.
-            Overlapping windows alone are normal — several teams working at once is the point of a calendar.
-          </Banner>
-        )}
-        {focus === 'freezes' && (
+        {freezeFilter && (
           <Banner accent="red" icon={Snowflake} title="Showing changes booked inside a freeze">
             Blackout windows are published on the change calendar. Only emergency change is permitted inside one,
             and only with the freeze owner on the call.
           </Banner>
         )}
 
-        {!changes.length && (
+        {!total && (
           <EmptyState
             icon={GitBranch}
             title="No changes have been raised"
@@ -1039,9 +1098,10 @@ function ListView({ changes, onNew, view }) {
           />
         )}
 
-        {!!changes.length && !shown.length && (
+        {!!total && !entries.length && (
           <EmptyState icon={Route} title="Nothing matches these filters"
-            hint="Widen the lifecycle state or clear the search to see the rest of the change record." />
+            hint="Search composes with the filters above rather than replacing them — clearing a filter may bring the rest of the register back."
+            action={<Button variant="soft" accent={HUE} icon={RotateCcw} onClick={onClear}>Clear filters</Button>} />
         )}
 
         {grouped.map(([state, rows]) => (
@@ -1101,14 +1161,14 @@ function ChangeRow({ entry, view }) {
  * BOARD
  * ==================================================================== */
 
-function BoardView({ changes, view }) {
+function BoardView({ entries, view }) {
   const { t } = useTheme();
   const columns = useMemo(() => {
-    const cols = LIFECYCLE.map(s => ({ ...s, items: changes.filter(c => c.status === s.key) }));
-    const cancelled = changes.filter(c => c.status === 'cancelled');
+    const cols = LIFECYCLE.map(s => ({ ...s, items: entries.filter(e => e.change.status === s.key) }));
+    const cancelled = entries.filter(e => e.change.status === 'cancelled');
     if (cancelled.length) cols.push({ key: 'cancelled', label: 'Cancelled', icon: Ban, blurb: 'Withdrawn before implementation', items: cancelled });
     return cols;
-  }, [changes]);
+  }, [entries]);
 
   return (
     <PageBody width="max-w-none">
@@ -1126,7 +1186,7 @@ function BoardView({ changes, view }) {
                 <span className={cx('text-xs tabular-nums', t.textMuted)}>{col.items.length}</span>
               </div>
               <div className="space-y-2">
-                {col.items.map(c => <BoardCard key={c.id} change={c} all={changes} view={view} />)}
+                {col.items.map(e => <BoardCard key={e.change.id} entry={e} view={view} />)}
                 {!col.items.length && (
                   <div className={cx('rounded-lg border border-dashed px-3 py-4 text-center text-[11px]', t.borderLight, t.textMuted)}>
                     {col.blurb}
@@ -1141,11 +1201,11 @@ function BoardView({ changes, view }) {
   );
 }
 
-function BoardCard({ change: c, all, view }) {
+function BoardCard({ entry, view }) {
   const { t, a } = useTheme();
+  const { change: c, conflicts } = entry;
   const type = typeMeta(c.changeType);
-  const rm = riskMeta(effectiveRisk(c).key);
-  const conflicts = conflictsFor(c, all);
+  const rm = riskMeta(entry.risk);
   const directory = useStore(s => s.directory || []);
   const cAcc = a(HUE);
 
@@ -1195,17 +1255,19 @@ function monthWeeks(anchor) {
   return weeks.filter(week => week.some(d => d.getMonth() === anchor.getMonth()));
 }
 
-function CalendarView({ changes, view }) {
+function CalendarView({ entries, view }) {
   const { t, a } = useTheme();
   const [anchor, setAnchor] = useState(() => new Date(NOW.getFullYear(), NOW.getMonth(), 1));
 
   const weeks = useMemo(() => monthWeeks(anchor), [anchor]);
   const monthLabel = anchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
-  const scheduled = useMemo(
-    () => changes.filter(c => c.plannedStart && c.status !== 'cancelled'),
-    [changes],
+  const bookable = useMemo(
+    () => entries.filter(e => e.change.plannedStart && e.change.status !== 'cancelled'),
+    [entries],
   );
+
+  const scheduled = useMemo(() => bookable.map(e => e.change), [bookable]);
 
   const monthFreezes = useMemo(() => {
     const from = weeks[0]?.[0];
@@ -1214,14 +1276,16 @@ function CalendarView({ changes, view }) {
     return FREEZE_WINDOWS.filter(f => rangesOverlap(startOfDay(f.start), endOfDay(f.end), from, endOfDay(to)));
   }, [weeks]);
 
+  /* Conflicts were resolved against the WHOLE register when the entries were
+   * built, so filtering the calendar down never hides the fact that a change
+   * collides with one that is currently filtered out. */
   const conflictIndex = useMemo(() => {
     const map = new Map();
-    for (const c of scheduled) {
-      const conflicts = conflictsFor(c, changes);
-      if (conflicts.length) map.set(c.id, conflicts);
+    for (const e of bookable) {
+      if (e.conflicts.length) map.set(e.change.id, e.conflicts);
     }
     return map;
-  }, [scheduled, changes]);
+  }, [bookable]);
 
   const shift = (delta) => setAnchor(prev => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
 

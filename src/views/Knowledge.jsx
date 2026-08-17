@@ -9,10 +9,11 @@ import {
 import {
   useTheme, cx, ICON, DENSITY, ENTITIES, entityHue,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag, Avatar,
-  EmptyState, Card, Panel, GroupLabel, ListRow, Stat, Banner, Divider,
-  Field, Input, Textarea, Select, Checkbox, TileGroup, SearchInput,
-  Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, MenuDivider, FilterPill,
-  SubTabs, ViewSwitcher, PageHeader, Toolbar, PageBody, Breadcrumbs,
+  EmptyState, Card, Panel, GroupLabel, ListRow, Banner, Divider,
+  Field, Input, Textarea, Select, Checkbox, TileGroup,
+  Modal, ConfirmDelete, Menu, MenuItem, MenuLabel,
+  LensBar, ViewSwitcher, PageHeader, PageBody, Breadcrumbs,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, removeFrom, uid, nowISO } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -45,13 +46,21 @@ import { navigate } from '@/lib/router.js';
  * Vocabulary
  * ------------------------------------------------------------------ */
 
-const TABS = [
+/** The lens: which slice of the library is on screen. Carried in the route. */
+const LENSES = [
   { value: 'all',      label: 'All',      icon: Layers,     accent: 'blue' },
   { value: 'articles', label: 'Articles', icon: BookOpen,   accent: 'blue' },
   { value: 'guides',   label: 'Guides',   icon: LayoutGrid, accent: 'purple' },
   { value: 'drafts',   label: 'Drafts',   icon: Circle,     accent: 'gray' },
 ];
-const TAB_VALUES = TABS.map(t => t.value);
+const LENS_VALUES = LENSES.map(l => l.value);
+
+function inLens(atom, lens) {
+  if (lens === 'articles') return atom.format === 'article';
+  if (lens === 'guides') return atom.format === 'guide';
+  if (lens === 'drafts') return atom.status === 'draft';
+  return true;
+}
 
 const FORMATS = {
   article: { label: 'Article', icon: BookOpen,   hue: ENTITIES.article.hue, kind: 'article' },
@@ -162,6 +171,19 @@ function buildReuseIndex(catalog, courses, curricula) {
   return index;
 }
 
+/**
+ * Where an atom is reused. A list, not a single value, because the whole point
+ * is that one record can deflect on a catalog item AND teach in a course at the
+ * same time — a single-valued filter could not express it.
+ */
+function reuseOf(atom, reuseIndex) {
+  const r = reuseIndex.get(atom.id) || EMPTY_REUSE;
+  const out = [];
+  if (r.courses.length) out.push('course');
+  if (r.catalog.length) out.push('catalog');
+  return out.length ? out : ['unused'];
+}
+
 /** Why an atom is, or is not, reachable from the customer help centre. */
 function externalState(atom, reuse) {
   const external = reuse.catalog.filter(c => c.audience === 'external' || c.audience === 'both');
@@ -227,8 +249,8 @@ export default function Knowledge({ route }) {
 
   // The command palette links straight to an atom as #/knowledge/<id>, so the
   // second segment is either a tab name or a record id. Resolve both shapes.
-  const tab = TAB_VALUES.includes(route?.sub) ? route.sub : 'all';
-  const selectedId = route?.id || (TAB_VALUES.includes(route?.sub) ? null : route?.sub) || null;
+  const tab = LENS_VALUES.includes(route?.sub) ? route.sub : 'all';
+  const selectedId = route?.id || (LENS_VALUES.includes(route?.sub) ? null : route?.sub) || null;
   const atom = selectedId ? knowledge.find(k => k.id === selectedId) : null;
 
   if (selectedId && atom) {
@@ -261,103 +283,128 @@ export default function Knowledge({ route }) {
  * ==================================================================== */
 
 function Library({ atoms, reuseIndex, people, tab, notFound }) {
-  const { t } = useTheme();
+  /* One header state: the multi-select filter values, the in-page query, and
+   * whether the tray is showing. The tray forces itself open whenever something
+   * is active, so a filter can never be on while its control is hidden. */
   const [q, setQ] = useState('');
-  const [audience, setAudience] = useState('all');
-  const [status, setStatus] = useState('all');
-  const [tagFilter, setTagFilter] = useState('all');
-  const [group, setGroup] = useState('none');
+  const [filters, setFilters] = useState({});
+  const [trayOpen, setTrayOpen] = useState(false);
   const [view, setView] = useState('list');
   const [creating, setCreating] = useState(false);
   const [playing, setPlaying] = useState(null);
 
-  const tagOptions = useMemo(() => {
-    const counts = new Map();
-    for (const a of atoms) for (const tg of a.tags || []) counts.set(tg, (counts.get(tg) || 0) + 1);
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([value, n]) => ({ value, label: value, hint: `${n} atom${n === 1 ? '' : 's'}` }));
-  }, [atoms]);
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQ(''); setTrayOpen(false); };
 
-  const filtered = useMemo(() => {
+  /* Everything except the lens — so the lens counts reflect the other filters. */
+  const preLens = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return atoms.filter(a => {
-      if (tab === 'articles' && a.format !== 'article') return false;
-      if (tab === 'guides' && a.format !== 'guide') return false;
-      if (tab === 'drafts' && a.status !== 'draft') return false;
-      if (audience !== 'all' && a.audience !== audience) return false;
-      if (status !== 'all' && a.status !== status) return false;
-      if (tagFilter !== 'all' && !(a.tags || []).includes(tagFilter)) return false;
+      if (!passes(filters.audience, a.audience || 'internal')) return false;
+      if (!passes(filters.status, a.status)) return false;
+      if (!passes(filters.tags, a.tags || [])) return false;
+      if (!passes(filters.reuse, reuseOf(a, reuseIndex))) return false;
+      // Search layers ON TOP of the filters rather than replacing them.
       if (!needle) return true;
       return [a.title, a.summary, a.objective, ...(a.tags || [])]
         .filter(Boolean).some(v => String(v).toLowerCase().includes(needle));
     });
-  }, [atoms, tab, audience, status, tagFilter, q]);
+  }, [atoms, filters, q, reuseIndex]);
 
-  const groups = useMemo(
-    () => groupAtoms(filtered, group, people, reuseIndex),
-    [filtered, group, people, reuseIndex],
+  const filtered = useMemo(() => preLens.filter(a => inLens(a, tab)), [preLens, tab]);
+
+  const lensItems = useMemo(
+    () => LENSES.map(l => ({ ...l, count: preLens.filter(a => inLens(a, l.value)).length })),
+    [preLens],
+  );
+  const lensCount = lensItems.find(l => l.value === tab)?.count ?? atoms.length;
+
+  const reused = useMemo(
+    () => atoms.filter(a => !reuseOf(a, reuseIndex).includes('unused')).length,
+    [atoms, reuseIndex],
   );
 
-  const counts = useMemo(() => {
-    let published = 0, drafts = 0, guides = 0, reused = 0, external = 0;
-    for (const a of atoms) {
-      if (a.status === 'published') published++;
-      if (a.status === 'draft') drafts++;
-      if (a.format === 'guide') guides++;
-      const r = reuseIndex.get(a.id);
-      if (r && (r.catalog.length + r.courses.length) > 0) reused++;
-      if (a.audience === 'external' || a.audience === 'both') external++;
-    }
-    return { published, drafts, guides, reused, external };
+  /* Counts are computed over the WHOLE library, not the filtered view, so an
+   * option tells you how many atoms exist rather than how many survive the
+   * filters you have already set — the latter reads as options vanishing. */
+  const FILTER_DEFS = useMemo(() => {
+    const byAudience = optionCounts(atoms, a => a.audience || 'internal');
+    const byStatus = optionCounts(atoms, a => a.status);
+    const byTag = optionCounts(atoms, a => a.tags || []);
+    const byReuse = optionCounts(atoms, a => reuseOf(a, reuseIndex));
+    return [
+      {
+        id: 'audience', label: 'Audience', icon: Users,
+        options: Object.entries(AUDIENCES).map(([value, m]) => ({
+          value, label: m.label, count: byAudience.get(value) || 0,
+        })),
+      },
+      {
+        id: 'status', label: 'Status', icon: Circle,
+        options: STATUSES.map(s => ({ value: s.value, label: s.label, count: byStatus.get(s.value) || 0 })),
+      },
+      {
+        id: 'tags', label: 'Tags', icon: Tag,
+        options: [...byTag.entries()]
+          .sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))
+          .map(([value, n]) => ({ value, label: value, count: n })),
+      },
+      {
+        id: 'reuse', label: 'Reuse', icon: Share2,
+        options: [
+          { value: 'course',  label: 'Used in a course',  count: byReuse.get('course') || 0 },
+          { value: 'catalog', label: 'On a catalog item', count: byReuse.get('catalog') || 0 },
+          { value: 'unused',  label: 'Unused',            count: byReuse.get('unused') || 0 },
+        ],
+      },
+    ];
   }, [atoms, reuseIndex]);
 
-  const tabItems = useMemo(() => TABS.map(item => ({
-    ...item,
-    count: item.value === 'all' ? atoms.length
-      : item.value === 'articles' ? atoms.filter(a => a.format === 'article').length
-      : item.value === 'guides' ? atoms.filter(a => a.format === 'guide').length
-      : counts.drafts,
-  })), [atoms, counts.drafts]);
-
-  const anyFilter = audience !== 'all' || status !== 'all' || tagFilter !== 'all' || q.trim();
+  const narrowed = activeFilters > 0 || q.trim().length > 0;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
+      <ModuleHeader
         icon={BookOpen}
         module="knowledge"
-        accent={ENTITIES.article.hue}
+        /* The hue comes from the entity map, never a literal: `article` and
+         * `lesson` share it on purpose, and a hardcoded 'blue' here would drift
+         * the moment that map moves. */
+        accent={entityHue('article')}
         title="Knowledge"
-        subtitle={`${atoms.length} atoms · ${counts.reused} reused across the catalog and courses · one record, three surfaces`}
-        actions={<Button variant="grad" module="knowledge" icon={Plus} onClick={() => setCreating(true)}>New atom</Button>}
-      >
-        <Toolbar className="mb-2">
-          <SubTabs items={tabItems} value={tab} onChange={v => navigate('knowledge', v)} />
-        </Toolbar>
-        <Toolbar>
-          <SearchInput value={q} onChange={setQ} accent="blue" width="w-64"
-            placeholder="Search titles, summaries, tags…" />
-          <FilterMenu icon={Users} label="Audience" value={audience} onChange={setAudience}
-            options={Object.entries(AUDIENCES).map(([value, m]) => ({ value, label: m.label, icon: m.icon, hint: m.hint }))} />
-          <FilterMenu icon={Circle} label="Status" value={status} onChange={setStatus}
-            options={STATUSES.map(s => ({ value: s.value, label: s.label, icon: s.icon }))} />
-          <FilterMenu icon={Tag} label="Tag" value={tagFilter} onChange={setTagFilter} options={tagOptions} />
-          <FilterMenu icon={Layers} label="Group by" value={group} onChange={setGroup} neutral="none"
-            allLabel="No grouping"
-            options={[
-              { value: 'audience', label: 'Audience', icon: Users },
-              { value: 'status', label: 'Status', icon: Circle },
-              { value: 'owner', label: 'Owner', icon: Building2 },
-              { value: 'reuse', label: 'Reuse', icon: Share2 },
-            ]} />
-          <ViewSwitcher value={view} onChange={setView}
-            items={[
-              { value: 'list', label: 'Library', icon: BookOpen },
-              { value: 'reuse', label: 'Reuse map', icon: Share2 },
-            ]} />
-        </Toolbar>
-      </PageHeader>
+        /* The subtitle always tells the truth about what is on screen: the
+         * resting label when nothing narrows the library, "9 of 40 shown" when
+         * the lens or a filter does. */
+        subtitle={subsetLabel(
+          filtered.length,
+          atoms.length,
+          `${atoms.length} atoms · ${reused} reused across the catalog and courses · one record, three surfaces`,
+        )}
+        primary={<Button variant="grad" module="knowledge" icon={Plus} onClick={() => setCreating(true)}>New atom</Button>}
+        tools={<>
+          <LensBar items={lensItems} value={tab} onChange={v => navigate('knowledge', v)} inline />
+          {/* Names its own scope, so it can never be mistaken for the global
+              field in the bar above: "Search 41 atoms…" narrows to
+              "Search 6 atoms…" the moment the lens moves to Drafts. */}
+          <ScopedSearch value={q} onChange={setQ} scope={`${lensCount} atoms`} accent="blue" />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent="blue"
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray
+            open
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+          />
+        ) : null}
+      />
 
       <PageBody width="max-w-6xl">
         <div className="space-y-4">
@@ -367,56 +414,43 @@ function Library({ atoms, reuseIndex, people, tab, notFound }) {
             </Banner>
           )}
 
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <Stat label="atoms" value={atoms.length} accent="blue" icon={BookOpen}
-              active={tab === 'all'} onClick={() => navigate('knowledge', 'all')} />
-            <Stat label="published" value={counts.published} accent="emerald"
-              active={status === 'published'} onClick={() => setStatus(status === 'published' ? 'all' : 'published')} />
-            <Stat label="drafts" value={counts.drafts} accent="gray"
-              active={tab === 'drafts'} onClick={() => navigate('knowledge', 'drafts')} />
-            <Stat label="guides" value={counts.guides} accent="purple" icon={LayoutGrid}
-              active={tab === 'guides'} onClick={() => navigate('knowledge', 'guides')} />
-            <Stat label="reused elsewhere" value={counts.reused} accent="indigo" icon={Share2}
-              active={group === 'reuse'} onClick={() => setGroup(group === 'reuse' ? 'none' : 'reuse')} />
-            <Stat label="customer-facing" value={counts.external} accent="green" icon={Globe}
-              active={audience === 'external'} onClick={() => setAudience(audience === 'external' ? 'all' : 'external')} />
-          </div>
+          {/* The reuse map redraws the SAME atoms as a table, so it sits with the
+              content it redraws. The header carries the lens, the scoped search
+              and the filters, and nothing else. */}
+          <ViewSwitcher
+            inline
+            value={view}
+            onChange={setView}
+            items={[
+              { value: 'list', label: 'Library', icon: BookOpen },
+              { value: 'reuse', label: 'Reuse map', icon: Share2 },
+            ]}
+          />
 
           {view === 'reuse' ? (
             <ReuseMap atoms={filtered} reuseIndex={reuseIndex} />
           ) : filtered.length === 0 ? (
             <EmptyState
               icon={BookOpen}
-              title={anyFilter ? 'No atoms match those filters' : 'No knowledge atoms yet'}
-              hint={anyFilter
-                ? 'Clear a filter, or widen the search. Drafts are excluded from every tab except Drafts.'
+              title={narrowed ? 'No atoms match those filters' : 'No knowledge atoms yet'}
+              hint={narrowed
+                ? 'Search composes with the filters above rather than replacing them — clearing one may bring results back.'
                 : 'An atom is authored once and reused by the help centre, the agent panel and any course that needs it.'}
-              action={<Button variant="grad" module="knowledge" icon={Plus} onClick={() => setCreating(true)}>New atom</Button>}
+              action={narrowed
+                ? <Button variant="soft" accent="blue" onClick={clearFilters}>Clear filters</Button>
+                : <Button variant="grad" module="knowledge" icon={Plus} onClick={() => setCreating(true)}>New atom</Button>}
             />
           ) : (
-            <div className="space-y-5">
-              {groups.map(g => (
-                <div key={g.key}>
-                  {g.label && (
-                    <div className="flex items-center gap-2 mb-2">
-                      <GroupLabel>{g.label}</GroupLabel>
-                      <span className={cx('text-[11px] tabular-nums', t.textMuted)}>{g.items.length}</span>
-                      <Divider className="flex-1" />
-                    </div>
-                  )}
-                  <div className={cx(DENSITY.rowGap, '@container')}>
-                    {g.items.map(a => (
-                      <AtomRow
-                        key={a.id}
-                        atom={a}
-                        reuse={reuseIndex.get(a.id) || EMPTY_REUSE}
-                        owner={people.get(a.ownerId)?.name || 'Unassigned'}
-                        tab={tab}
-                        onPreview={() => setPlaying(a)}
-                      />
-                    ))}
-                  </div>
-                </div>
+            <div className={cx(DENSITY.rowGap, '@container')}>
+              {filtered.map(a => (
+                <AtomRow
+                  key={a.id}
+                  atom={a}
+                  reuse={reuseIndex.get(a.id) || EMPTY_REUSE}
+                  owner={people.get(a.ownerId)?.name || 'Unassigned'}
+                  tab={tab}
+                  onPreview={() => setPlaying(a)}
+                />
               ))}
             </div>
           )}
@@ -425,58 +459,6 @@ function Library({ atoms, reuseIndex, people, tab, notFound }) {
 
       <PreviewModal atom={playing} onClose={() => setPlaying(null)} />
       <NewAtomModal open={creating} onClose={() => setCreating(false)} tab={tab} />
-    </div>
-  );
-}
-
-const REUSE_BUCKETS = {
-  both:    'Deflecting AND teaching',
-  catalog: 'Help centre only',
-  courses: 'Courses only',
-  none:    'Not used anywhere yet',
-};
-
-function groupAtoms(list, group, people, reuseIndex) {
-  if (group === 'none') return [{ key: 'all', label: null, items: list }];
-  const buckets = new Map();
-  for (const a of list) {
-    let key, label;
-    if (group === 'audience') { key = a.audience; label = AUDIENCES[a.audience]?.label || a.audience; }
-    else if (group === 'status') { key = a.status; label = STATUSES.find(s => s.value === a.status)?.label || a.status; }
-    else if (group === 'owner') { key = a.ownerId; label = people.get(a.ownerId)?.name || 'Unassigned'; }
-    else {
-      const r = reuseIndex.get(a.id) || EMPTY_REUSE;
-      key = r.catalog.length && r.courses.length ? 'both'
-        : r.catalog.length ? 'catalog'
-        : r.courses.length ? 'courses' : 'none';
-      label = REUSE_BUCKETS[key];
-    }
-    if (!buckets.has(key)) buckets.set(key, { key, label, items: [] });
-    buckets.get(key).items.push(a);
-  }
-  return [...buckets.values()].sort((x, y) => y.items.length - x.items.length);
-}
-
-/* ------------------------------------------------------------------ */
-
-function FilterMenu({ icon, label, value, onChange, options, allLabel = 'All', neutral = 'all' }) {
-  const [open, setOpen] = useState(false);
-  const active = value !== neutral;
-  const current = options.find(o => o.value === value);
-  return (
-    <div className="relative">
-      <FilterPill icon={icon} label={active ? (current?.label || value) : label}
-        active={active} open={open} onClick={() => setOpen(o => !o)} />
-      <Menu open={open} onClose={() => setOpen(false)} width="w-60" className="max-h-80 overflow-auto">
-        <MenuLabel>{label}</MenuLabel>
-        <MenuItem label={allLabel} accent="blue" selected={value === neutral}
-          onClick={() => { onChange(neutral); setOpen(false); }} />
-        <MenuDivider />
-        {options.map(o => (
-          <MenuItem key={o.value} icon={o.icon} label={o.label} hint={o.hint} accent="blue"
-            selected={value === o.value} onClick={() => { onChange(o.value); setOpen(false); }} />
-        ))}
-      </Menu>
     </div>
   );
 }
@@ -625,7 +607,7 @@ function AtomDetail({ atom, atoms, reuse, people, directory, tab }) {
           <Breadcrumbs
             items={[
               { id: 'lib', name: 'Knowledge' },
-              { id: 'tab', name: TABS.find(x => x.value === tab)?.label || 'All' },
+              { id: 'tab', name: LENSES.find(x => x.value === tab)?.label || 'All' },
               { id: atom.id, name: atom.title },
             ]}
             onNavigate={(item) => navigate('knowledge', item.id === 'lib' ? 'all' : tab)}

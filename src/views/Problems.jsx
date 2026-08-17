@@ -11,8 +11,9 @@ import {
   Avatar, AvatarStack, EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat,
   Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, TileGroup, SearchInput,
-  Modal, ConfirmDelete, Menu, MenuItem, MenuLabel, FilterPill,
-  SubTabs, PageHeader, Toolbar, PageBody,
+  Modal, ConfirmDelete,
+  LensBar, PageBody,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, addTo, patchIn, removeFrom, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -111,20 +112,25 @@ const NEXT_ACTION = {
   closed: null,
 };
 
-const TABS = [
+/**
+ * The lens: which slice of the lifecycle is on screen. It carries its own
+ * counts, which is why the stat strip that used to print the same numbers in a
+ * second shape is gone.
+ */
+const LENSES = [
   { value: 'open', label: 'Open', icon: OctagonAlert, accent: HUE },
   { value: 'known', label: 'Known errors', icon: Lightbulb, accent: 'orange' },
   { value: 'resolved', label: 'Resolved', icon: ShieldCheck, accent: 'emerald' },
   { value: 'all', label: 'All', icon: Layers, accent: 'slate' },
 ];
 
-const TAB_KEYS = TABS.map(x => x.value);
+const LENS_KEYS = LENSES.map(x => x.value);
 
-function inTab(problem, tab) {
+function inLens(problem, lens) {
   const s = problem.status;
-  if (tab === 'known') return s === 'known_error';
-  if (tab === 'resolved') return s === 'resolved' || s === 'closed';
-  if (tab === 'all') return true;
+  if (lens === 'known') return s === 'known_error';
+  if (lens === 'resolved') return s === 'resolved' || s === 'closed';
+  if (lens === 'all') return true;
   return s === 'new' || s === 'investigating' || s === 'known_error';
 }
 
@@ -205,6 +211,20 @@ function hasWorkaround(p) {
 
 function isKnownErrorViolation(p) {
   return p.status === 'known_error' && !hasWorkaround(p);
+}
+
+/**
+ * The "Has workaround" filter. It is the one question this module is built to
+ * answer at a glance — a problem with a documented workaround is something
+ * support can act on today, and one without it is not, whatever its state says.
+ */
+const WORKAROUND_BUCKETS = [
+  { value: 'documented', label: 'Documented' },
+  { value: 'missing', label: 'Missing' },
+];
+
+function workaroundBucket(p) {
+  return hasWorkaround(p) ? 'documented' : 'missing';
 }
 
 function fmtDate(iso) {
@@ -345,8 +365,18 @@ export default function Problems({ route }) {
   const organizations = useStore(s => s.organizations || []);
   const directory = useStore(s => s.directory || []);
 
-  const [tab, setTab] = useState('open');
+  const [lens, setLens] = useState('open');
   const [creating, setCreating] = useState(false);
+
+  /* One header state: the multi-select filter values, the in-page query, and
+   * whether the tray is showing. The tray forces itself open whenever something
+   * is active, so a filter can never be on while its control is hidden. */
+  const [filters, setFilters] = useState({});
+  const [search, setSearch] = useState('');
+  const [trayOpen, setTrayOpen] = useState(false);
+
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
 
   const problems = useMemo(() => raw.map(normalize), [raw]);
   const people = useMemo(() => ({ contacts, organizations, directory }), [contacts, organizations, directory]);
@@ -354,45 +384,122 @@ export default function Problems({ route }) {
   // ⌘K and the shared search index link a problem as #/problems/<id>, which the
   // router reads into `sub`. Accept it from either segment so every deep link
   // that exists in the app actually opens the record.
-  const routeId = route?.id || (TAB_KEYS.includes(route?.sub) ? null : route?.sub) || null;
+  const routeId = route?.id || (LENS_KEYS.includes(route?.sub) ? null : route?.sub) || null;
   const selected = routeId ? problems.find(p => p.id === routeId || p.key === routeId) : null;
 
-  const counts = useMemo(() => {
-    const out = {};
-    for (const x of TABS) out[x.value] = problems.filter(p => inTab(p, x.value)).length;
-    return out;
-  }, [problems]);
+  const rows = useMemo(
+    () => problems.map(p => ({ problem: p, impact: impactOf(p, tickets, people) })),
+    [problems, tickets, people],
+  );
+
+  /* Everything except the lens — so the lens counts reflect the other filters. */
+  const preLens = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return rows.filter(({ problem: p }) => {
+      if (!passes(filters.status, p.status)) return false;
+      if (!passes(filters.priority, p.priority)) return false;
+      if (!passes(filters.workaround, workaroundBucket(p))) return false;
+      // Search layers ON TOP of the filters rather than replacing them.
+      if (needle) {
+        const hay = `${p.key} ${p.title} ${p.description} ${p.symptom} ${p.rootCause} ${p.workaround}`.toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+  }, [rows, filters, search]);
+
+  const shown = useMemo(() => preLens
+    .filter(r => inLens(r.problem, lens))
+    .sort((a, b) => {
+      const pr = priorityMeta(b.problem.priority).rank - priorityMeta(a.problem.priority).rank;
+      if (pr) return pr;
+      return b.impact.tickets.length - a.impact.tickets.length;
+    }), [preLens, lens]);
+
+  const lensItems = LENSES.map(l => ({
+    ...l,
+    count: preLens.filter(r => inLens(r.problem, l.value)).length,
+  }));
 
   const violations = useMemo(() => problems.filter(isKnownErrorViolation), [problems]);
 
+  /* Counts are computed over EVERY problem, not the filtered view, so an option
+   * says how many records exist rather than how many survive the filters already
+   * set — the latter reads as options vanishing as you work. */
+  const FILTER_DEFS = useMemo(() => {
+    const byStatus = optionCounts(problems, p => p.status);
+    const byPriority = optionCounts(problems, p => p.priority);
+    const byWorkaround = optionCounts(problems, workaroundBucket);
+    return [
+      {
+        id: 'status', label: 'Status', icon: CircleDot,
+        options: LIFECYCLE.map(s => ({ value: s.key, label: s.label, count: byStatus.get(s.key) || 0 })),
+      },
+      {
+        id: 'priority', label: 'Priority', icon: ListFilter,
+        options: PRIORITY_KEYS.map(k => ({ value: k, label: priorityMeta(k).label, count: byPriority.get(k) || 0 })),
+      },
+      {
+        id: 'workaround', label: 'Has workaround', icon: Lightbulb,
+        footer: 'A known error is defined as a problem with a documented workaround.',
+        options: WORKAROUND_BUCKETS.map(b => ({ value: b.value, label: b.label, count: byWorkaround.get(b.value) || 0 })),
+      },
+    ];
+  }, [problems]);
+
+  const clearFilters = () => { setFilters({}); setSearch(''); setTrayOpen(false); };
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
+      <ModuleHeader
         icon={OctagonAlert}
         module={MODULE}
         accent={HUE}
         title="Problem Management"
-        subtitle="Northwind Systems · the root cause behind repeated incidents, and the change that removes it"
-        actions={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setCreating(true)}>New problem</Button>}
-      >
-        <Toolbar>
-          <SubTabs
-            value={tab}
-            onChange={setTab}
-            items={TABS.map(x => ({ ...x, count: counts[x.value] }))}
+        /* The subtitle always tells the truth about what is on screen: the
+         * resting label when nothing narrows the list, "9 of 20 shown" when
+         * something does. */
+        subtitle={subsetLabel(
+          shown.length,
+          problems.length,
+          `${plural(problems.length, 'problem', 'problems')} · the root cause behind repeated incidents, and the change that removes it`,
+        )}
+        primary={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setCreating(true)}>New problem</Button>}
+        tools={<>
+          <LensBar items={lensItems} value={lens} onChange={setLens} inline />
+          <ScopedSearch
+            value={search}
+            onChange={setSearch}
+            /* Names its own scope, so it can never be mistaken for the global
+             * field in the bar above. */
+            scope={`${lensItems.find(l => l.value === lens)?.count ?? problems.length} problems`}
+            accent={HUE}
           />
-        </Toolbar>
-      </PageHeader>
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent={HUE}
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray
+            open
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+          />
+        ) : null}
+      />
 
       <PageBody className="@container">
         <ProblemList
-          problems={problems}
-          tickets={tickets}
-          people={people}
-          tab={tab}
-          onTab={setTab}
+          shown={shown}
+          total={problems.length}
           onOpen={(p) => navigate('problems', null, p.id)}
           onNew={() => setCreating(true)}
+          onClear={clearFilters}
           violations={violations}
           missingId={routeId && !selected ? routeId : null}
         />
@@ -414,54 +521,10 @@ export default function Problems({ route }) {
  * LIST
  * ==================================================================== */
 
-function ProblemList({ problems, tickets, people, tab, onTab, onOpen, onNew, violations, missingId }) {
+function ProblemList({ shown, total, onOpen, onNew, onClear, violations, missingId }) {
   const { t } = useTheme();
   const changes = useStore(s => s.changes || []);
   const directory = useStore(s => s.directory || []);
-  const [q, setQ] = useState('');
-  const [priority, setPriority] = useState('all');
-  const [priorityMenu, setPriorityMenu] = useState(false);
-  const [focus, setFocus] = useState(null);
-
-  const rows = useMemo(() => problems.map(p => ({
-    problem: p,
-    impact: impactOf(p, tickets, people),
-  })), [problems, tickets, people]);
-
-  const stats = useMemo(() => {
-    const open = rows.filter(r => inTab(r.problem, 'open'));
-    return {
-      open: open.length,
-      known: rows.filter(r => r.problem.status === 'known_error').length,
-      awaitingFix: rows.filter(r => r.problem.status === 'known_error' && !r.problem.resolvedByChangeId).length,
-      unassigned: open.filter(r => !r.problem.assigneeId).length,
-      incidents: open.reduce((n, r) => n + r.impact.tickets.length, 0),
-    };
-  }, [rows]);
-
-  const shown = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return rows
-      .filter(r => inTab(r.problem, tab))
-      .filter(r => priority === 'all' || r.problem.priority === priority)
-      .filter(r => {
-        if (focus === 'awaiting') return r.problem.status === 'known_error' && !r.problem.resolvedByChangeId;
-        if (focus === 'unassigned') return !r.problem.assigneeId;
-        if (focus === 'incidents') return r.impact.tickets.length > 0;
-        return true;
-      })
-      .filter(r => {
-        if (!needle) return true;
-        const p = r.problem;
-        const hay = `${p.key} ${p.title} ${p.description} ${p.symptom} ${p.rootCause} ${p.workaround}`.toLowerCase();
-        return hay.includes(needle);
-      })
-      .sort((a, b) => {
-        const pr = priorityMeta(b.problem.priority).rank - priorityMeta(a.problem.priority).rank;
-        if (pr) return pr;
-        return b.impact.tickets.length - a.impact.tickets.length;
-      });
-  }, [rows, tab, priority, focus, q]);
 
   const grouped = useMemo(() => {
     const map = new Map(LIFECYCLE_KEYS.map(k => [k, []]));
@@ -471,8 +534,6 @@ function ProblemList({ problems, tickets, people, tab, onTab, onOpen, onNew, vio
     }
     return LIFECYCLE_KEYS.filter(k => map.get(k)?.length).map(k => [k, map.get(k)]);
   }, [shown]);
-
-  const priorityLabel = priority === 'all' ? 'Any priority' : priorityMeta(priority).label;
 
   return (
     <div className="space-y-3">
@@ -492,52 +553,16 @@ function ProblemList({ problems, tickets, people, tab, onTab, onOpen, onNew, vio
         </Banner>
       )}
 
-      <Toolbar>
-        <Stat label="open problems" value={stats.open} accent={HUE} icon={OctagonAlert}
-          active={tab === 'open' && !focus} onClick={() => { onTab('open'); setFocus(null); }} />
-        <Stat label="known errors" value={stats.known} accent="orange" icon={Lightbulb}
-          active={tab === 'known' && !focus} onClick={() => { onTab('known'); setFocus(null); }} />
-        <Stat label="awaiting a permanent fix" value={stats.awaitingFix} accent="red" icon={Wrench}
-          active={focus === 'awaiting'} onClick={() => setFocus(f => f === 'awaiting' ? null : 'awaiting')} />
-        <Stat label="incidents explained" value={stats.incidents} accent={TICKET_HUE} icon={Inbox}
-          active={focus === 'incidents'} onClick={() => setFocus(f => f === 'incidents' ? null : 'incidents')} />
-        <Stat label="unassigned" value={stats.unassigned} accent="slate" icon={Users}
-          active={focus === 'unassigned'} onClick={() => setFocus(f => f === 'unassigned' ? null : 'unassigned')} />
-      </Toolbar>
-
-      <Toolbar>
-        <SearchInput
-          value={q}
-          onChange={setQ}
-          accent={HUE}
-          width="w-full max-w-md"
-          placeholder="Search titles, symptoms, root causes and workarounds…"
-        />
-        <div className="relative">
-          <FilterPill icon={ListFilter} label={priorityLabel} active={priority !== 'all'}
-            open={priorityMenu} onClick={() => setPriorityMenu(v => !v)} />
-          <Menu open={priorityMenu} onClose={() => setPriorityMenu(false)} width="w-48">
-            <MenuLabel>Filter by priority</MenuLabel>
-            <MenuItem label="Any priority" accent={HUE} selected={priority === 'all'}
-              onClick={() => { setPriority('all'); setPriorityMenu(false); }} />
-            {PRIORITY_KEYS.map(k => (
-              <MenuItem key={k} label={priorityMeta(k).label} accent={priorityMeta(k).hue} selected={priority === k}
-                onClick={() => { setPriority(k); setPriorityMenu(false); }} />
-            ))}
-          </Menu>
-        </div>
-      </Toolbar>
-
       {!shown.length && (
         <Card className="py-2">
           <EmptyState
             icon={OctagonAlert}
-            title={problems.length ? 'Nothing matches these filters' : 'No problems recorded'}
-            hint={problems.length
-              ? 'Widen the tab, clear the priority filter, or search a different phrase.'
+            title={total ? 'Nothing matches these filters' : 'No problems recorded'}
+            hint={total
+              ? 'Search composes with the filters above rather than replacing them — widening the lens or clearing a filter may bring results back.'
               : 'A problem is opened when the same failure produces incident after incident. Group them here, prove the cause once, and let one change close the whole set.'}
-            action={problems.length
-              ? <Button variant="outline" onClick={() => { setQ(''); setPriority('all'); setFocus(null); }}>Clear filters</Button>
+            action={total
+              ? <Button variant="outline" onClick={onClear}>Clear filters</Button>
               : <Button variant="grad" module={MODULE} icon={Plus} onClick={onNew}>New problem</Button>}
           />
         </Card>

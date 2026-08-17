@@ -39,7 +39,12 @@ export function ModuleHeader({
   subtitle,
   /** The primary action. Sits BESIDE the title, not across the pane from it. */
   primary,
-  /** Secondary actions, pushed to the right of the band. */
+  /**
+   * Trailing band content: status indicators and secondary actions — a progress
+   * bar, a member stack, a back control. Documented as "trailing" rather than
+   * "secondary actions" because in practice it carries both, and calling it
+   * actions-only led a module to file a progress bar under it as if it were one.
+   */
   actions,
   /** Right-hand cluster: lens, scoped search, filter toggle. */
   tools,

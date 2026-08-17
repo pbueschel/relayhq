@@ -8,12 +8,13 @@ import {
   CircleDollarSign, LogOut, LogIn, Users, Boxes,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, LAYOUT,
+  useTheme, cx, ICON, DENSITY, LAYOUT, GRADIENT,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag, Avatar,
-  EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat, Banner, Divider,
-  Field, Input, Select, Textarea, TileGroup, SearchInput,
-  Modal, Menu, MenuItem, MenuDivider, MenuLabel, FilterPill,
-  SubTabs, ViewSwitcher, PageHeader, Toolbar, PageBody,
+  EmptyState, Card, Panel, Section, GroupLabel, ListRow, Banner, Divider,
+  Field, Input, Select, Textarea, TileGroup,
+  Modal,
+  SubTabs, ViewSwitcher, PageBody,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -121,11 +122,30 @@ const POSITION = {
   site:      { label: 'Site licence',  hue: 'slate' },
 };
 
+/* Assignment, warranty and renewal are all MULTI-SELECT now. "Unassigned or
+ * shared" and "expired or expiring" are the questions an estate review actually
+ * asks, and a single-select control could not express either of them. There is
+ * no "all" option in any of these lists: an empty selection already means
+ * everything, so an explicit one would be a second way to say nothing. */
 const ASSIGNMENT_OPTIONS = [
-  { value: 'all',        label: 'Anyone or anywhere' },
   { value: 'person',     label: 'Assigned to a person' },
   { value: 'location',   label: 'Assigned to a place (shared)' },
   { value: 'unassigned', label: 'Unassigned' },
+];
+
+const WARRANTY_OPTIONS = [
+  { value: 'expired', label: 'Warranty expired' },
+  { value: 'soon',    label: 'Expiring in 90 days' },
+  { value: 'covered', label: 'In warranty' },
+  { value: 'unknown', label: 'No warranty on file' },
+];
+
+const RENEWAL_OPTIONS = [
+  { value: 'd30',     label: 'Renews in 30 days' },
+  { value: 'd90',     label: 'Renews in 90 days' },
+  { value: 'expired', label: 'Renewal date passed' },
+  { value: 'later',   label: 'Renews later' },
+  { value: 'none',    label: 'No renewal date' },
 ];
 
 const GROUP_OPTIONS = [
@@ -196,6 +216,28 @@ function warrantyState(asset) {
   return { key: 'ok', hue: 'emerald', days, label: `Warranty to ${fmtDate(asset.warrantyExpires)}` };
 }
 
+/** Warranty position as one filterable value. "Nothing on file" is a state too. */
+function warrantyBucket(asset) {
+  const w = warrantyState(asset);
+  if (!w) return 'unknown';
+  return w.key === 'expired' ? 'expired' : w.key === 'soon' ? 'soon' : 'covered';
+}
+
+/**
+ * Which renewal windows a licence falls in. A licence renewing in 20 days is in
+ * BOTH the 30-day and the 90-day window — these are questions a buyer asks, not
+ * slots a record occupies, so one licence can answer more than one of them.
+ */
+function renewalBuckets(license) {
+  const days = daysUntil(license.renewalDate);
+  if (days == null) return ['none'];
+  if (days < 0) return ['expired'];
+  const out = [];
+  if (days <= 30) out.push('d30');
+  if (days <= 90) out.push('d90');
+  return out.length ? out : ['later'];
+}
+
 /** Seats consumed. Derived from allocations — never stored, so they cannot disagree. */
 function seatsUsed(license) {
   return (license.allocations || []).reduce((n, al) => n + (al.seats || 1), 0);
@@ -264,7 +306,7 @@ export default function Assets({ route }) {
   const hardware = useMemo(() => assets.filter(a => a.kind === 'hardware'), [assets]);
   const licenses = useMemo(() => assets.filter(a => a.kind === 'software'), [assets]);
 
-  const tabs = useMemo(() => TABS.map(x => ({
+  const tabItems = useMemo(() => TABS.map(x => ({
     ...x,
     count: x.value === 'hardware' ? hardware.length
       : x.value === 'software' ? licenses.length
@@ -273,52 +315,36 @@ export default function Assets({ route }) {
       : undefined,
   })), [hardware.length, licenses.length, locations, contracts.length]);
 
-  const subtitle = tab === 'hardware' ? `${hardware.length} tracked units across ${locations.filter(l => l.type !== 'region').length} sites — every one assigned to a person or a place`
-    : tab === 'software' ? `${licenses.length} licensed products — seats assigned are derived from allocations, never typed`
-    : tab === 'locations' ? 'Region › site hierarchy with rolled-up asset counts'
-    : tab === 'contracts' ? 'Vendor agreements, renewal dates and notice deadlines'
-    : 'Licence position, priced — over-deployment is audit risk, under-use is wasted spend';
+  /**
+   * These stay SubTabs. Hardware, software, locations, contracts and the
+   * compliance report are five different collections — they change WHAT you are
+   * looking at, not how one list is drawn, which is a lens's job. They ride in
+   * the header's tools cluster; each tab owns the rest of the band, because the
+   * filters that make sense for a laptop are not the ones for a licence.
+   */
+  const tabBar = <SubTabs items={tabItems} value={tab} onChange={(v) => navigate('assets', v)} />;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
-        icon={Server}
-        module="assets"
-        title="Assets"
-        subtitle={subtitle}
-        actions={
-          tab !== 'compliance' ? (
-            <Button variant="soft" accent="amber" size="sm" icon={Scale}
-              onClick={() => navigate('assets', 'compliance')}>
-              Licence position
-            </Button>
-          ) : null
-        }
-      >
-        <Toolbar>
-          <SubTabs items={tabs} value={tab} onChange={(v) => navigate('assets', v)} />
-        </Toolbar>
-      </PageHeader>
-
       {tab === 'hardware' && (
         <HardwareTab assets={hardware} models={models} locations={locations} contracts={contracts}
-          directory={directory} currentUser={currentUser} openId={openId} />
+          directory={directory} currentUser={currentUser} openId={openId} tabs={tabBar} />
       )}
       {tab === 'software' && (
         <SoftwareTab licenses={licenses} locations={locations} contracts={contracts}
-          directory={directory} openId={openId} />
+          directory={directory} openId={openId} tabs={tabBar} />
       )}
       {tab === 'locations' && (
         <LocationsTab locations={locations} assets={assets} models={models}
-          directory={directory} openId={openId} />
+          directory={directory} openId={openId} tabs={tabBar} />
       )}
       {tab === 'contracts' && (
         <ContractsTab contracts={contracts} assets={assets} models={models}
-          directory={directory} openId={openId} />
+          directory={directory} openId={openId} tabs={tabBar} />
       )}
       {tab === 'compliance' && (
         <ComplianceTab licenses={licenses} hardware={hardware} models={models}
-          contracts={contracts} locations={locations} />
+          contracts={contracts} locations={locations} tabs={tabBar} />
       )}
     </div>
   );
@@ -397,39 +423,43 @@ function DaysChip({ days, label }) {
  * HARDWARE
  * ------------------------------------------------------------------ */
 
-function HardwareTab({ assets, models, locations, contracts, directory, currentUser, openId }) {
+function HardwareTab({ assets, models, locations, contracts, directory, currentUser, openId, tabs }) {
   const { t } = useTheme();
+  /* One header state: the multi-select filter values, the in-page query and
+   * whether the tray is showing. The tray forces itself open while anything is
+   * active, so a filter can never be on with its control hidden. */
+  const [filters, setFilters] = useState({});
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('all');
-  const [locFilter, setLocFilter] = useState('all');
-  const [assignment, setAssignment] = useState('all');
-  const [modelFilter, setModelFilter] = useState('all');
-  const [warrantyOnly, setWarrantyOnly] = useState(false);
+  const [trayOpen, setTrayOpen] = useState(false);
   const [group, setGroup] = useState('none');
-  const [menu, setMenu] = useState(null);
   const [view, setView] = useState('list');
+
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQ(''); setTrayOpen(false); };
 
   const open = openId ? byId(assets, openId) : null;
 
-  const locScope = useMemo(
-    () => (locFilter === 'all' ? null : withDescendants(locations, locFilter)),
-    [locFilter, locations],
-  );
+  /* Picking a location includes every site beneath it, and picking several
+   * unions their subtrees — the tree is the point of the location model. */
+  const locScope = useMemo(() => {
+    const chosen = filters.location || [];
+    if (!chosen.length) return null;
+    const out = new Set();
+    for (const id of chosen) for (const x of withDescendants(locations, id)) out.add(x);
+    return out;
+  }, [filters.location, locations]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return assets.filter(asset => {
       const model = byId(models, asset.modelId);
-      if (status !== 'all' && asset.status !== status) return false;
+      if (!passes(filters.status, asset.status)) return false;
       if (locScope && !locScope.has(asset.locationId)) return false;
-      if (modelFilter !== 'all' && asset.modelId !== modelFilter) return false;
-      if (assignment === 'unassigned' && asset.assignmentType) return false;
-      if (assignment === 'person' && asset.assignmentType !== 'person') return false;
-      if (assignment === 'location' && asset.assignmentType !== 'location') return false;
-      if (warrantyOnly) {
-        const w = warrantyState(asset);
-        if (!w || w.key === 'ok') return false;
-      }
+      if (!passes(filters.model, asset.modelId)) return false;
+      if (!passes(filters.assignment, asset.assignmentType || 'unassigned')) return false;
+      if (!passes(filters.warranty, warrantyBucket(asset))) return false;
+      // Search narrows what the filters left rather than replacing them.
       if (!needle) return true;
       const hay = [
         asset.assetTag, asset.serial, asset.poNumber, asset.notes, asset.vendor,
@@ -439,15 +469,16 @@ function HardwareTab({ assets, models, locations, contracts, directory, currentU
       ].join(' ').toLowerCase();
       return hay.includes(needle);
     });
-  }, [assets, models, directory, locations, q, status, locScope, modelFilter, assignment, warrantyOnly]);
+  }, [assets, models, directory, locations, q, filters, locScope]);
 
+  /* The four figures the subtitle prints. The stat strip's other numbers — in
+   * stock, in repair, warranty ending — are not gone: they are the counts on
+   * the status and warranty filter options, where they cost something to act on
+   * rather than sitting in a band nobody could click. */
   const stats = useMemo(() => ({
     total: assets.length,
     deployed: assets.filter(x => x.status === 'deployed').length,
-    stock: assets.filter(x => x.status === 'in_stock').length,
     unassigned: assets.filter(x => !x.assignmentType && x.status !== 'retired').length,
-    repair: assets.filter(x => x.status === 'in_repair').length,
-    warranty: assets.filter(x => { const w = warrantyState(x); return w && w.key !== 'ok'; }).length,
     value: assets.reduce((n, x) => n + (x.cost || 0), 0),
   }), [assets]);
 
@@ -459,157 +490,135 @@ function HardwareTab({ assets, models, locations, contracts, directory, currentU
     return seen;
   }, [assets]);
 
+  /* Counts are computed over the WHOLE estate, not the filtered view — an option
+   * that reported how many survive the filters already set would read as choices
+   * vanishing as you work. They are also where the old stat strip's numbers went:
+   * "in repair 4" and "warranty expired 7" are now costed choices, not a band. */
+  const FILTER_DEFS = useMemo(() => {
+    const byStatus = optionCounts(assets, a => a.status);
+    const byAssignment = optionCounts(assets, a => a.assignmentType || 'unassigned');
+    const byLocation = optionCounts(assets, a => a.locationId);
+    const byWarranty = optionCounts(assets, warrantyBucket);
+    const byModel = optionCounts(assets, a => a.modelId);
+    return [
+      {
+        id: 'status', label: 'Status', icon: Gauge,
+        options: statusOptions.map(s => ({ value: s, label: statusLabel(s), count: byStatus.get(s) || 0 })),
+      },
+      {
+        id: 'assignment', label: 'Assignment', icon: User,
+        options: ASSIGNMENT_OPTIONS.map(o => ({ ...o, count: byAssignment.get(o.value) || 0 })),
+      },
+      {
+        id: 'location', label: 'Location', icon: MapPin,
+        options: locations.map(loc => ({ value: loc.id, label: loc.name, count: byLocation.get(loc.id) || 0 })),
+        footer: 'A region includes every site beneath it.',
+      },
+      {
+        id: 'warranty', label: 'Warranty', icon: ShieldAlert,
+        options: WARRANTY_OPTIONS.map(o => ({ ...o, count: byWarranty.get(o.value) || 0 })),
+      },
+      {
+        id: 'model', label: 'Model', icon: Tag,
+        options: models.map(m => ({ value: m.id, label: modelLabel(m), count: byModel.get(m.id) || 0 })),
+      },
+    ];
+  }, [assets, statusOptions, locations, models]);
+
   const stockroom = locations.find(l => l.type === 'warehouse');
   const filtered = rows.length !== assets.length;
 
   return (
-    <PageBody width="max-w-6xl">
-      <div className="space-y-4">
-        <div className="flex flex-wrap justify-center gap-2">
-          <Stat label="tracked" value={stats.total} accent="cyan" icon={Package}
-            active={status === 'all' && assignment === 'all' && !warrantyOnly && locFilter === 'all' && modelFilter === 'all'}
-            onClick={() => { setStatus('all'); setAssignment('all'); setWarrantyOnly(false); setLocFilter('all'); setModelFilter('all'); }} />
-          <Stat label="deployed" value={stats.deployed} accent="emerald"
-            active={status === 'deployed'} onClick={() => setStatus(status === 'deployed' ? 'all' : 'deployed')} />
-          <Stat label="in stock" value={stats.stock} accent="blue"
-            active={status === 'in_stock'} onClick={() => setStatus(status === 'in_stock' ? 'all' : 'in_stock')} />
-          <Stat label="unassigned" value={stats.unassigned} accent="gray" icon={PackageOpen}
-            active={assignment === 'unassigned'} onClick={() => setAssignment(assignment === 'unassigned' ? 'all' : 'unassigned')} />
-          <Stat label="in repair" value={stats.repair} accent="amber" icon={Wrench}
-            active={status === 'in_repair'} onClick={() => setStatus(status === 'in_repair' ? 'all' : 'in_repair')} />
-          <Stat label="warranty ending / ended" value={stats.warranty} accent="red" icon={ShieldAlert}
-            active={warrantyOnly} onClick={() => setWarrantyOnly(v => !v)} />
-          <Stat label="purchase value" value={fmtMoney(stats.value)} accent="lime" icon={CircleDollarSign} />
-        </div>
+    <>
+      <ModuleHeader
+        icon={Server}
+        module="assets"
+        accent="cyan"
+        title="Assets"
+        /* The subtitle tells the truth about what is on screen, and carries the
+         * estate figures the stat strip used to print above the list. */
+        subtitle={subsetLabel(rows.length, assets.length,
+          `${stats.total} tracked units · ${stats.deployed} deployed · ${stats.unassigned} unassigned · ${fmtMoney(stats.value)} at purchase`)}
+        tools={<>
+          {tabs}
+          <ScopedSearch value={q} onChange={setQ} scope={`${assets.length} assets`} accent="cyan" />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent="cyan"
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters}>
+            {/* Grouping shapes the list rather than narrowing it, so it sits in
+                the tray beside the filters but outside the active count. */}
+            <span className="flex items-center gap-1.5">
+              <span className={cx('text-[10px] font-semibold uppercase tracking-wider', t.textMuted)}>Group by</span>
+              <SubTabs value={group} onChange={setGroup} items={GROUP_OPTIONS} />
+            </span>
+          </FilterTray>
+        ) : null}
+      />
 
-        {stats.unassigned > 0 && stockroom && (
-          <Banner accent="blue" icon={AlertCircle} title="Where unassigned kit lives">
-            {stats.unassigned} units have no owner. Anything checked in without a destination is parked at{' '}
-            <strong className={t.text}>{stockroom.name}</strong> and counts as stock — it will not appear on
-            anyone's equipment record until it is checked out again.
-          </Banner>
-        )}
+      <PageBody width="max-w-6xl">
+        <div className="space-y-4">
+          {stats.unassigned > 0 && stockroom && (
+            <Banner accent="blue" icon={AlertCircle} title="Where unassigned kit lives">
+              {stats.unassigned} units have no owner. Anything checked in without a destination is parked at{' '}
+              <strong className={t.text}>{stockroom.name}</strong> and counts as stock — it will not appear on
+              anyone's equipment record until it is checked out again.
+            </Banner>
+          )}
 
-        <ViewSwitcher value={view} onChange={setView}
-          items={[
-            { value: 'list', label: `Assets${filtered ? ` (${rows.length})` : ''}`, icon: Boxes },
-            { value: 'models', label: `Models (${models.length})`, icon: Tag },
-          ]} />
+          <ViewSwitcher value={view} onChange={setView} inline
+            items={[
+              { value: 'list', label: `Assets${filtered ? ` (${rows.length})` : ''}`, icon: Boxes },
+              { value: 'models', label: `Models (${models.length})`, icon: Tag },
+            ]} />
 
-        {view === 'models' ? (
-          <ModelsGrid models={models} assets={assets} directory={directory}
-            onPick={(id) => { setModelFilter(id); setView('list'); }} />
-        ) : (
-          <>
-            <Toolbar>
-              <SearchInput value={q} onChange={setQ} accent="cyan" width="w-72"
-                placeholder="Asset tag, serial, PO, person or site…" />
-
-              <div className="relative">
-                <FilterPill icon={Gauge} label={status === 'all' ? 'Any status' : statusLabel(status)}
-                  active={status !== 'all'} open={menu === 'status'}
-                  onClick={() => setMenu(menu === 'status' ? null : 'status')} />
-                <Menu open={menu === 'status'} onClose={() => setMenu(null)} width="w-52">
-                  <MenuLabel>Lifecycle status</MenuLabel>
-                  <MenuItem label="Any status" selected={status === 'all'} onClick={() => { setStatus('all'); setMenu(null); }} />
-                  <MenuDivider />
-                  {statusOptions.map(s => (
-                    <MenuItem key={s} label={statusLabel(s)} selected={status === s}
-                      onClick={() => { setStatus(s); setMenu(null); }} />
-                  ))}
-                </Menu>
-              </div>
-
-              <div className="relative">
-                <FilterPill icon={MapPin} label={locFilter === 'all' ? 'Everywhere' : locationName(locations, locFilter)}
-                  active={locFilter !== 'all'} open={menu === 'loc'}
-                  onClick={() => setMenu(menu === 'loc' ? null : 'loc')} />
-                <Menu open={menu === 'loc'} onClose={() => setMenu(null)} width="w-64">
-                  <MenuLabel>Location — includes sites below</MenuLabel>
-                  <MenuItem label="Everywhere" selected={locFilter === 'all'} onClick={() => { setLocFilter('all'); setMenu(null); }} />
-                  <MenuDivider />
-                  {locations.map(loc => (
-                    <MenuItem key={loc.id} icon={locationTypeMeta(loc.type).icon}
-                      label={loc.parentId ? `   ${loc.name}` : loc.name}
-                      hint={locationTypeMeta(loc.type).label}
-                      selected={locFilter === loc.id}
-                      onClick={() => { setLocFilter(loc.id); setMenu(null); }} />
-                  ))}
-                </Menu>
-              </div>
-
-              <div className="relative">
-                <FilterPill icon={User} label={ASSIGNMENT_OPTIONS.find(o => o.value === assignment).label}
-                  active={assignment !== 'all'} open={menu === 'assign'}
-                  onClick={() => setMenu(menu === 'assign' ? null : 'assign')} />
-                <Menu open={menu === 'assign'} onClose={() => setMenu(null)} width="w-60">
-                  <MenuLabel>Ownership</MenuLabel>
-                  {ASSIGNMENT_OPTIONS.map(o => (
-                    <MenuItem key={o.value} label={o.label} selected={assignment === o.value}
-                      onClick={() => { setAssignment(o.value); setMenu(null); }} />
-                  ))}
-                </Menu>
-              </div>
-
-              <div className="relative">
-                <FilterPill icon={Layers} label={GROUP_OPTIONS.find(o => o.value === group).label}
-                  active={group !== 'none'} open={menu === 'group'}
-                  onClick={() => setMenu(menu === 'group' ? null : 'group')} />
-                <Menu open={menu === 'group'} onClose={() => setMenu(null)} width="w-48">
-                  <MenuLabel>Group by</MenuLabel>
-                  {GROUP_OPTIONS.map(o => (
-                    <MenuItem key={o.value} label={o.label} selected={group === o.value}
-                      onClick={() => { setGroup(o.value); setMenu(null); }} />
-                  ))}
-                </Menu>
-              </div>
-
-              {modelFilter !== 'all' && (
-                <Chip accent="cyan" icon={Tag} onRemove={() => setModelFilter('all')}>
-                  {modelLabel(byId(models, modelFilter))}
-                </Chip>
-              )}
-            </Toolbar>
-
-            {rows.length === 0 ? (
-              <EmptyState icon={Package} title="No assets match"
-                hint="Widen the filters, or clear the search to see the whole estate."
-                action={<Button variant="soft" accent="cyan" onClick={() => {
-                  setQ(''); setStatus('all'); setLocFilter('all'); setAssignment('all');
-                  setModelFilter('all'); setWarrantyOnly(false);
-                }}>Clear filters</Button>} />
-            ) : (
-              <div className="space-y-4">
-                {groups.map(g => (
-                  <div key={g.key}>
-                    {group !== 'none' && (
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <GroupLabel>{g.label}</GroupLabel>
-                        <span className={cx('text-[11px] tabular-nums', t.textMuted)}>{g.items.length}</span>
-                        <Divider className="flex-1" />
+          {view === 'models' ? (
+            <ModelsGrid models={models} assets={assets} directory={directory}
+              onPick={(id) => { setFilters(f => ({ ...f, model: [id] })); setView('list'); }} />
+          ) : (
+            <>
+              {rows.length === 0 ? (
+                <EmptyState icon={Package} title="No assets match"
+                  hint="Search composes with the filters rather than replacing them — clearing one may bring units back."
+                  action={<Button variant="soft" accent="cyan" onClick={clearFilters}>Clear filters</Button>} />
+              ) : (
+                <div className="space-y-4">
+                  {groups.map(g => (
+                    <div key={g.key}>
+                      {group !== 'none' && (
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <GroupLabel>{g.label}</GroupLabel>
+                          <span className={cx('text-[11px] tabular-nums', t.textMuted)}>{g.items.length}</span>
+                          <Divider className="flex-1" />
+                        </div>
+                      )}
+                      <div className={DENSITY.rowGap}>
+                        {g.items.map(asset => (
+                          <HardwareRow key={asset.id} asset={asset} models={models}
+                            locations={locations} directory={directory}
+                            onOpen={() => navigate('assets', 'hardware', asset.id)} />
+                        ))}
                       </div>
-                    )}
-                    <div className={DENSITY.rowGap}>
-                      {g.items.map(asset => (
-                        <HardwareRow key={asset.id} asset={asset} models={models}
-                          locations={locations} directory={directory}
-                          onOpen={() => navigate('assets', 'hardware', asset.id)} />
-                      ))}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </PageBody>
 
       {open && (
         <AssetDetail asset={open} models={models} locations={locations} contracts={contracts}
           directory={directory} currentUser={currentUser}
           onClose={() => navigate('assets', 'hardware')} />
       )}
-    </PageBody>
+    </>
   );
 }
 
@@ -742,8 +751,11 @@ function AssetDetail({ asset, models, locations, contracts, directory, currentUs
               {movable && asset.assignmentType && (
                 <Button variant="outline" icon={LogIn} onClick={() => setMoving('checkin')}>Check in</Button>
               )}
+              {/* Hardware wears the cyan→blue half of the module's gradient; the
+                  software half is purple→pink. Spelling the gradient rather than
+                  the module key is what keeps the two apart. */}
               {movable && (
-                <Button variant="grad" module="assets" icon={LogOut} onClick={() => setMoving('checkout')}>
+                <Button variant="grad" gradient={GRADIENT.hardware} icon={LogOut} onClick={() => setMoving('checkout')}>
                   {asset.assignmentType ? 'Move / reassign' : 'Check out'}
                 </Button>
               )}
@@ -1001,7 +1013,7 @@ function MoveModal({ asset, mode, locations, directory, currentUser, onClose }) 
           </span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="grad" module="assets" icon={ArrowRightLeft} disabled={!ready} onClick={commit}>
+            <Button variant="grad" gradient={GRADIENT.hardware} icon={ArrowRightLeft} disabled={!ready} onClick={commit}>
               Confirm move
             </Button>
           </div>
@@ -1062,109 +1074,152 @@ function MoveModal({ asset, mode, locations, directory, currentUser, onClose }) 
  * SOFTWARE
  * ------------------------------------------------------------------ */
 
-function SoftwareTab({ licenses, locations, contracts, directory, openId }) {
+function SoftwareTab({ licenses, locations, contracts, directory, openId, tabs }) {
+  const [filters, setFilters] = useState({});
   const [q, setQ] = useState('');
-  const [position, setPosition] = useState('all');
-  const [menu, setMenu] = useState(null);
+  const [trayOpen, setTrayOpen] = useState(false);
   const open = openId ? byId(licenses, openId) : null;
+
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQ(''); setTrayOpen(false); };
+
+  /** The agreement a licence is bought under. "No contract on file" is a state. */
+  const contractTypeOf = (lic) => byId(contracts, lic.contractId)?.type || 'none';
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return licenses
       .map(lic => ({ lic, pos: licensePosition(lic) }))
       .filter(({ lic, pos }) => {
-        if (position !== 'all' && pos.key !== position) return false;
+        if (!passes(filters.position, pos.key)) return false;
+        if (!passes(filters.contract, contractTypeOf(lic))) return false;
+        if (!passes(filters.renewal, renewalBuckets(lic))) return false;
         if (!needle) return true;
         return [lic.product, lic.vendor, lic.version, lic.notes].join(' ').toLowerCase().includes(needle);
       })
       .sort((a, b) => b.pos.exposure - a.pos.exposure);
-  }, [licenses, q, position]);
+  }, [licenses, contracts, q, filters]);
 
   /**
    * A site licence has no seat position — its allocations are recorded for
    * visibility only. Counting those allocations in `assigned` while its
-   * unbounded entitlement contributes nothing to `owned` made the strip read
+   * unbounded entitlement contributes nothing to `owned` made the subtitle read
    * as if the whole estate were over-deployed (1,136 allocated against 1,032
    * owned) when nothing of the sort is true. Site licences are excluded from
    * BOTH seat figures, which is exactly what the compliance screen says
    * happens. Their spend still counts, because that money is real.
+   *
+   * Over- and under-deployment are not counted here any more: they are the
+   * counts on the Compliance filter's options, one place rather than two.
    */
   const totals = useMemo(() => {
-    let owned = 0, assigned = 0, over = 0, under = 0, spend = 0, site = 0;
+    let owned = 0, assigned = 0, spend = 0, site = 0;
     for (const lic of licenses) {
       const pos = licensePosition(lic);
       spend += annualSpend(lic);
       if (pos.key === 'site') { site += 1; continue; }
       owned += lic.seatsOwned || 0;
       assigned += pos.assigned;
-      if (pos.key === 'over') over += 1;
-      if (pos.key === 'under') under += 1;
     }
-    return { owned, assigned, over, under, spend, site };
+    return { owned, assigned, spend, site };
   }, [licenses]);
 
+  const FILTER_DEFS = useMemo(() => {
+    const byPosition = optionCounts(licenses, lic => licensePosition(lic).key);
+    const byContract = optionCounts(licenses, contractTypeOf);
+    const byRenewal = optionCounts(licenses, renewalBuckets);
+    const contractTypes = [...new Set(licenses.map(contractTypeOf))];
+    return [
+      {
+        id: 'position', label: 'Compliance', icon: Scale,
+        options: Object.entries(POSITION).map(([key, meta]) => ({
+          value: key, label: meta.label, count: byPosition.get(key) || 0,
+        })),
+      },
+      {
+        id: 'contract', label: 'Contract type', icon: FileSignature,
+        options: contractTypes.map(type => ({
+          value: type,
+          label: type === 'none' ? 'No contract on file' : (CONTRACT_TYPE[type] || type),
+          count: byContract.get(type) || 0,
+        })),
+      },
+      {
+        id: 'renewal', label: 'Renewal', icon: CalendarClock,
+        options: RENEWAL_OPTIONS.map(o => ({ ...o, count: byRenewal.get(o.value) || 0 })),
+        footer: 'A licence renewing inside 30 days answers the 90-day question too.',
+      },
+    ];
+  }, [licenses, contracts]);
+
   return (
-    <PageBody width="max-w-6xl">
-      <div className="space-y-4">
-        <div className="flex flex-wrap justify-center gap-2">
-          <Stat label="products" value={licenses.length} accent="pink" icon={Key}
-            active={position === 'all'} onClick={() => setPosition('all')} />
-          <Stat label="seats owned" value={totals.owned} accent="blue" />
-          <Stat label="seats allocated" value={totals.assigned} accent="violet" icon={Users} />
-          <Stat label="over-deployed" value={totals.over} accent="red" icon={ShieldAlert}
-            active={position === 'over'} onClick={() => setPosition(position === 'over' ? 'all' : 'over')} />
-          <Stat label="under-used" value={totals.under} accent="amber" icon={TrendingDown}
-            active={position === 'under'} onClick={() => setPosition(position === 'under' ? 'all' : 'under')} />
-          <Stat label="annual spend" value={fmtMoney(totals.spend)} accent="lime" icon={CircleDollarSign} />
-        </div>
+    <>
+      <ModuleHeader
+        icon={Server}
+        module="assets"
+        accent="pink"
+        title="Assets"
+        subtitle={subsetLabel(rows.length, licenses.length,
+          `${licenses.length} licensed products · ${totals.assigned} of ${totals.owned} seats allocated · ${fmtMoney(totals.spend)} a year`)}
+        /* The software half of the module has its own gradient — purple→pink,
+         * the pair a licence wears everywhere else — rather than the cyan→blue
+         * the module map hands out for hardware. */
+        primary={
+          <Button variant="grad" gradient={GRADIENT.software} icon={Scale}
+            onClick={() => navigate('assets', 'compliance')}>
+            Licence position
+          </Button>
+        }
+        tools={<>
+          {tabs}
+          <ScopedSearch value={q} onChange={setQ} scope={`${licenses.length} products`} accent="pink" />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent="pink"
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray open filters={FILTER_DEFS} value={filters} onChange={setFilters} onClearAll={clearFilters} />
+        ) : null}
+      />
 
-        <Banner accent="pink" icon={AlertCircle} title="Seats assigned is derived, not typed">
-          A licence's assigned count is the sum of its allocations — people and places that actually hold a
-          seat. There is no field to type it into, so the entitlement and the deployment cannot quietly
-          disagree the way they do in a spreadsheet.
-          {totals.site > 0 && (
-            <> The {totals.site === 1 ? 'one site licence' : `${totals.site} site licences`} above{' '}
-            {totals.site === 1 ? 'is' : 'are'} left out of both seat totals — everyone is covered, so there is
-            no position to count.</>
-          )}
-        </Banner>
+      <PageBody width="max-w-6xl">
+        <div className="space-y-4">
+          <Banner accent="pink" icon={AlertCircle} title="Seats assigned is derived, not typed">
+            A licence's assigned count is the sum of its allocations — people and places that actually hold a
+            seat. There is no field to type it into, so the entitlement and the deployment cannot quietly
+            disagree the way they do in a spreadsheet.
+            {totals.site > 0 && (
+              <> The {totals.site === 1 ? 'one site licence' : `${totals.site} site licences`} above{' '}
+              {totals.site === 1 ? 'is' : 'are'} left out of both seat totals — everyone is covered, so there is
+              no position to count.</>
+            )}
+          </Banner>
 
-        <Toolbar>
-          <SearchInput value={q} onChange={setQ} accent="pink" width="w-72" placeholder="Product or vendor…" />
-          <div className="relative">
-            <FilterPill icon={Scale} label={position === 'all' ? 'Any position' : POSITION[position].label}
-              active={position !== 'all'} open={menu === 'pos'}
-              onClick={() => setMenu(menu === 'pos' ? null : 'pos')} />
-            <Menu open={menu === 'pos'} onClose={() => setMenu(null)} width="w-52">
-              <MenuLabel>Compliance position</MenuLabel>
-              <MenuItem label="Any position" selected={position === 'all'} onClick={() => { setPosition('all'); setMenu(null); }} />
-              <MenuDivider />
-              {Object.entries(POSITION).map(([key, meta]) => (
-                <MenuItem key={key} label={meta.label} selected={position === key}
-                  onClick={() => { setPosition(key); setMenu(null); }} />
+          {rows.length === 0 ? (
+            <EmptyState icon={Key} title="No licences match"
+              hint="Search composes with the filters rather than replacing them — clearing one may bring products back."
+              action={<Button variant="soft" accent="pink" onClick={clearFilters}>Clear filters</Button>} />
+          ) : (
+            <div className={DENSITY.rowGap}>
+              {rows.map(({ lic, pos }) => (
+                <LicenseRow key={lic.id} license={lic} position={pos} contracts={contracts}
+                  onOpen={() => navigate('assets', 'software', lic.id)} />
               ))}
-            </Menu>
-          </div>
-        </Toolbar>
-
-        {rows.length === 0 ? (
-          <EmptyState icon={Key} title="No licences match" hint="Clear the filter to see every licensed product." />
-        ) : (
-          <div className={DENSITY.rowGap}>
-            {rows.map(({ lic, pos }) => (
-              <LicenseRow key={lic.id} license={lic} position={pos} contracts={contracts}
-                onOpen={() => navigate('assets', 'software', lic.id)} />
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      </PageBody>
 
       {open && (
         <LicenseDetail license={open} position={licensePosition(open)} locations={locations}
           contracts={contracts} directory={directory}
           onClose={() => navigate('assets', 'software')} />
       )}
-    </PageBody>
+    </>
   );
 }
 
@@ -1409,10 +1464,31 @@ function AllocationEditor({ license, position, locations, directory }) {
  * LOCATIONS
  * ------------------------------------------------------------------ */
 
-function LocationsTab({ locations, assets, models, directory, openId }) {
+function LocationsTab({ locations, assets, models, directory, openId, tabs }) {
   const { t } = useTheme();
   const [collapsed, setCollapsed] = useState({});
+  const [q, setQ] = useState('');
   const open = openId ? byId(locations, openId) : null;
+
+  const sites = locations.filter(l => l.type !== 'region');
+
+  /* Searching a TREE keeps the ancestors of every match, otherwise a matching
+   * site would be hidden under a region that does not match its own name. */
+  const visible = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return null;
+    const byIdMap = new Map(locations.map(l => [l.id, l]));
+    const keep = new Set();
+    for (const loc of locations) {
+      const hay = [loc.name, loc.address, locationTypeMeta(loc.type).label].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(needle)) continue;
+      let node = loc;
+      while (node) { keep.add(node.id); node = node.parentId ? byIdMap.get(node.parentId) : null; }
+    }
+    return keep;
+  }, [locations, q]);
+
+  const shownSites = visible ? sites.filter(l => visible.has(l.id)).length : sites.length;
 
   const counts = useMemo(() => {
     const direct = new Map();
@@ -1440,38 +1516,60 @@ function LocationsTab({ locations, assets, models, directory, openId }) {
     return { direct, rolled };
   }, [locations, assets]);
 
-  const roots = childrenOf(locations, null);
+  const roots = childrenOf(locations, null).filter(l => !visible || visible.has(l.id));
 
   return (
-    <PageBody width="max-w-5xl">
-      <div className="space-y-4">
-        <Banner accent="emerald" icon={MapPin} title="Counts roll up through the tree">
-          A region shows every asset at every site beneath it, not just what is parked at the region itself.
-          The two numbers on each row are <strong className={t.text}>here</strong> and{' '}
-          <strong className={t.text}>including sites below</strong>, so a total is never quietly double-counted.
-        </Banner>
+    <>
+      <ModuleHeader
+        icon={Server}
+        module="assets"
+        accent="emerald"
+        title="Assets"
+        subtitle={subsetLabel(shownSites, sites.length,
+          `${sites.length} sites in ${locations.filter(l => l.type === 'region').length} regions`)}
+        tools={<>
+          {tabs}
+          <ScopedSearch value={q} onChange={setQ} scope={`${sites.length} sites`} accent="emerald" />
+        </>}
+      />
 
-        <div className="space-y-1.5">
-          {roots.map(root => (
-            <LocationBranch key={root.id} node={root} locations={locations} counts={counts} depth={0}
-              collapsed={collapsed}
-              onToggle={(id) => setCollapsed(c => ({ ...c, [id]: !c[id] }))}
-              onOpen={(id) => navigate('assets', 'locations', id)} />
-          ))}
+      <PageBody width="max-w-5xl">
+        <div className="space-y-4">
+          <Banner accent="emerald" icon={MapPin} title="Counts roll up through the tree">
+            A region shows every asset at every site beneath it, not just what is parked at the region itself.
+            The two numbers on each row are <strong className={t.text}>here</strong> and{' '}
+            <strong className={t.text}>including sites below</strong>, so a total is never quietly double-counted.
+          </Banner>
+
+          {roots.length === 0 ? (
+            <EmptyState icon={MapPin} title="No sites match"
+              hint="Clear the search to see the whole estate."
+              action={<Button variant="soft" accent="emerald" onClick={() => setQ('')}>Clear search</Button>} />
+          ) : (
+            <div className="space-y-1.5">
+              {roots.map(root => (
+                <LocationBranch key={root.id} node={root} locations={locations} counts={counts} depth={0}
+                  collapsed={collapsed} visible={visible}
+                  onToggle={(id) => setCollapsed(c => ({ ...c, [id]: !c[id] }))}
+                  onOpen={(id) => navigate('assets', 'locations', id)} />
+              ))}
+            </div>
+          )}
         </div>
-      </div>
+      </PageBody>
 
       {open && (
         <LocationDetail location={open} locations={locations} assets={assets} models={models}
           directory={directory} counts={counts} onClose={() => navigate('assets', 'locations')} />
       )}
-    </PageBody>
+    </>
   );
 }
 
-function LocationBranch({ node, locations, counts, depth, collapsed, onToggle, onOpen }) {
+function LocationBranch({ node, locations, counts, depth, collapsed, visible, onToggle, onOpen }) {
   const { t } = useTheme();
-  const kids = childrenOf(locations, node.id);
+  // `visible` is null when nothing is searched — the whole tree draws.
+  const kids = childrenOf(locations, node.id).filter(l => !visible || visible.has(l.id));
   const meta = locationTypeMeta(node.type);
   const direct = counts.direct.get(node.id) || { here: 0, shared: 0, people: 0, stock: 0 };
   const rolled = counts.rolled.get(node.id) || { total: 0, value: 0 };
@@ -1509,7 +1607,7 @@ function LocationBranch({ node, locations, counts, depth, collapsed, onToggle, o
         <div className="mt-1.5 space-y-1.5">
           {kids.map(kid => (
             <LocationBranch key={kid.id} node={kid} locations={locations} counts={counts} depth={depth + 1}
-              collapsed={collapsed} onToggle={onToggle} onOpen={onOpen} />
+              collapsed={collapsed} visible={visible} onToggle={onToggle} onOpen={onOpen} />
           ))}
         </div>
       )}
@@ -1626,10 +1724,14 @@ function MiniAssetRow({ asset, models, directory }) {
  * CONTRACTS
  * ------------------------------------------------------------------ */
 
-function ContractsTab({ contracts, assets, models, directory, openId }) {
+function ContractsTab({ contracts, assets, models, directory, openId, tabs }) {
   const { t } = useTheme();
   const [q, setQ] = useState('');
   const open = openId ? byId(contracts, openId) : null;
+
+  const needle = q.trim().toLowerCase();
+  const matches = (contract) => !needle
+    || [contract.name, contract.vendor, CONTRACT_TYPE[contract.type]].join(' ').toLowerCase().includes(needle);
 
   const decorated = useMemo(() => contracts.map(contract => {
     const days = daysUntil(contract.endDate);
@@ -1637,76 +1739,85 @@ function ContractsTab({ contracts, assets, models, directory, openId }) {
     return { contract, days, noticeBy, noticeDays: daysUntil(noticeBy) };
   }).sort((a, b) => a.days - b.days), [contracts]);
 
-  const renewals = decorated.filter(d => d.days >= 0 && d.days <= 90);
-  const rest = decorated.filter(d => !(d.days >= 0 && d.days <= 90));
-  const needle = q.trim().toLowerCase();
-  const visible = needle
-    ? rest.filter(d => [d.contract.name, d.contract.vendor, CONTRACT_TYPE[d.contract.type]].join(' ').toLowerCase().includes(needle))
-    : rest;
+  /* The search narrows BOTH bands. Filtering the list below while the renewal
+   * cards above still showed everything read as a bug. */
+  const renewals = decorated.filter(d => d.days >= 0 && d.days <= 90 && matches(d.contract));
+  const visible = decorated.filter(d => !(d.days >= 0 && d.days <= 90) && matches(d.contract));
 
-  const exposure = renewals.reduce((n, d) => n + (d.contract.value || 0), 0);
+  const dueSoon = decorated.filter(d => d.days >= 0 && d.days <= 90);
+  const exposure = dueSoon.reduce((n, d) => n + (d.contract.value || 0), 0);
 
   return (
-    <PageBody width="max-w-5xl">
-      <div className="space-y-5">
-        <div className="flex flex-wrap justify-center gap-2">
-          <Stat label="agreements" value={contracts.length} accent="lime" icon={FileSignature} />
-          <Stat label="renewing in 90 days" value={renewals.length} accent="amber" icon={CalendarClock} />
-          <Stat label="value at renewal" value={fmtMoney(exposure)} accent="red" icon={CircleDollarSign} />
-          <Stat label="auto-renewing" value={contracts.filter(c => c.autoRenew).length} accent="violet" />
-        </div>
+    <>
+      <ModuleHeader
+        icon={Server}
+        module="assets"
+        accent="lime"
+        title="Assets"
+        subtitle={subsetLabel(renewals.length + visible.length, contracts.length,
+          `${contracts.length} agreements · ${dueSoon.length} renewing in 90 days · ${fmtMoney(exposure)} at renewal`)}
+        tools={<>
+          {tabs}
+          <ScopedSearch value={q} onChange={setQ} scope={`${contracts.length} agreements`} accent="lime" />
+        </>}
+      />
 
-        <Banner accent="amber" icon={AlertCircle} title="Auto-renew is the silent default this screen exists to break">
-          An auto-renewing agreement renews itself at the current terms unless notice is served before{' '}
-          <strong className={t.text}>end date − notice period</strong>. That deadline, not the end date, is the
-          one you have to hit — so it is printed on every card below.
-        </Banner>
+      <PageBody width="max-w-5xl">
+        <div className="space-y-5">
+          <Banner accent="amber" icon={AlertCircle} title="Auto-renew is the silent default this screen exists to break">
+            An auto-renewing agreement renews itself at the current terms unless notice is served before{' '}
+            <strong className={t.text}>end date − notice period</strong>. That deadline, not the end date, is the
+            one you have to hit — so it is printed on every card below.
+          </Banner>
 
-        <Section title="Renewing in the next 90 days" hint={`Measured from ${fmtDate(today())}.`}>
-          {renewals.length === 0 ? (
-            <EmptyState icon={CalendarClock} title="Nothing renews in the next 90 days" hint="The next agreement to fall due is further out." />
-          ) : (
-            <div className="grid sm:grid-cols-2 gap-2">
-              {renewals.map(({ contract, days, noticeBy, noticeDays }) => (
-                <RenewalCard key={contract.id} contract={contract} days={days} noticeBy={noticeBy}
-                  noticeDays={noticeDays} directory={directory}
-                  onOpen={() => navigate('assets', 'contracts', contract.id)} />
+          <Section title="Renewing in the next 90 days" hint={`Measured from ${fmtDate(today())}.`}>
+            {renewals.length === 0 ? (
+              <EmptyState icon={CalendarClock}
+                title={needle ? 'No renewals match that search' : 'Nothing renews in the next 90 days'}
+                hint={needle ? 'Clear the search to see every agreement falling due.' : 'The next agreement to fall due is further out.'} />
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-2">
+                {renewals.map(({ contract, days, noticeBy, noticeDays }) => (
+                  <RenewalCard key={contract.id} contract={contract} days={days} noticeBy={noticeBy}
+                    noticeDays={noticeDays} directory={directory}
+                    onOpen={() => navigate('assets', 'contracts', contract.id)} />
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title="All agreements" hint="Everything not already falling due above.">
+            <div className={DENSITY.rowGap}>
+              {visible.map(({ contract, days }) => (
+                <ListRow
+                  key={contract.id}
+                  accent="lime"
+                  icon={FileSignature}
+                  onClick={() => navigate('assets', 'contracts', contract.id)}
+                  title={contract.name}
+                  subtitle={`${contract.vendor} · ${CONTRACT_TYPE[contract.type] || contract.type} · ${fmtDate(contract.startDate)} → ${fmtDate(contract.endDate)}`}
+                  meta={
+                    <>
+                      <Chip accent="lime" icon={CircleDollarSign}>{fmtMoney(contract.value)}</Chip>
+                      {contract.autoRenew
+                        ? <Chip accent="violet">Auto-renews</Chip>
+                        : <Chip accent="gray">Manual renewal</Chip>}
+                      <DaysChip days={days} label={`Ends ${fmtDate(contract.endDate)}`} />
+                    </>
+                  }
+                />
               ))}
+              {visible.length === 0 && <EmptyState icon={FileSignature} title="No agreements match" hint="Clear the search to see them all." />}
             </div>
-          )}
-        </Section>
-
-        <Section title="All agreements" action={<SearchInput value={q} onChange={setQ} accent="lime" width="w-64" placeholder="Contract or vendor…" />}>
-          <div className={DENSITY.rowGap}>
-            {visible.map(({ contract, days }) => (
-              <ListRow
-                key={contract.id}
-                accent="lime"
-                icon={FileSignature}
-                onClick={() => navigate('assets', 'contracts', contract.id)}
-                title={contract.name}
-                subtitle={`${contract.vendor} · ${CONTRACT_TYPE[contract.type] || contract.type} · ${fmtDate(contract.startDate)} → ${fmtDate(contract.endDate)}`}
-                meta={
-                  <>
-                    <Chip accent="lime" icon={CircleDollarSign}>{fmtMoney(contract.value)}</Chip>
-                    {contract.autoRenew
-                      ? <Chip accent="violet">Auto-renews</Chip>
-                      : <Chip accent="gray">Manual renewal</Chip>}
-                    <DaysChip days={days} label={`Ends ${fmtDate(contract.endDate)}`} />
-                  </>
-                }
-              />
-            ))}
-            {visible.length === 0 && <EmptyState icon={FileSignature} title="No agreements match" hint="Clear the search to see them all." />}
-          </div>
-        </Section>
-      </div>
+          </Section>
+        </div>
+      </PageBody>
 
       {open && (
         <ContractDetail contract={open} assets={assets} models={models} directory={directory}
           onClose={() => navigate('assets', 'contracts')} />
       )}
-    </PageBody>
+    </>
   );
 }
 
@@ -1845,14 +1956,17 @@ function ContractDetail({ contract, assets, models, directory, onClose }) {
  * COMPLIANCE — the screen a SAM tool exists for
  * ------------------------------------------------------------------ */
 
-function ComplianceTab({ licenses, hardware, models, contracts, locations }) {
+function ComplianceTab({ licenses, hardware, models, contracts, locations, tabs }) {
   const { t, a } = useTheme();
+  const [q, setQ] = useState('');
 
+  const needle = q.trim().toLowerCase();
   const rows = useMemo(() => licenses
     .map(lic => ({ lic, pos: licensePosition(lic), contract: byId(contracts, lic.contractId) }))
+    .filter(({ lic }) => !needle || [lic.product, lic.vendor].join(' ').toLowerCase().includes(needle))
     // Sorted worst-first. Named x/y so the accent accessor `a` from useTheme
     // is not shadowed inside the comparator.
-    .sort((x, y) => y.pos.exposure - x.pos.exposure), [licenses, contracts]);
+    .sort((x, y) => y.pos.exposure - x.pos.exposure), [licenses, contracts, needle]);
 
   const totals = useMemo(() => {
     let risk = 0, reclaim = 0, spend = 0, unpapered = 0;
@@ -1875,140 +1989,157 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations }) {
   const uncovered = hardware.filter(a => !a.contractId && a.status !== 'retired');
 
   return (
-    <PageBody width="max-w-6xl">
-      <div className="space-y-5">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <ExposureTile label="Total exposure" value={fmtMoney(totals.exposure)} accent="amber" icon={Scale}
-            hint="Unlicensed use plus spend on seats nobody holds" />
-          <ExposureTile label="Unlicensed use" value={fmtMoney(totals.risk)} accent="red" icon={ShieldAlert}
-            hint={`${overs.length} products deployed beyond entitlement`} />
-          <ExposureTile label="Reclaimable" value={fmtMoney(totals.reclaim)} accent="emerald" icon={TrendingDown}
-            hint={`${unders.length} products with idle seats`} />
-          <ExposureTile label="Annual licence spend" value={fmtMoney(totals.spend)} accent="lime" icon={CircleDollarSign}
-            hint={`${licenses.length} products · ${totals.unpapered} with no contract on file`} />
-        </div>
+    <>
+      <ModuleHeader
+        icon={Server}
+        module="assets"
+        accent="amber"
+        title="Assets"
+        subtitle={subsetLabel(rows.length, licenses.length,
+          `${licenses.length} licensed products · ${fmtMoney(totals.exposure)} of exposure · ${totals.unpapered} with no contract on file`)}
+        tools={<>
+          {tabs}
+          <ScopedSearch value={q} onChange={setQ} scope={`${licenses.length} products`} accent="amber" />
+        </>}
+      />
 
-        <Banner accent="blue" icon={AlertCircle} title="How a position is decided">
-          Position is seats owned minus seats allocated. Over by any amount is{' '}
-          <strong className={t.text}>over-deployed</strong> — a vendor audit prices that at list. Idle seats
-          count as <strong className={t.text}>under-used</strong> only when they are at least 3 seats AND at
-          least 20% of the entitlement, so a licence with one spare seat does not cry wolf. Site licences have
-          no seat position at all and are excluded from both figures.
-        </Banner>
-
-        {overs.length > 0 && (
-          <Section title="Over-deployed — fix or buy up" hint="Deployment exceeds what was bought. This is the number an audit bills.">
-            <div className="grid sm:grid-cols-2 gap-2">
-              {overs.map(({ lic, pos, contract }) => (
-                <FindingCard key={lic.id} license={lic} position={pos} contract={contract} hue="red"
-                  action={`Reclaim ${Math.abs(pos.delta)} allocations, or add ${Math.abs(pos.delta)} seats at ${fmtMoney(lic.costPerSeat)} each.`} />
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {unders.length > 0 && (
-          <Section title="Under-used — money already spent" hint="Seats paid for that nobody holds. Cut them at the next renewal.">
-            <div className="grid sm:grid-cols-2 gap-2">
-              {unders.map(({ lic, pos, contract }) => (
-                <FindingCard key={lic.id} license={lic} position={pos} contract={contract} hue="amber"
-                  action={`Drop to ${pos.assigned} seats at renewal and save ${fmtMoney(pos.exposure)} a year.`} />
-              ))}
-            </div>
-          </Section>
-        )}
-
-        <Section title="Licence position by product" hint="Every licensed product, worst exposure first.">
-          <Card className="overflow-x-auto">
-            <table className="w-full text-left text-sm min-w-[52rem]">
-              <thead>
-                <tr className={cx('border-b', t.border)}>
-                  {['Product', 'Model', 'Owned', 'Allocated', 'Position', 'Per seat', 'Exposure', 'Renews'].map(h => (
-                    <th key={h} className={cx('px-3 py-2 text-[11px] font-semibold uppercase tracking-wider', t.textMuted)}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ lic, pos, contract }) => (
-                  <tr key={lic.id} className={cx('border-b last:border-0 cursor-pointer', t.borderLight, t.bgHover)}
-                    onClick={() => navigate('assets', 'software', lic.id)}>
-                    <td className="px-3 py-2">
-                      <p className={cx('font-medium truncate', t.text)}>{lic.product}</p>
-                      <p className={cx('text-xs truncate', t.textMuted)}>
-                        {lic.vendor}{contract ? '' : ' · no contract on file'}
-                      </p>
-                    </td>
-                    <td className={cx('px-3 py-2 text-xs', t.textSecondary)}>{LICENSE_MODEL[lic.licenseModel]?.label}</td>
-                    <td className={cx('px-3 py-2 tabular-nums', t.text)}>{lic.seatsOwned ?? '∞'}</td>
-                    <td className={cx('px-3 py-2 tabular-nums', t.text)}>{pos.assigned}</td>
-                    <td className="px-3 py-2"><PositionChip position={pos} /></td>
-                    <td className={cx('px-3 py-2 tabular-nums', t.textSecondary)}>{fmtMoney(lic.costPerSeat)}</td>
-                    <td className={cx('px-3 py-2 tabular-nums font-medium',
-                      pos.exposure > 0 ? a(POSITION[pos.key].hue).fg : t.textMuted)}>
-                      {pos.exposure > 0 ? fmtMoney(pos.exposure) : '—'}
-                    </td>
-                    <td className={cx('px-3 py-2 text-xs whitespace-nowrap', t.textSecondary)}>{fmtDate(lic.renewalDate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-        </Section>
-
-        <Section title="Hardware cover" hint="The same question asked of physical kit: what is running with no warranty and no contract behind it?">
-          <div className="grid sm:grid-cols-2 gap-2">
-            <Panel icon={ShieldAlert} accent="red" title="Out of warranty"
-              subtitle={`${outOfWarranty.length} units still in service`}>
-              <div className={cx('divide-y', t.borderLight)}>
-                {outOfWarranty.slice(0, 6).map(asset => (
-                  <button key={asset.id} onClick={() => navigate('assets', 'hardware', asset.id)}
-                    className={cx('w-full flex items-center gap-3 px-4 py-2 text-left', t.bgHover)}>
-                    <span className={cx('text-sm font-mono', t.text)}>{asset.assetTag}</span>
-                    <span className={cx('flex-1 text-xs truncate', t.textMuted)}>
-                      {modelLabel(byId(models, asset.modelId))}
-                    </span>
-                    <Chip accent="red">{Math.abs(daysUntil(asset.warrantyExpires))}d over</Chip>
-                  </button>
-                ))}
-                {outOfWarranty.length > 6 && (
-                  <p className={cx('px-4 py-2 text-xs', t.textMuted)}>
-                    +{outOfWarranty.length - 6} more out of warranty — open the Hardware tab and filter on
-                    warranty to see them all.
-                  </p>
-                )}
-                {outOfWarranty.length === 0 && (
-                  <p className={cx('px-4 py-3 text-sm', t.textMuted)}>Everything in service is inside its warranty.</p>
-                )}
-              </div>
-            </Panel>
-
-            <Panel icon={FileSignature} accent="amber" title="No maintenance contract"
-              subtitle={`${uncovered.length} units with no agreement linked`}>
-              <div className={cx('divide-y', t.borderLight)}>
-                {uncovered.slice(0, 6).map(asset => (
-                  <button key={asset.id} onClick={() => navigate('assets', 'hardware', asset.id)}
-                    className={cx('w-full flex items-center gap-3 px-4 py-2 text-left', t.bgHover)}>
-                    <span className={cx('text-sm font-mono', t.text)}>{asset.assetTag}</span>
-                    <span className={cx('flex-1 text-xs truncate', t.textMuted)}>
-                      {modelLabel(byId(models, asset.modelId))}
-                    </span>
-                    <Chip accent="gray">{locationName(locations, asset.locationId)}</Chip>
-                  </button>
-                ))}
-                {uncovered.length > 6 && (
-                  <p className={cx('px-4 py-2 text-xs', t.textMuted)}>
-                    +{uncovered.length - 6} more with no agreement linked.
-                  </p>
-                )}
-                {uncovered.length === 0 && (
-                  <p className={cx('px-4 py-3 text-sm', t.textMuted)}>Every unit is covered by an agreement.</p>
-                )}
-              </div>
-            </Panel>
+      <PageBody width="max-w-6xl">
+        <div className="space-y-5">
+          {/* Not the stat strip this module used to open with: these are the
+              module's finding, priced, and the report IS this screen. */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            <ExposureTile label="Total exposure" value={fmtMoney(totals.exposure)} accent="amber" icon={Scale}
+              hint="Unlicensed use plus spend on seats nobody holds" />
+            <ExposureTile label="Unlicensed use" value={fmtMoney(totals.risk)} accent="red" icon={ShieldAlert}
+              hint={`${overs.length} products deployed beyond entitlement`} />
+            <ExposureTile label="Reclaimable" value={fmtMoney(totals.reclaim)} accent="emerald" icon={TrendingDown}
+              hint={`${unders.length} products with idle seats`} />
+            <ExposureTile label="Annual licence spend" value={fmtMoney(totals.spend)} accent="lime" icon={CircleDollarSign}
+              hint={`${licenses.length} products · ${totals.unpapered} with no contract on file`} />
           </div>
-        </Section>
-      </div>
-    </PageBody>
+
+          <Banner accent="blue" icon={AlertCircle} title="How a position is decided">
+            Position is seats owned minus seats allocated. Over by any amount is{' '}
+            <strong className={t.text}>over-deployed</strong> — a vendor audit prices that at list. Idle seats
+            count as <strong className={t.text}>under-used</strong> only when they are at least 3 seats AND at
+            least 20% of the entitlement, so a licence with one spare seat does not cry wolf. Site licences have
+            no seat position at all and are excluded from both figures.
+          </Banner>
+
+          {overs.length > 0 && (
+            <Section title="Over-deployed — fix or buy up" hint="Deployment exceeds what was bought. This is the number an audit bills.">
+              <div className="grid sm:grid-cols-2 gap-2">
+                {overs.map(({ lic, pos, contract }) => (
+                  <FindingCard key={lic.id} license={lic} position={pos} contract={contract} hue="red"
+                    action={`Reclaim ${Math.abs(pos.delta)} allocations, or add ${Math.abs(pos.delta)} seats at ${fmtMoney(lic.costPerSeat)} each.`} />
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {unders.length > 0 && (
+            <Section title="Under-used — money already spent" hint="Seats paid for that nobody holds. Cut them at the next renewal.">
+              <div className="grid sm:grid-cols-2 gap-2">
+                {unders.map(({ lic, pos, contract }) => (
+                  <FindingCard key={lic.id} license={lic} position={pos} contract={contract} hue="amber"
+                    action={`Drop to ${pos.assigned} seats at renewal and save ${fmtMoney(pos.exposure)} a year.`} />
+                ))}
+              </div>
+            </Section>
+          )}
+
+          <Section title="Licence position by product" hint="Every licensed product, worst exposure first.">
+            <Card className="overflow-x-auto">
+              <table className="w-full text-left text-sm min-w-[52rem]">
+                <thead>
+                  <tr className={cx('border-b', t.border)}>
+                    {['Product', 'Model', 'Owned', 'Allocated', 'Position', 'Per seat', 'Exposure', 'Renews'].map(h => (
+                      <th key={h} className={cx('px-3 py-2 text-[11px] font-semibold uppercase tracking-wider', t.textMuted)}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ lic, pos, contract }) => (
+                    <tr key={lic.id} className={cx('border-b last:border-0 cursor-pointer', t.borderLight, t.bgHover)}
+                      onClick={() => navigate('assets', 'software', lic.id)}>
+                      <td className="px-3 py-2">
+                        <p className={cx('font-medium truncate', t.text)}>{lic.product}</p>
+                        <p className={cx('text-xs truncate', t.textMuted)}>
+                          {lic.vendor}{contract ? '' : ' · no contract on file'}
+                        </p>
+                      </td>
+                      <td className={cx('px-3 py-2 text-xs', t.textSecondary)}>{LICENSE_MODEL[lic.licenseModel]?.label}</td>
+                      <td className={cx('px-3 py-2 tabular-nums', t.text)}>{lic.seatsOwned ?? '∞'}</td>
+                      <td className={cx('px-3 py-2 tabular-nums', t.text)}>{pos.assigned}</td>
+                      <td className="px-3 py-2"><PositionChip position={pos} /></td>
+                      <td className={cx('px-3 py-2 tabular-nums', t.textSecondary)}>{fmtMoney(lic.costPerSeat)}</td>
+                      <td className={cx('px-3 py-2 tabular-nums font-medium',
+                        pos.exposure > 0 ? a(POSITION[pos.key].hue).fg : t.textMuted)}>
+                        {pos.exposure > 0 ? fmtMoney(pos.exposure) : '—'}
+                      </td>
+                      <td className={cx('px-3 py-2 text-xs whitespace-nowrap', t.textSecondary)}>{fmtDate(lic.renewalDate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          </Section>
+
+          <Section title="Hardware cover" hint="The same question asked of physical kit: what is running with no warranty and no contract behind it?">
+            <div className="grid sm:grid-cols-2 gap-2">
+              <Panel icon={ShieldAlert} accent="red" title="Out of warranty"
+                subtitle={`${outOfWarranty.length} units still in service`}>
+                <div className={cx('divide-y', t.borderLight)}>
+                  {outOfWarranty.slice(0, 6).map(asset => (
+                    <button key={asset.id} onClick={() => navigate('assets', 'hardware', asset.id)}
+                      className={cx('w-full flex items-center gap-3 px-4 py-2 text-left', t.bgHover)}>
+                      <span className={cx('text-sm font-mono', t.text)}>{asset.assetTag}</span>
+                      <span className={cx('flex-1 text-xs truncate', t.textMuted)}>
+                        {modelLabel(byId(models, asset.modelId))}
+                      </span>
+                      <Chip accent="red">{Math.abs(daysUntil(asset.warrantyExpires))}d over</Chip>
+                    </button>
+                  ))}
+                  {outOfWarranty.length > 6 && (
+                    <p className={cx('px-4 py-2 text-xs', t.textMuted)}>
+                      +{outOfWarranty.length - 6} more out of warranty — open the Hardware tab and filter on
+                      warranty to see them all.
+                    </p>
+                  )}
+                  {outOfWarranty.length === 0 && (
+                    <p className={cx('px-4 py-3 text-sm', t.textMuted)}>Everything in service is inside its warranty.</p>
+                  )}
+                </div>
+              </Panel>
+
+              <Panel icon={FileSignature} accent="amber" title="No maintenance contract"
+                subtitle={`${uncovered.length} units with no agreement linked`}>
+                <div className={cx('divide-y', t.borderLight)}>
+                  {uncovered.slice(0, 6).map(asset => (
+                    <button key={asset.id} onClick={() => navigate('assets', 'hardware', asset.id)}
+                      className={cx('w-full flex items-center gap-3 px-4 py-2 text-left', t.bgHover)}>
+                      <span className={cx('text-sm font-mono', t.text)}>{asset.assetTag}</span>
+                      <span className={cx('flex-1 text-xs truncate', t.textMuted)}>
+                        {modelLabel(byId(models, asset.modelId))}
+                      </span>
+                      <Chip accent="gray">{locationName(locations, asset.locationId)}</Chip>
+                    </button>
+                  ))}
+                  {uncovered.length > 6 && (
+                    <p className={cx('px-4 py-2 text-xs', t.textMuted)}>
+                      +{uncovered.length - 6} more with no agreement linked.
+                    </p>
+                  )}
+                  {uncovered.length === 0 && (
+                    <p className={cx('px-4 py-3 text-sm', t.textMuted)}>Every unit is covered by an agreement.</p>
+                  )}
+                </div>
+              </Panel>
+            </div>
+          </Section>
+        </div>
+      </PageBody>
+    </>
   );
 }
 

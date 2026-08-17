@@ -7,10 +7,11 @@ import {
 import {
   useTheme, cx, ICON, DENSITY, ENTITIES, entityHue, tint,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag, Avatar,
-  EmptyState, Card, Panel, GroupLabel, Stat, Banner, Divider,
+  EmptyState, Card, Panel, GroupLabel, Stat, Banner,
   Field, Input, Select, SearchInput, TileGroup,
   Modal, ConfirmDelete,
-  SubTabs, PageHeader, Toolbar, PageBody, Breadcrumbs,
+  PageBody, Breadcrumbs,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, setCollection, addTo, uid, nowISO } from '@/store/store.js';
 import { useRoute, navigate } from '@/lib/router.js';
@@ -56,12 +57,6 @@ const AUDIENCE = {
 const AUDIENCE_TILES = [AUDIENCE.internal, AUDIENCE.external, AUDIENCE.both].map(a => ({
   value: a.value, label: a.label, icon: a.icon, hint: a.hint, accent: a.hue,
 }));
-
-const AUDIENCE_FILTERS = [
-  { value: 'all',      label: 'All',       icon: Package,   accent: 'amber' },
-  { value: 'internal', label: 'Internal',  icon: Building2, accent: 'slate' },
-  { value: 'external', label: 'Customers', icon: Globe,     accent: 'green' },
-];
 
 function audienceMeta(value) {
   return AUDIENCE[value] || AUDIENCE.internal;
@@ -177,26 +172,35 @@ function copyNode(node, suffix = ' (Copy)') {
   return clone;
 }
 
-function matchesAudience(node, filter) {
-  if (filter === 'all') return true;
-  const value = node.audience || 'internal';
-  return value === 'both' || value === filter;
+/**
+ * What an ITEM carries. A list, not a single value, because an item can hold a
+ * knowledge atom AND a request form — and the filter has to be able to say so.
+ */
+function contentOf(node) {
+  const out = [];
+  if ((node.knowledgeIds || []).length) out.push('knowledge');
+  if ((node.subformIds || []).length) out.push('form');
+  return out.length ? out : ['none'];
+}
+
+/** Whether any asset record points at this item. */
+function assetLinkOf(node, assets) {
+  return (assets || []).some(a => (a.catalogItemIds || []).includes(node.id)) ? 'linked' : 'unlinked';
 }
 
 /**
  * Keep a node when it matches, or when any descendant does — and keep the whole
  * subtree of a node that matches the TEXT, because searching “Storefront” should
- * reveal what is under Storefront. Audience is never relaxed that way: a node
- * hidden from customers stays hidden even when its parent matched.
+ * reveal what is under Storefront. The FILTERS are never relaxed that way: a node
+ * hidden from customers stays hidden even when its parent matched the search.
  */
-function filterTree(nodes, query, audience) {
+function filterTree(nodes, query, matchNode) {
   const q = query.trim().toLowerCase();
   const out = [];
   for (const n of nodes || []) {
-    const audienceHit = matchesAudience(n, audience);
     const textHit = !q || `${n.name} ${n.description || ''}`.toLowerCase().includes(q);
-    const selfHit = textHit && audienceHit;
-    const children = filterTree(n.children, selfHit ? '' : query, audience);
+    const selfHit = textHit && matchNode(n);
+    const children = filterTree(n.children, textHit ? '' : query, matchNode);
     if (selfHit || children.length) out.push(n.children ? { ...n, children } : n);
   }
   return out;
@@ -235,8 +239,12 @@ export default function Catalog({ route }) {
   // spelling a person id into a view — those live in seed/ids.js.
   const currentUser = useStore(s => s.currentUser);
 
+  /* One header state: the multi-select filter values, the in-page query, and
+   * whether the tray is showing. The tray forces itself open whenever something
+   * is active, so a filter can never be on while its control is hidden. */
   const [query, setQuery] = useState('');
-  const [audience, setAudience] = useState('all');
+  const [filters, setFilters] = useState({});
+  const [trayOpen, setTrayOpen] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set((catalog || []).map(p => p.id)));
 
   // TWO rename states, never one. Tree row and detail header edit the same
@@ -412,42 +420,121 @@ export default function Catalog({ route }) {
     select(clone.id);
   }, [catalog, select]);
 
-  const visible = useMemo(() => filterTree(catalog, query, audience), [catalog, query, audience]);
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
+  const clearFilters = () => { setFilters({}); setQuery(''); setTrayOpen(false); };
+
+  /* Items are the leaves — the only nodes that carry content — so they are what
+   * the subtitle counts, what the search names as its scope, and what every
+   * option count is computed over. */
+  const allItems = useMemo(
+    () => flatten(catalog).filter(x => x.node.type === 'item').map(x => x.node),
+    [catalog],
+  );
+
+  /**
+   * Audience is asked of EVERY node; content and asset links are properties of
+   * items alone. So while an item filter is set a branch never matches directly —
+   * it survives only because a descendant item did, which is exactly what
+   * filterTree does with its children.
+   */
+  const matchNode = useCallback((node) => {
+    if (!passes(filters.audience, node.audience || 'internal')) return false;
+    const itemFilters = (filters.content?.length || 0) + (filters.assets?.length || 0);
+    if (node.type !== 'item') return itemFilters === 0;
+    if (!passes(filters.content, contentOf(node))) return false;
+    if (!passes(filters.assets, assetLinkOf(node, assets))) return false;
+    return true;
+  }, [filters, assets]);
+
+  const visible = useMemo(() => filterTree(catalog, query, matchNode), [catalog, query, matchNode]);
+  const shownItems = useMemo(
+    () => flatten(visible).filter(x => x.node.type === 'item').length,
+    [visible],
+  );
   const searching = query.trim().length > 0;
 
-  const totals = useMemo(() => {
-    const acc = { knowledge: new Set(), subforms: new Set(), gaps: 0, items: 0 };
-    for (const p of catalog || []) collectRefs(p, acc);
-    return acc;
-  }, [catalog]);
+  /* Counts are computed over the WHOLE catalog, not the filtered tree, so an
+   * option tells you how many items exist rather than how many survive the
+   * filters you have already set — the latter reads as options vanishing. */
+  const FILTER_DEFS = useMemo(() => {
+    const byAudience = optionCounts(allItems, n => n.audience || 'internal');
+    const byContent = optionCounts(allItems, n => contentOf(n));
+    const byAssets = optionCounts(allItems, n => assetLinkOf(n, assets));
+    return [
+      {
+        id: 'audience', label: 'Audience', icon: Users,
+        options: [AUDIENCE.internal, AUDIENCE.external, AUDIENCE.both].map(a => ({
+          value: a.value, label: a.label, count: byAudience.get(a.value) || 0,
+        })),
+      },
+      {
+        id: 'content', label: 'Content', icon: BookOpen,
+        options: [
+          { value: 'knowledge', label: 'Has knowledge',      count: byContent.get('knowledge') || 0 },
+          { value: 'form',      label: 'Has a request form', count: byContent.get('form') || 0 },
+          { value: 'none',      label: 'Has neither',        count: byContent.get('none') || 0 },
+        ],
+      },
+      {
+        id: 'assets', label: 'Linked assets', icon: Monitor,
+        options: [
+          { value: 'linked',   label: 'Linked',   count: byAssets.get('linked') || 0 },
+          { value: 'unlinked', label: 'Unlinked', count: byAssets.get('unlinked') || 0 },
+        ],
+      },
+    ];
+  }, [allItems, assets]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
+      <ModuleHeader
         icon={Package}
         module="catalog"
+        accent="amber"
         title="Products & Services"
-        subtitle={`${(catalog || []).length} products · ${totals.items} items · one catalog serving employees and customers`}
-        actions={<Button variant="grad" module="catalog" icon={Plus} onClick={addProduct}>New product</Button>}
-      >
-        <Toolbar>
-          <SubTabs items={AUDIENCE_FILTERS} value={audience} onChange={setAudience} />
-          <Divider vertical className="h-7" />
-          <Stat label="items" value={totals.items} accent="emerald" icon={Circle} />
-          <Stat label="knowledge atoms linked" value={totals.knowledge.size} accent="blue" icon={BookOpen} />
-          <Stat label="request forms linked" value={totals.subforms.size} accent="purple" icon={FileQuestion} />
-          <Stat label="items with no knowledge" value={totals.gaps} accent={totals.gaps ? 'amber' : 'gray'} icon={AlertCircle} />
-        </Toolbar>
-      </PageHeader>
+        /* The subtitle always tells the truth about what is on screen: the
+         * resting label when nothing narrows the tree, "9 of 40 shown" when
+         * something does. */
+        subtitle={subsetLabel(
+          shownItems,
+          allItems.length,
+          `${(catalog || []).length} products · ${allItems.length} items · one catalog serving employees and customers`,
+        )}
+        primary={<Button variant="grad" module="catalog" icon={Plus} onClick={addProduct}>New product</Button>}
+        tools={<>
+          {/* Names its own scope, so it can never be mistaken for the global
+              field in the bar above. It filters the TREE, as it always has. */}
+          <ScopedSearch
+            value={query}
+            onChange={setQuery}
+            scope={`${allItems.length} catalog items`}
+            accent="amber"
+          />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent="amber"
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray
+            open
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+          />
+        ) : null}
+      />
 
       <div className="flex-1 flex overflow-hidden min-h-0">
         <TreePane
           nodes={visible}
           expanded={expanded}
-          forceOpen={searching}
+          forceOpen={searching || activeFilters > 0}
           selectedId={selected?.id}
-          query={query}
-          onQuery={setQuery}
           onToggle={toggle}
           onSelect={select}
           onAddChild={addChild}
@@ -556,14 +643,15 @@ function cascadeNote(node) {
  * ==================================================================== */
 
 function TreePane({
-  nodes, expanded, forceOpen, selectedId, query, onQuery, onToggle, onSelect,
+  nodes, expanded, forceOpen, selectedId, onToggle, onSelect,
   onAddChild, onCopy, onImportInto, onDelete, editing, setEditing, onRename,
 }) {
   const { t } = useTheme();
   return (
     <aside className={cx('w-80 flex-shrink-0 flex flex-col overflow-hidden border-r', t.border, t.bgSidebar)}>
-      <div className={cx('p-3 border-b flex-shrink-0 space-y-2', t.border)}>
-        <SearchInput value={query} onChange={onQuery} placeholder="Filter the catalog…" accent="amber" />
+      {/* No second search box here: the header's scoped field is the one that
+          filters this tree, so there is only ever one place to type. */}
+      <div className={cx('p-3 border-b flex-shrink-0', t.border)}>
         <p className={cx('text-[11px]', t.textMuted)}>
           Product › Subcategory › Item. Items are leaves and hold the content.
         </p>
@@ -571,7 +659,7 @@ function TreePane({
 
       <div className="flex-1 overflow-auto p-2">
         {nodes.length === 0 ? (
-          <EmptyState icon={Search} title="Nothing matches" hint="Clear the filter or widen the audience." className="py-8" />
+          <EmptyState icon={Search} title="Nothing matches" hint="Clear the search, or a filter in the header." className="py-8" />
         ) : (
           nodes.map(node => (
             <TreeNode
