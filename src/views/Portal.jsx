@@ -801,6 +801,11 @@ export default function Portal({ route }) {
       cc: [],
       comments: [],
       links: [],
+      /* Same shape the seed and the agent workspace write, so a portal ticket is
+       * indistinguishable from one raised anywhere else — an absent field and a
+       * null one read differently in the SLA panel. */
+      slaPolicyId: null,
+      firstResponseAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -811,7 +816,7 @@ export default function Portal({ route }) {
      * The two catalogs differ here on purpose. A subform ATTACHES a policy whose
      * conditions decide whether it applies, so the help path asks the engine
      * first. A service item DECLARES that it needs sign-off — that is what the
-     * "Approval required" chip on the card promised — so naming a policy is the
+     * named-policy chip on the card promised — so naming a policy is the
      * condition, and it starts. */
     const policyId = svc?.approvalPolicyId || intake.approvalPolicyId || null;
     const policy = policyId ? (st.approvalPolicies || []).find(p => p.id === policyId) || null : null;
@@ -1268,22 +1273,31 @@ function PortalBar({
   const Brand = brandIcon;
   return (
     <header className={cx('flex-shrink-0 border-b relative z-30', t.border, t.bgSidebar)}>
-      <div className={cx(WIDE, 'h-16 flex items-center gap-3')}>
-        <button onClick={onHome} className="flex items-center gap-3 min-w-0 flex-shrink-0" aria-label="Back to the help centre">
+      {/* Chrome is NOT constrained to the reading width. Capping the header at
+          the content measure squeezed four tabs, a brand picker and an account
+          block into 1152px and clipped the tab row on a 1440px screen. The bar
+          spans the viewport; only the content below it is capped. */}
+      <div className="w-full px-5 h-16 flex items-center gap-3">
+        {/* The brand block must be allowed to SHRINK. Marking it flex-shrink-0
+            meant that once the tab row grew to four items the words could not
+            give way, so they ran underneath the tabs instead of truncating.
+            It shrinks and truncates now, and the mark never does. */}
+        <button onClick={onHome}
+          className="flex items-center gap-3 min-w-0 shrink basis-auto max-w-[15rem] mr-1"
+          aria-label="Back to the help centre">
           <span className={cx('w-9 h-9 rounded-xl flex items-center justify-center shadow-md flex-shrink-0',
             moduleGradient('portal', 'tile'))}>
             <Brand size={ICON.lg} className="text-white" />
           </span>
-          {/* The mark alone carries the brand until there is room for the words —
-              below this the centred tabs would run straight into them. */}
+          {/* The mark alone carries the brand until there is room for the words. */}
           <span className="min-w-0 text-left hidden xl:block">
             <span className={cx('block text-sm font-semibold leading-tight truncate', t.text)}>{orgName}</span>
             <span className={cx('block text-[11px] leading-tight truncate', t.textMuted)}>{form.name}</span>
           </span>
         </button>
 
-        <div className="flex-1 flex justify-center min-w-0">
-          <SubTabs items={tabs} value={tab} onChange={onTab} />
+        <div className="flex-1 flex justify-center min-w-0 overflow-x-auto">
+          <SubTabs items={tabs} value={tab} onChange={onTab} className="flex-shrink-0" />
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -1931,10 +1945,18 @@ function ServiceItemCard({ item, policy, onPick }) {
         <IconTile icon={Glyph} accent={hue} size="lg" />
         <span className="flex items-center gap-1.5 flex-wrap justify-end">
           {item.popular && <Chip accent="amber" icon={Sparkles}>Popular</Chip>}
-          {/* The chip carries the fact, not a count — and it appears BEFORE the
-              form, so nobody fills one in to discover it needs their director. */}
+          {/* The chip carries the VALUE — the policy that will run — not a count
+              and not a generic label, and it appears BEFORE the form so nobody
+              fills one in to discover it needs their director. The name only
+              falls back to the generic wording when the policy is missing. */}
           {item.approvalPolicyId && (
-            <Chip accent={entityHue('approval')} icon={Stamp} title={policy?.name || undefined}>Approval required</Chip>
+            <Chip
+              accent={entityHue('approval')}
+              icon={Stamp}
+              title={policy ? `Approval required — ${policy.name}` : 'Approval required'}
+            >
+              {policy?.name || 'Approval required'}
+            </Chip>
           )}
         </span>
       </span>
@@ -2131,7 +2153,7 @@ function LeafHelpItem({ item, trailText, atoms, forms, queues, policies, emphasi
               : 'If none of the above answered it, this goes straight to the team that owns it.'}
           />
           {emphasise && (
-            <Banner accent="rose" icon={MessageSquare} title="No problem — let's get a person on it" className="mb-3">
+            <Banner accent={entityHue('ticket')} icon={MessageSquare} title="No problem — let's get a person on it" className="mb-3">
               Pick the intake that fits. Everything you have already read is attached to the request, so nobody asks
               you to try it again.
             </Banner>
@@ -2314,7 +2336,7 @@ function LeafServiceItem({ item, categoryName, atoms, subform, queue, policy, on
       )}
 
       {item.assetModelId && (
-        <Banner accent="cyan" icon={Laptop} title="Ordering this provisions a real asset">
+        <Banner accent={entityHue('hardware')} icon={Laptop} title="Ordering this provisions a real asset">
           Fulfilment creates an asset record against your name, so the thing you were given and the request that asked
           for it stay attached to each other.
         </Banner>
@@ -2603,10 +2625,17 @@ function StoryPlayer({ atom }) {
     if (startedAt && Date.now() - startedAt > 300) return;
     step(dir);
   };
+  /* Pressing play after the run has finished starts it again from the top —
+   * otherwise the control is visible but inert on the last screen, which is
+   * worse than not offering it. */
+  const togglePlay = () => {
+    if (!playing && slides.length > 1 && index >= slides.length - 1) setIndex(0);
+    setPlaying(p => !p);
+  };
   const onKeyDown = (e) => {
     if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
-    else if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); setPlaying(p => !p); }
+    else if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); togglePlay(); }
   };
 
   const onImage = slide.type === 'image';
@@ -2674,7 +2703,7 @@ function StoryPlayer({ atom }) {
 
         <div className="absolute top-4 right-2 z-30 flex items-center gap-1">
           <button
-            onClick={() => setPlaying(p => !p)}
+            onClick={togglePlay}
             aria-label={playing ? 'Pause the guide' : 'Play the guide'}
             aria-pressed={!playing}
             className="p-1.5 rounded-full bg-black/50 text-white focus:outline-none focus-visible:bg-black/80"

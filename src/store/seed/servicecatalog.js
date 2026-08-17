@@ -367,6 +367,7 @@ export const SERVICE_ITEMS = [
   /* ---------------- Access & accounts — fulfilled by IT ---------------- */
   {
     id: SVC.APP_ACCESS,
+    grantsAccess: true,
     categoryId: SVCCAT.ACCESS,
     name: 'Access to an application',
     shortDescription: 'An account or a higher permission level in Salesforce, Workday, GitHub and the rest.',
@@ -390,6 +391,10 @@ export const SERVICE_ITEMS = [
   },
   {
     id: SVC.VPN_ACCESS,
+    // Free, but not low-risk: remote network access is signed off like any
+    // other privileged grant. Cost and risk are different axes.
+    approvalPolicyId: POL.ACCESS_GRANT,
+    grantsAccess: true,
     categoryId: SVCCAT.ACCESS,
     name: 'VPN access',
     shortDescription: 'Remote access to the internal network. Free, and no approval needed.',
@@ -409,6 +414,7 @@ export const SERVICE_ITEMS = [
   },
   {
     id: SVC.SHARED_MAILBOX,
+    grantsAccess: true,
     categoryId: SVCCAT.ACCESS,
     name: 'Shared mailbox',
     shortDescription: 'Create a team mailbox, or get added to one that already exists.',
@@ -429,6 +435,7 @@ export const SERVICE_ITEMS = [
   },
   {
     id: SVC.ELEVATED_ACCESS,
+    grantsAccess: true,
     categoryId: SVCCAT.ACCESS,
     name: 'Elevated access',
     shortDescription: 'Time-boxed admin rights for a specific piece of work. Granted within one day.',
@@ -494,6 +501,7 @@ export const SERVICE_ITEMS = [
   },
   {
     id: SVC.ROLE_CHANGE,
+    grantsAccess: true,
     categoryId: SVCCAT.PEOPLE,
     name: 'Role or team change',
     shortDescription: 'Move someone to a new manager, team or site and reset their access to match.',
@@ -555,6 +563,7 @@ export const SERVICE_ITEMS = [
   },
   {
     id: SVC.BUILDING_ACCESS,
+    grantsAccess: true,
     categoryId: SVCCAT.WORKPLACE,
     name: 'Building access',
     shortDescription: 'A badge for a site you do not normally work at, or out-of-hours access.',

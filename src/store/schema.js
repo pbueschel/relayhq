@@ -166,6 +166,11 @@
  * @property {string} subformId            the request form — an ordinary subform
  * @property {string[]} knowledgeIds       "before you order" help
  * @property {string} [approvalPolicyId]   what has to be signed off
+ * @property {boolean} [grantsAccess]      ordering this gives somebody access to
+ *   something. A property of the THING, not of one form's field — a shared
+ *   mailbox, elevated rights, a role change and a door badge are all access
+ *   grants, and they live in three different categories with three different
+ *   forms. Policies key on this rather than on a field one form happens to ask.
  * @property {string} fulfilmentQueueId    where the request lands
  * @property {number|null} price           one-off cost, null when free
  * @property {number|null} recurringPrice

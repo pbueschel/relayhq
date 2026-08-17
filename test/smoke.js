@@ -301,6 +301,64 @@ const multiPlaced = [...inCatalog.entries()].filter(([, places]) => places.lengt
 ok('some atoms appear under more than one catalog item (impossible in v1)',
   multiPlaced.length >= 3, `${multiPlaced.length} multi-placed`);
 
+/* ------------------------------------------------------------------ *
+ * A DECLARED APPROVAL MUST ACTUALLY FIRE.
+ *
+ * A service item carrying `approvalPolicyId` is a promise that ordering it
+ * needs a sign-off. Nothing enforced that promise, and 13 of 14 items were
+ * quietly ordering with no approval at all — two separate causes, both
+ * invisible: three intakes were forked copies of canonical subforms so
+ * policies keying on the original id never matched, and spend policies tested
+ * a MONTHLY figure against an annual threshold.
+ *
+ * A silently-skipped approval is the worst failure this product can have, so
+ * it is asserted rather than trusted. This is the service-catalog counterpart
+ * to Rule 0.
+ * ------------------------------------------------------------------ */
+
+const { matchingPolicies } = await import('../src/lib/approvals.js');
+const { serviceRequestContext } = await import('../src/lib/servicerequest.js');
+
+const deadApprovals = [];
+for (const item of seed.serviceItems || []) {
+  if (!item.approvalPolicyId) continue;
+
+  const form = (seed.subforms || []).find(f => f.id === item.subformId);
+  // Answer the form the way an ordinary requester would, so the context the
+  // policy sees is the one the portal will actually build.
+  const answers = { quantity: 1 };
+  for (const f of form?.fields || []) {
+    if (f.type === 'select' && f.options?.length) answers[f.id] = f.options[0];
+    if (/level/i.test(f.id) || /level/i.test(f.label || '')) answers.accessLevel = 'admin';
+  }
+
+  const ctx = serviceRequestContext(item, answers,
+    { id: 'usr-sam', department: 'Support' },
+    { directory: seed.directory, queues: seed.queues });
+
+  const matched = matchingPolicies(seed.approvalPolicies, ctx);
+  if (!matched.some(p => p.id === item.approvalPolicyId)) {
+    deadApprovals.push(`${item.id} declares ${item.approvalPolicyId} but it never matches`);
+  }
+}
+ok('every service item that declares an approval actually triggers it',
+  deadApprovals.length === 0, deadApprovals.slice(0, 6).join(' | '));
+
+/* Every referenced policy, queue and subform on a service item must resolve. */
+const policyIds = new Set((seed.approvalPolicies || []).map(p => p.id));
+const svcCategoryIds = new Set((seed.serviceCategories || []).map(c => c.id));
+const svcProblems = [];
+for (const item of seed.serviceItems || []) {
+  if (!svcCategoryIds.has(item.categoryId)) svcProblems.push(`${item.id}: dangling category ${item.categoryId}`);
+  if (!subformIds.has(item.subformId)) svcProblems.push(`${item.id}: dangling subform ${item.subformId}`);
+  if (!queueIds.has(item.fulfilmentQueueId)) svcProblems.push(`${item.id}: dangling queue ${item.fulfilmentQueueId}`);
+  if (item.approvalPolicyId && !policyIds.has(item.approvalPolicyId)) svcProblems.push(`${item.id}: dangling policy ${item.approvalPolicyId}`);
+  for (const k of item.knowledgeIds || []) {
+    if (!knowledgeIds.has(k)) svcProblems.push(`${item.id}: dangling knowledge ${k}`);
+  }
+}
+ok('service item references resolve', svcProblems.length === 0, svcProblems.slice(0, 6).join(' | '));
+
 /* Guides must carry alt text — an image-only how-to with no alt is unusable
  * with a screen reader, and this product's pitch is visual instruction. */
 const altProblems = [];

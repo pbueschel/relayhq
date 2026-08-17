@@ -18,7 +18,7 @@
  * Every approver spec is shaped for '@/lib/approvals.js'.
  */
 
-import { Q, USR, SF, CAT, POL, SLA, AUTO } from './ids.js';
+import { Q, USR, SF, CAT, POL, SLA, AUTO , SVCCAT } from './ids.js';
 
 /* ==================================================================== *
  * QUEUES
@@ -231,6 +231,10 @@ export const RULES = [
           rows: [
             { field: 'ticket.subformId', op: 'is', value: SF.REQUEST_ACCESS },
             { field: 'ticket.catalogItemId', op: 'is', value: CAT.I_MFA },
+            // Anything ordered out of the Access & Accounts service category.
+            // Keyed on the category so a new orderable access item inherits
+            // this policy without the policy being edited.
+            { field: 'ticket.serviceCategoryId', op: 'is', value: SVCCAT.ACCESS },
           ],
         },
       ],
@@ -416,8 +420,8 @@ export const APPROVAL_POLICIES = [
     appliesWhen: {
       match: 'all',
       rows: [
-        { field: 'answers.amount', op: 'gte', value: 500 },
-        { field: 'answers.amount', op: 'lt', value: 5000 },
+        { field: 'answers.annualAmount', op: 'gte', value: 500 },
+        { field: 'answers.annualAmount', op: 'lt', value: 5000 },
       ],
     },
     stages: [
@@ -442,7 +446,7 @@ export const APPROVAL_POLICIES = [
     appliesWhen: {
       match: 'all',
       rows: [
-        { field: 'answers.amount', op: 'gte', value: 5000 },
+        { field: 'answers.annualAmount', op: 'gte', value: 5000 },
       ],
     },
     stages: [
@@ -484,17 +488,35 @@ export const APPROVAL_POLICIES = [
     description: 'The system owner and the requester\'s manager both have to say yes. Read-only access never reaches this policy.',
     enabled: true,
     onReject: 'stop',
+    /**
+     * Two ways in, because access is requested through two different shapes.
+     *
+     * The help catalog asks for an access LEVEL on its form, so a write/admin
+     * answer on the access request form is the signal there. The service
+     * catalog has no such field on most of its intakes — a shared mailbox, a
+     * door badge and a role change are all access grants asked for in three
+     * different ways — so those declare `grantsAccess` on the ITEM instead.
+     *
+     * Requiring the form field for both is how four service items came to
+     * declare this policy and never trigger it.
+     */
     appliesWhen: {
-      match: 'all',
+      match: 'any',
       rows: [
-        { field: 'answers.accessLevel', op: 'is_one_of', value: ['write', 'admin'] },
         {
-          match: 'any',
+          match: 'all',
           rows: [
-            { field: 'ticket.subformId', op: 'is', value: SF.REQUEST_ACCESS },
-            { field: 'ticket.catalogItemId', op: 'is', value: CAT.I_MFA },
+            { field: 'answers.accessLevel', op: 'is_one_of', value: ['write', 'admin'] },
+            {
+              match: 'any',
+              rows: [
+                { field: 'ticket.subformId', op: 'is', value: SF.REQUEST_ACCESS },
+                { field: 'ticket.catalogItemId', op: 'is', value: CAT.I_MFA },
+              ],
+            },
           ],
         },
+        { field: 'ticket.grantsAccess', op: 'is_true' },
       ],
     },
     stages: [

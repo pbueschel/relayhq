@@ -98,6 +98,12 @@ export const FIELDS = [
   { id: 'ticket.labels',       label: 'Labels',           type: 'list',   group: 'Request' },
   { id: 'ticket.subformId',    label: 'Submitted form',   type: 'select', group: 'Request', optionsFrom: 'subforms' },
   { id: 'ticket.catalogItemId',label: 'Catalog item',     type: 'select', group: 'Request', optionsFrom: 'catalogItems' },
+  // Service-catalog provenance. Keying a policy on the CATEGORY rather than on
+  // one form id is what lets a new orderable item inherit the right approval
+  // without anybody editing the policy.
+  { id: 'ticket.serviceItemId',     label: 'Service item',     type: 'select', group: 'Request', optionsFrom: 'serviceItems' },
+  { id: 'ticket.serviceCategoryId', label: 'Service category', type: 'select', group: 'Request', optionsFrom: 'serviceCategories' },
+  { id: 'ticket.grantsAccess',      label: 'Grants access to something', type: 'bool', group: 'Request' },
 
   // requester
   { id: 'requester.department',label: 'Requester department', type: 'select', group: 'Requester', optionsFrom: 'departments' },
@@ -107,6 +113,14 @@ export const FIELDS = [
 
   // form answers — the field that makes threshold approvals possible
   { id: 'answers.amount',      label: 'Amount requested', type: 'number', group: 'Form answers' },
+  /**
+   * ANNUALISED spend. A $45/month seat is $540 a year, so a monthly figure
+   * tested against a $500 threshold silently declines every subscription —
+   * which is how three service-catalog items ended up ordering licences with
+   * no approval at all. Procurement thresholds are annual, so policies test
+   * this field and the request context computes it.
+   */
+  { id: 'answers.annualAmount',label: 'Annualised spend', type: 'number', group: 'Form answers' },
   { id: 'answers.quantity',    label: 'Quantity',         type: 'number', group: 'Form answers' },
   { id: 'answers.accessLevel', label: 'Access level',     type: 'select', group: 'Form answers', options: ['read', 'write', 'admin'] },
   { id: 'answers.startDate',   label: 'Start date',       type: 'date',   group: 'Form answers' },
