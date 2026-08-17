@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTheme, cx } from './ThemeContext.jsx';
-import { ICON, DENSITY } from './tokens.js';
+import { ICON, DENSITY, headWash, moduleGradient } from './tokens.js';
 import { IconTile } from './primitives.jsx';
 
 /* ==================================================================== *
@@ -123,15 +123,21 @@ export function ViewSwitcher({ items = [], value, onChange, className }) {
  * one product rather than a set of screens.
  * ==================================================================== */
 
-export function PageHeader({ icon: Icon, gradient, accent = 'purple', title, subtitle, actions, children, className }) {
-  const { t } = useTheme();
+export function PageHeader({
+  icon: Icon, gradient, module: moduleKey, accent = 'purple',
+  title, subtitle, actions, children, className,
+}) {
+  const { t, dark } = useTheme();
+  // v1 laid a vertical fade under every module header. It is subtle in light and
+  // does real work in dark, where it lifts the header off the near-black ground.
+  const tile = gradient || (moduleKey ? moduleGradient(moduleKey, 'tile') : null);
   return (
-    <div className={cx('px-6 py-3 border-b flex-shrink-0', t.border, className)}>
+    <div className={cx('px-6 py-3 border-b flex-shrink-0', t.border, headWash(dark), className)}>
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-3 min-w-0">
           {Icon && (
-            gradient
-              ? <span className={cx('w-9 h-9 rounded-xl flex items-center justify-center shadow-md flex-shrink-0', gradient)}>
+            tile
+              ? <span className={cx('w-9 h-9 rounded-xl flex items-center justify-center shadow-md flex-shrink-0', tile)}>
                   <Icon size={ICON.lg} className="text-white" />
                 </span>
               : <IconTile icon={Icon} accent={accent} size="lg" />

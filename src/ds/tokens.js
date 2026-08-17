@@ -385,8 +385,99 @@ export const GRADIENT = {
   brandBar: 'bg-gradient-to-r from-purple-500 to-amber-500',
   workspace: 'bg-gradient-to-br from-teal-500 to-cyan-500',
   workspaceBar: 'bg-gradient-to-r from-teal-500 to-cyan-500',
+  projects: 'bg-gradient-to-br from-violet-500 to-purple-500',
+  projectsBar: 'bg-gradient-to-r from-violet-500 to-purple-500',
   rules: 'bg-gradient-to-r from-rose-500 to-orange-500',
+  rulesBr: 'bg-gradient-to-br from-rose-500 to-orange-500',
   hardware: 'bg-gradient-to-r from-cyan-500 to-blue-500',
+  hardwareBr: 'bg-gradient-to-br from-cyan-500 to-blue-500',
   software: 'bg-gradient-to-r from-purple-500 to-pink-500',
+  learning: 'bg-gradient-to-br from-indigo-500 to-violet-500',
+  learningBar: 'bg-gradient-to-r from-indigo-500 to-violet-500',
   guide: 'bg-gradient-to-r from-purple-500 to-amber-500',
 };
+
+/**
+ * MODULE GRADIENT — which signature gradient a module owns.
+ *
+ * v1 assigned a gradient per area and used it for the module's header tile and
+ * its primary action. The rebuild kept the hue assignments but flattened the
+ * treatment, so this map exists to make the gradient a first-class role rather
+ * than something each view remembers to pass. `Button variant="grad"` and
+ * `PageHeader` both read it.
+ */
+export const MODULE_GRADIENT = {
+  workspace:   { tile: GRADIENT.workspace,  bar: GRADIENT.workspaceBar },
+  projects:    { tile: GRADIENT.projects,   bar: GRADIENT.projectsBar },
+  approvals:   { tile: GRADIENT.rulesBr,    bar: GRADIENT.rules },
+  changes:     { tile: GRADIENT.rulesBr,    bar: GRADIENT.rules },
+  problems:    { tile: GRADIENT.rulesBr,    bar: GRADIENT.rules },
+  catalog:     { tile: GRADIENT.brand,      bar: GRADIENT.brandBar },
+  knowledge:   { tile: GRADIENT.brand,      bar: GRADIENT.brandBar },
+  learning:    { tile: GRADIENT.learning,   bar: GRADIENT.learningBar },
+  forms:       { tile: GRADIENT.brand,      bar: GRADIENT.brandBar },
+  rules:       { tile: GRADIENT.rulesBr,    bar: GRADIENT.rules },
+  automations: { tile: GRADIENT.hardwareBr, bar: GRADIENT.hardware },
+  assets:      { tile: GRADIENT.hardwareBr, bar: GRADIENT.hardware },
+  portal:      { tile: GRADIENT.brand,      bar: GRADIENT.brandBar },
+  design:      { tile: GRADIENT.brand,      bar: GRADIENT.brandBar },
+};
+
+export function moduleGradient(key, role = 'tile') {
+  return (MODULE_GRADIENT[key] || MODULE_GRADIENT.catalog)[role];
+}
+
+/**
+ * ACTIVE TINT — the soft gradient behind a selected nav item or tree row.
+ *
+ * v1 used the `-100` pair in light mode and a `/20` alpha pair in dark, always
+ * with a matching border. Both spellings are literal here so Tailwind sees them.
+ */
+export const TINT = {
+  workspace: {
+    light: 'bg-gradient-to-r from-teal-100 to-cyan-100 border-teal-300',
+    dark:  'bg-gradient-to-r from-teal-500/20 to-cyan-500/20 border-teal-500/30',
+  },
+  projects: {
+    light: 'bg-gradient-to-r from-violet-100 to-purple-100 border-violet-300',
+    dark:  'bg-gradient-to-r from-violet-500/20 to-purple-500/20 border-violet-500/30',
+  },
+  catalog: {
+    light: 'bg-gradient-to-r from-purple-100 to-amber-100 border-purple-300',
+    dark:  'bg-gradient-to-r from-purple-500/20 to-amber-500/20 border-purple-500/30',
+  },
+  rules: {
+    light: 'bg-gradient-to-r from-rose-100 to-orange-100 border-rose-300',
+    dark:  'bg-gradient-to-r from-rose-500/20 to-orange-500/20 border-rose-500/30',
+  },
+  assets: {
+    light: 'bg-gradient-to-r from-cyan-100 to-blue-100 border-cyan-300',
+    dark:  'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-500/30',
+  },
+  learning: {
+    light: 'bg-gradient-to-r from-indigo-100 to-violet-100 border-indigo-300',
+    dark:  'bg-gradient-to-r from-indigo-500/20 to-violet-500/20 border-indigo-500/30',
+  },
+  knowledge: {
+    light: 'bg-gradient-to-r from-blue-100 to-indigo-100 border-blue-300',
+    dark:  'bg-gradient-to-r from-blue-500/20 to-indigo-500/20 border-blue-500/30',
+  },
+};
+
+export function tint(key, dark) {
+  const spec = TINT[key] || TINT.catalog;
+  return dark ? spec.dark : spec.light;
+}
+
+/**
+ * HEADER WASH — the vertical fade v1 laid under every module header.
+ * Subtle in light; in dark it lifts the header off the near-black ground.
+ */
+export const HEAD_WASH = {
+  light: 'bg-gradient-to-b from-gray-50 to-transparent',
+  dark:  'bg-gradient-to-b from-gray-900/60 to-transparent',
+};
+
+export function headWash(dark) {
+  return dark ? HEAD_WASH.dark : HEAD_WASH.light;
+}

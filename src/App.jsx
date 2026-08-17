@@ -4,7 +4,7 @@ import {
   GraduationCap, Workflow, Globe, Palette, GitBranch, AlertOctagon, Stamp,
   Moon, Sun, PanelLeftClose, PanelLeft, ChevronRight, Search, ChevronDown,
 } from 'lucide-react';
-import { useTheme, cx, ICON, GRADIENT } from '@/ds';
+import { useTheme, cx, ICON, GRADIENT, tint } from '@/ds';
 import { useRoute, navigate } from '@/lib/router.js';
 import { TopBar } from '@/components/TopBar.jsx';
 import { CommandPalette } from '@/components/CommandPalette.jsx';
@@ -48,40 +48,40 @@ export const NAV_GROUPS = [
   {
     label: 'Work',
     items: [
-      { id: 'workspace', label: 'My Workspace', icon: LayoutGrid, accent: 'teal' },
-      { id: 'projects',  label: 'Projects',     icon: Briefcase,  accent: 'violet' },
+      { id: 'workspace', label: 'My Workspace', icon: LayoutGrid, accent: 'teal', tint: 'workspace' },
+      { id: 'projects',  label: 'Projects',     icon: Briefcase,  accent: 'violet', tint: 'projects' },
     ],
   },
   {
     label: 'Service',
     items: [
-      { id: 'approvals', label: 'Approvals', icon: Stamp,         accent: 'amber' },
-      { id: 'changes',   label: 'Changes',   icon: GitBranch,     accent: 'orange' },
-      { id: 'problems',  label: 'Problems',  icon: AlertOctagon,  accent: 'fuchsia' },
+      { id: 'approvals', label: 'Approvals', icon: Stamp,         accent: 'amber', tint: 'rules' },
+      { id: 'changes',   label: 'Changes',   icon: GitBranch,     accent: 'orange', tint: 'rules' },
+      { id: 'problems',  label: 'Problems',  icon: AlertOctagon,  accent: 'fuchsia', tint: 'rules' },
     ],
   },
   {
     label: 'Content',
     items: [
-      { id: 'catalog',   label: 'Products & Services', icon: Package,        accent: 'amber' },
-      { id: 'knowledge', label: 'Knowledge',           icon: BookOpen,       accent: 'blue' },
-      { id: 'learning',  label: 'Learning',            icon: GraduationCap,  accent: 'indigo' },
-      { id: 'forms',     label: 'Forms',               icon: FileText,       accent: 'purple' },
+      { id: 'catalog',   label: 'Products & Services', icon: Package,        accent: 'amber', tint: 'catalog' },
+      { id: 'knowledge', label: 'Knowledge',           icon: BookOpen,       accent: 'blue', tint: 'knowledge' },
+      { id: 'learning',  label: 'Learning',            icon: GraduationCap,  accent: 'indigo', tint: 'learning' },
+      { id: 'forms',     label: 'Forms',               icon: FileText,       accent: 'purple', tint: 'catalog' },
     ],
   },
   {
     label: 'Configure',
     items: [
-      { id: 'rules',       label: 'Business Rules', icon: Filter,   accent: 'rose' },
-      { id: 'automations', label: 'Automations',    icon: Workflow, accent: 'sky' },
-      { id: 'assets',      label: 'Assets',         icon: Server,   accent: 'cyan' },
+      { id: 'rules',       label: 'Business Rules', icon: Filter,   accent: 'rose', tint: 'rules' },
+      { id: 'automations', label: 'Automations',    icon: Workflow, accent: 'sky', tint: 'assets' },
+      { id: 'assets',      label: 'Assets',         icon: Server,   accent: 'cyan', tint: 'assets' },
     ],
   },
   {
     label: 'Preview',
     items: [
-      { id: 'portal', label: 'Customer Portal', icon: Globe,   accent: 'purple' },
-      { id: 'design', label: 'Design System',   icon: Palette, accent: 'pink' },
+      { id: 'portal', label: 'Customer Portal', icon: Globe,   accent: 'purple', tint: 'catalog' },
+      { id: 'design', label: 'Design System',   icon: Palette, accent: 'pink', tint: 'catalog' },
     ],
   },
 ];
@@ -198,10 +198,10 @@ function Sidebar({ collapsed, setCollapsed, route, dark, toggle }) {
                     onClick={() => navigate(item.id)}
                     title={item.label}
                     aria-current={active ? 'page' : undefined}
-                    className={cx('w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors',
+                    className={cx('w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors border',
                       collapsed && 'justify-center',
-                      active ? cx(c.soft, c.borderStrong, 'border', t.text, 'font-medium')
-                             : cx('border border-transparent', t.textSecondary, t.bgHover))}
+                      active ? cx(tint(item.tint, dark), t.text, 'font-medium')
+                             : cx('border-transparent', t.textSecondary, t.bgHover))}
                   >
                     <Icon size={ICON.lg} className={cx('flex-shrink-0', active ? c.fg : '')} />
                     {!collapsed && <span className="truncate">{item.label}</span>}

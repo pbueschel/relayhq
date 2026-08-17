@@ -2,7 +2,7 @@ import React from 'react';
 import { useTheme, cx } from './ThemeContext.jsx';
 import {
   ICON, DENSITY, entityHue, statusMeta, priorityMeta,
-  avatarGradient, initials as toInitials, ENTITIES,
+  avatarGradient, initials as toInitials, ENTITIES, moduleGradient,
 } from './tokens.js';
 
 /* ==================================================================== *
@@ -25,6 +25,10 @@ export function Button({
   as: As = 'button',
   variant = 'soft',
   accent = 'gray',
+  /** Module key (workspace, catalog, rules…) — supplies the signature gradient for variant="grad". */
+  module: moduleKey,
+  /** Explicit gradient class, when a caller needs one the module map does not cover. */
+  gradient,
   size = 'md',
   icon: Icon,
   iconRight: IconRight,
@@ -36,8 +40,13 @@ export function Button({
   const { t, a } = useTheme();
   const c = a(accent);
 
+  // v1's primary actions were gradients, not flat fills. `grad` restores that;
+  // `solid` stays for secondary commits where a gradient would be noise.
+  const gradClass = gradient || moduleGradient(moduleKey || 'catalog', 'bar');
+
   const look =
-    variant === 'solid' ? cx(c.solid, c.solidHover, 'text-white shadow-sm')
+    variant === 'grad' ? cx(gradClass, 'text-white shadow-lg hover:brightness-105')
+    : variant === 'solid' ? cx(c.solid, c.solidHover, 'text-white shadow-sm')
     : variant === 'soft' ? cx(c.soft, c.softHover, c.fgOnSoft)
     : variant === 'outline' ? cx(t.bgCard, 'border', t.borderLight, t.textSecondary, t.bgHover)
     : /* ghost */ cx(t.bgHover, t.textSecondary);
