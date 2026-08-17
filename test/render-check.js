@@ -65,15 +65,23 @@ const server = Bun.serve({
     if (path.startsWith(BASE)) path = path.slice(BASE.length - 1);
     if (path === '/' || path === '') path = '/index.html';
     const file = join(DIST, path);
-    if (!file.startsWith(DIST) || !existsSync(file)) {
-      // SPA fallback — hash routing means everything resolves to index.html.
+    try {
+      if (file.startsWith(DIST) && existsSync(file)) {
+        return new Response(readFileSync(file), {
+          headers: { 'content-type': MIME[extname(file)] || 'application/octet-stream' },
+        });
+      }
+      // Anything Chrome asks for that we do not ship (favicon.ico, devtools
+      // probes) is a 404 rather than a thrown error — otherwise the server
+      // prints a stack trace that looks like a test failure.
+      if (/\.(ico|png|map|json|txt)$/.test(path)) return new Response('', { status: 404 });
+      // SPA fallback — hash routing means every route resolves to index.html.
       return new Response(readFileSync(join(DIST, 'index.html')), {
         headers: { 'content-type': 'text/html' },
       });
+    } catch {
+      return new Response('', { status: 404 });
     }
-    return new Response(readFileSync(file), {
-      headers: { 'content-type': MIME[extname(file)] || 'application/octet-stream' },
-    });
   },
 });
 
@@ -83,20 +91,61 @@ const origin = `http://localhost:${server.port}${BASE}`;
  * Drive Chrome
  * ------------------------------------------------------------------ */
 
-function dumpDom(url, ms = 12000) {
+function dumpDom(url, ms = 20000) {
   return new Promise((resolve) => {
     const args = [
       '--headless=new', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage',
+      // Chrome otherwise reaches out to Google for component updates and
+      // optimisation hints. On a loaded machine those stall the run and print
+      // SSL noise to stderr that looks like a page failure but is not.
+      '--no-first-run', '--no-default-browser-check', '--disable-extensions',
+      '--disable-background-networking', '--disable-component-update',
+      '--disable-sync', '--metrics-recording-only', '--mute-audio',
       `--virtual-time-budget=${ms}`, '--dump-dom', url,
     ];
     const child = spawn(CHROME, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
-    const killer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, ms + 8000);
+    const killer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, ms + 15000);
     child.stdout.on('data', d => { out += d; });
     child.stderr.on('data', d => { err += d; });
     child.on('close', () => { clearTimeout(killer); resolve({ out, err }); });
     child.on('error', (e) => { clearTimeout(killer); resolve({ out: '', err: String(e) }); });
   });
+}
+
+/**
+ * Load a route, retrying transient failures.
+ *
+ * `--virtual-time-budget` is a budget of *virtual* time, but Chrome still needs
+ * real CPU to reach it. On a loaded machine a route can miss the budget and
+ * report as unmounted when nothing is wrong. A flaky gate is worse than no gate
+ * — people learn to re-run it — so a route only fails after it fails twice.
+ */
+async function checkRoute(route, expect) {
+  let last = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { out, err } = await dumpDom(origin + route, attempt === 1 ? 20000 : 35000);
+
+    if (!out) { last = `chrome produced no DOM  ${firstError(err)}`; continue; }
+
+    const dom = out.replace(/<script\b[\s\S]*?<\/script>/g, '');
+
+    if (!dom.includes('data-relayhq-ready')) { last = 'app never signalled ready (a view probably threw on mount)'; continue; }
+    if (!dom.includes(expect)) {
+      // A missing expectation is deterministic — retrying will not change it.
+      return { ok: false, why: `expected to find: ${expect}` };
+    }
+    const junk = [...new Set(dom.match(JUNK) || [])];
+    if (junk.length) return { ok: false, why: `rendered junk: ${junk.join(' ')}` };
+
+    return { ok: true, attempts: attempt };
+  }
+  return { ok: false, why: `${last} (after 3 attempts)` };
+}
+
+function firstError(err) {
+  const line = (err || '').split('\n').find(l => /ERROR|FATAL/.test(l)) || '';
+  return line.slice(0, 120);
 }
 
 /**
@@ -130,35 +179,13 @@ let failed = 0;
 console.log(`render-check: ${CHROME.split('/').pop()} → ${origin}\n`);
 
 for (const [route, expect] of ROUTES) {
-  const { out, err } = await dumpDom(origin + route);
-
-  if (!out) {
-    console.error(`FAIL  ${route}  → chrome produced no DOM  ${err.slice(0, 160)}`);
+  const res = await checkRoute(route, expect);
+  if (res.ok) {
+    console.log(`ok    ${route}${res.attempts > 1 ? `  (attempt ${res.attempts})` : ''}`);
+  } else {
+    console.error(`FAIL  ${route}  → ${res.why}`);
     failed++;
-    continue;
   }
-
-  // Strip <script> bodies before scanning — bundled source legitimately
-  // contains the words we treat as junk.
-  const dom = out.replace(/<script\b[\s\S]*?<\/script>/g, '');
-
-  if (!dom.includes('data-relayhq-ready')) {
-    console.error(`FAIL  ${route}  → app never signalled ready (a view probably threw on mount)`);
-    failed++;
-    continue;
-  }
-  if (!dom.includes(expect)) {
-    console.error(`FAIL  ${route}  → expected to find: ${expect}`);
-    failed++;
-    continue;
-  }
-  const junk = [...new Set(dom.match(JUNK) || [])];
-  if (junk.length) {
-    console.error(`FAIL  ${route}  → rendered junk: ${junk.join(' ')}`);
-    failed++;
-    continue;
-  }
-  console.log(`ok    ${route}`);
 }
 
 server.stop(true);

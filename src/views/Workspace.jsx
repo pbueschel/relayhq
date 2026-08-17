@@ -2,19 +2,19 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   LayoutGrid, Inbox, CheckSquare, Stamp, GraduationCap, Layers, Plus, Filter,
   AlertTriangle, AlertCircle, Clock, ChevronDown, MessageSquare, Lock, Globe,
-  User, Building2, Mail, Phone, MessageCircle, Link2, GitBranch, AlertOctagon,
+  User, Building2, Mail, Phone, MessageCircle, GitBranch, AlertOctagon,
   Timer, Send, ListChecks, Heading1, List, ListOrdered, Quote, Minus, Users,
   Tag, Play, Crown, MapPin, ShieldCheck, Check, CornerDownRight, Briefcase,
-  MonitorSmartphone, Star, Pause, Trash2, X, Hash, Target, BookOpen,
+  MonitorSmartphone, Star, Pause, Trash2, X, Hash, Target,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, GRADIENT, LAYOUT, ENTITIES, STATUS, PRIORITY,
-  SLA_STATE, statusMeta, priorityMeta, entityHue,
-  Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, PriorityFlag,
-  EntityTag, Avatar, AvatarStack, EmptyState, Card, Panel, Section, GroupLabel,
+  useTheme, cx, ICON, DENSITY, GRADIENT, PRIORITY, STATUS,
+  SLA_STATE, statusMeta, priorityMeta,
+  Button, IconButton, Chip, ChipGroup, StatusPill, PriorityFlag,
+  EntityTag, Avatar, EmptyState, Card, Panel, Section, GroupLabel,
   ListRow, Stat, Banner, Divider,
-  Field, Input, Textarea, Checkbox, Toggle, TileGroup, SearchInput,
-  Modal, Menu, MenuItem, MenuLabel, MenuDivider, FilterPill,
+  Field, Input, Textarea, Checkbox, TileGroup, SearchInput,
+  Modal, Menu, MenuItem, MenuLabel, FilterPill,
   LensBar, SubTabs, PageHeader, Toolbar, PageBody,
 } from '@/ds';
 import { useStore, patchIn, addTo, uid, NOW } from '@/store/store.js';
@@ -103,6 +103,7 @@ const LINK_META = {
   change:   { label: 'Change',   accent: 'orange',  icon: GitBranch,    section: 'changes' },
   ticket:   { label: 'Ticket',   accent: 'rose',    icon: Inbox,        section: 'workspace' },
   approval: { label: 'Approval', accent: 'amber',   icon: Stamp,        section: 'approvals' },
+  task:     { label: 'Task',     accent: 'teal',    icon: CheckSquare,  section: 'workspace' },
 };
 
 const SLASH_BLOCKS = [
@@ -259,6 +260,35 @@ function slaBasisNote(sla) {
 }
 
 /* ==================================================================== *
+ * Status
+ *
+ * Projects define their OWN status columns (Backlog › Discovery › Build ›
+ * Validation › Signed off), so a workspace that only knew the global STATUS map
+ * would print raw ids like "signed_off" at the reader. Resolution order:
+ * the owning project's board first, the global map second.
+ * ==================================================================== */
+
+function statusInfoFor(status, project) {
+  const custom = (project?.statuses || []).find(s => s.id === status);
+  if (custom && !STATUS[status]) {
+    const raw = custom.group;
+    const group = raw === 'not_started' ? 'open'
+      : ['open', 'active', 'done', 'closed'].includes(raw) ? raw
+      : 'active';
+    return { key: status, label: custom.label || String(status), hue: custom.hue || 'gray', group, custom: true };
+  }
+  const meta = statusMeta(status);
+  return { key: status, label: meta.label, hue: meta.hue, group: meta.group, custom: !STATUS[status] };
+}
+
+/** StatusPill for a registered status, an accent Chip for a project's own. */
+function StatusBadge({ info }) {
+  if (!info) return null;
+  if (!info.custom) return <StatusPill status={info.key} />;
+  return <Chip accent={info.hue}>{info.label}</Chip>;
+}
+
+/* ==================================================================== *
  * People resolution — the internal directory AND the customer contact book.
  * ==================================================================== */
 
@@ -331,6 +361,7 @@ function ticketItem(ticket, data, now) {
       queue?.name,
     ]),
     status: ticket.status,
+    statusInfo: statusInfoFor(ticket.status, null),
     priority: ticket.priority,
     queueId: ticket.queueId,
     assigneeId: ticket.assigneeId || null,
@@ -457,6 +488,11 @@ function learningItem(enrollment, data, now) {
  * Search does not replace the others; it narrows whatever they left.
  * ==================================================================== */
 
+/** Tickets and tasks are "work in flight"; approvals and courses are not. */
+function isWorkKind(item) {
+  return item.kind === 'ticket' || item.kind === 'task' || item.kind === 'projectTask';
+}
+
 function passesView(item, view, meId) {
   if (view === 'all') return true;
   if (view === 'mine') {
@@ -468,11 +504,11 @@ function passesView(item, view, meId) {
   return true;
 }
 
-function passesQuick(item, quick, meId, request) {
+function passesQuick(item, quick, meId) {
   switch (quick) {
     case 'open': return item.kind === 'ticket' && statusMeta(item.status).group === 'open';
-    case 'in_progress': return statusMeta(item.status).group === 'active' && !item.done;
-    case 'my_approval': return item.kind === 'approval' && canDecide(request(item), meId);
+    case 'in_progress': return isWorkKind(item) && statusMeta(item.status).group === 'active' && !item.done;
+    case 'my_approval': return item.kind === 'approval' && canDecide(item.record, meId);
     case 'open_tasks': return (item.kind === 'task' || item.kind === 'projectTask') && !item.done;
     case 'overdue': return item.overdue;
     case 'total': return true;
@@ -529,7 +565,6 @@ export default function Workspace({ route }) {
     organizations: s.organizations,
     slaPolicies: s.slaPolicies,
     subforms: s.subforms,
-    catalog: s.catalog,
     problems: s.problems,
     changes: s.changes,
     locations: s.locations,
@@ -557,14 +592,6 @@ export default function Workspace({ route }) {
     return out;
   }, [data, now]);
 
-  const byId = useMemo(() => {
-    const map = new Map();
-    for (const item of items) map.set(`${item.kind}:${item.id}`, item);
-    return map;
-  }, [items]);
-
-  const requestOf = (item) => item.record;
-
   /* Everything except the lens — so the lens counts reflect the other filters. */
   const preLens = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -573,7 +600,7 @@ export default function Workspace({ route }) {
       if (queueIds.length && !queueIds.includes(item.queueId)) return false;
       if (statuses.length && !statuses.includes(item.status)) return false;
       if (priorities.length && !priorities.includes(item.priority)) return false;
-      if (quick && !passesQuick(item, quick, meId, requestOf)) return false;
+      if (quick && !passesQuick(item, quick, meId)) return false;
       if (needle && !item.searchText.includes(needle)) return false;
       return true;
     });
@@ -596,7 +623,7 @@ export default function Workspace({ route }) {
     const mine = items.filter(item => passesView(item, 'mine', meId));
     return {
       open: mine.filter(i => i.kind === 'ticket' && statusMeta(i.status).group === 'open').length,
-      in_progress: mine.filter(i => statusMeta(i.status).group === 'active' && !i.done).length,
+      in_progress: mine.filter(i => isWorkKind(i) && statusMeta(i.status).group === 'active' && !i.done).length,
       my_approval: (data.approvals || []).filter(r => canDecide(r, meId)).length,
       open_tasks: mine.filter(i => (i.kind === 'task' || i.kind === 'projectTask') && !i.done).length,
       overdue: mine.filter(i => i.overdue).length,
@@ -905,7 +932,6 @@ function NewMenu({ onCreate }) {
 function WorkRow({ item, data, meId, now, onOpen }) {
   const { t, a } = useTheme();
   const meta = KIND_META[item.kind];
-  const c = a(meta.accent);
   const due = relativeDay(item.due, now);
   const assignee = personName(data, item.assigneeId);
   const decidable = item.kind === 'approval' && canDecide(item.record, meId);
@@ -1185,7 +1211,7 @@ function SlaRow({ title, hours, clock, now }) {
   );
 }
 
-function SlaPanel({ sla, now }) {
+function SlaPanel({ sla, status, now }) {
   const { t } = useTheme();
   if (!sla) {
     return (
@@ -1217,8 +1243,8 @@ function SlaPanel({ sla, now }) {
       {sla.paused && (
         <div className="p-3">
           <Banner accent="slate" icon={Pause} title="Clock paused, not stopped">
-            The ticket is <strong className={t.text}>{statusMeta(sla.first.state === 'paused' ? 'pending' : 'pending').label}</strong> —
-            time waiting on the requester does not count against the target. It resumes the moment the status moves back.
+            The ticket is <strong className={t.text}>{statusMeta(status).label}</strong> — time spent waiting on somebody
+            outside the desk does not count against the target. It resumes the moment the status moves back.
           </Banner>
         </div>
       )}
@@ -1227,7 +1253,6 @@ function SlaPanel({ sla, now }) {
 }
 
 function LinkedItems({ links, data, onOpenTicket }) {
-  const { t } = useTheme();
   if (!links || !links.length) return null;
 
   const resolve = (link) => {
@@ -1235,6 +1260,7 @@ function LinkedItems({ links, data, onOpenTicket }) {
     if (link.type === 'change') return (data.changes || []).find(c => c.id === link.id);
     if (link.type === 'ticket') return (data.tickets || []).find(x => x.id === link.id);
     if (link.type === 'approval') return (data.approvals || []).find(x => x.id === link.id);
+    if (link.type === 'task') return (data.tasks || []).find(x => x.id === link.id);
     return null;
   };
 
@@ -1255,6 +1281,7 @@ function LinkedItems({ links, data, onOpenTicket }) {
               subtitle={joinDots([meta.label, keyLabel, record?.status ? statusMeta(record.status).label : null])}
               onClick={() => {
                 if (link.type === 'ticket') { onOpenTicket(link.id); return; }
+                if (link.type === 'task') { navigate('workspace', 'task', link.id); return; }
                 navigate(meta.section, link.type === 'approval' ? 'request' : 'detail', link.id);
               }}
               meta={record?.status ? <StatusPill status={record.status} /> : <Chip accent={meta.accent}>{meta.label}</Chip>}
@@ -1449,7 +1476,7 @@ function TicketModal({ ticket, data, meId, now, onClose }) {
       icon={Inbox}
       title={ticket.title}
       subtitle={joinDots([ticket.key, queue?.name || 'General queue', `opened ${fmtStamp(ticket.createdAt, now)}`])}
-      bodyClassName="flex-1 overflow-auto min-h-0"
+      bodyClassName="p-0"
       footer={
         <>
           <div className="flex items-center gap-2 min-w-0">
@@ -1546,7 +1573,7 @@ function TicketModal({ ticket, data, meId, now, onClose }) {
           </Card>
         </Section>
 
-        <SlaPanel sla={sla} now={now} />
+        <SlaPanel sla={sla} status={ticket.status} now={now} />
 
         <LinkedItems links={ticket.links} data={data} onOpenTicket={(id) => navigate('workspace', 'ticket', id)} />
 
@@ -1661,52 +1688,58 @@ function Markup({ text, accent = 'teal' }) {
  * choosing a block replaces the slash with its markup token. Borrowed straight
  * from Notion, because that interaction is already in everybody's fingers.
  */
-function SlashEditor({ value, onChange, accent = 'teal', placeholder, rows = 8 }) {
+function SlashEditor({ value, onChange, accent = 'teal', placeholder, rows = 6 }) {
   const { t } = useTheme();
-  const ref = useRef(null);
+  // The DS Textarea does not expose a ref, and reaching for one would mean
+  // adding a primitive. Holding the wrapper and querying it keeps the design
+  // system's surface unchanged.
+  const wrapRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [caret, setCaret] = useState(0);
 
   const handleChange = (e) => {
     const next = e.target.value;
-    const caret = e.target.selectionStart || 0;
+    const pos = e.target.selectionStart || 0;
     const grew = next.length === String(value || '').length + 1;
-    const typedSlash = grew && next[caret - 1] === '/';
-    const atLineStart = caret === 1 || next[caret - 2] === '\n';
+    const typedSlash = grew && next[pos - 1] === '/';
+    const atLineStart = pos === 1 || next[pos - 2] === '\n';
+    setCaret(pos);
     onChange(next);
     setMenuOpen(!!(typedSlash && atLineStart));
   };
 
   const insert = (token) => {
-    const el = ref.current;
+    const el = wrapRef.current ? wrapRef.current.querySelector('textarea') : null;
     const text = String(value || '');
-    const caret = el ? (el.selectionStart || text.length) : text.length;
-    const before = text.slice(0, Math.max(0, caret - 1));
-    const after = text.slice(caret);
+    const pos = el ? (el.selectionStart || caret) : caret;
+    const before = text.slice(0, Math.max(0, pos - 1));
+    const after = text.slice(pos);
     onChange(before + token + after);
     setMenuOpen(false);
     window.requestAnimationFrame(() => {
       if (!el) return;
       el.focus();
-      const pos = before.length + token.length;
-      el.setSelectionRange(pos, pos);
+      const next = before.length + token.length;
+      el.setSelectionRange(next, next);
     });
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapRef}>
       <Textarea
-        ref={ref}
         rows={rows}
         accent={accent}
         value={value}
         onChange={handleChange}
+        onKeyUp={(e) => setCaret(e.target.selectionStart || 0)}
+        onClick={(e) => setCaret(e.target.selectionStart || 0)}
         placeholder={placeholder || 'Type / for headings, bullets, to-dos, quotes and dividers…'}
         className="font-mono text-xs"
       />
       <p className={cx('text-[11px] mt-1', t.textMuted)}>
         Type <span className={cx('font-mono px-1 rounded', t.bgSubtle, t.text)}>/</span> at the start of a line for the block menu.
       </p>
-      <Menu open={menuOpen} onClose={() => setMenuOpen(false)} width="w-64" className="top-8">
+      <Menu open={menuOpen} onClose={() => setMenuOpen(false)} width="w-64">
         <MenuLabel>Insert a block</MenuLabel>
         {SLASH_BLOCKS.map(block => (
           <MenuItem
@@ -1881,7 +1914,7 @@ function TaskModal({ task, data, meId, now, onClose }) {
         project ? (project.name || project.title) : 'Personal',
         due ? `due ${relativeDay(due, now)}` : 'no due date',
       ])}
-      bodyClassName="flex-1 overflow-auto min-h-0"
+      bodyClassName="p-0"
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>

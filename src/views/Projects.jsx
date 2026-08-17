@@ -2,13 +2,13 @@ import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import {
   Briefcase, Plus, ChevronRight, ChevronDown, ChevronLeft, List, LayoutGrid,
   SquareKanban, Calendar, ChartGantt, Circle, CircleCheck, Flag, User, Users,
-  Settings2, Trash2, Check, X, Link2, Clock, Timer, ListChecks, CornerDownRight,
+  Settings2, Trash2, Check, X, Link2, ListChecks, CornerDownRight,
   TriangleAlert, CircleAlert, Columns3, GripVertical, Hash, Type, DollarSign,
-  ToggleRight, CalendarClock, Eye, BookMarked, GraduationCap, Layers, Search,
+  ToggleRight, CalendarClock, Eye, BookMarked, GraduationCap, Layers,
   Sparkles, MoreHorizontal, ArrowRight,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, ENTITIES, PRIORITY, priorityMeta,
+  useTheme, cx, ICON, DENSITY, LAYOUT, ENTITIES, PRIORITY, priorityMeta,
   Button, IconButton, IconTile, Chip, ChipGroup, PriorityFlag, EntityTag,
   Avatar, AvatarStack, EmptyState, Card, GroupLabel, Stat, Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, Toggle, SearchInput,
@@ -705,13 +705,13 @@ function CustomChip({ field, value, people }) {
  * Landing — the project list
  * ==================================================================== */
 
-export default function Projects() {
-  const route = useRoute();
+export default function Projects({ route: routeProp }) {
+  const liveRoute = useRoute();
+  const route = routeProp || liveRoute;
   const projects = useStore(s => s.projects);
   const tasks = useStore(s => s.tasks);
   const people = useStore(s => s.directory);
   const currentUser = useStore(s => s.currentUser);
-  const courses = useStore(s => s.courses);
   const curricula = useStore(s => s.curricula);
 
   const [openTaskId, setOpenTaskId] = useState(null);
@@ -731,7 +731,6 @@ export default function Projects() {
           view={route.id || 'list'}
           tasks={tasks || []}
           people={people || []}
-          courses={courses || []}
           curricula={curricula || []}
           onOpenTask={openTask}
         />
@@ -878,7 +877,9 @@ function ProjectRow({ project, tasks, people, expanded, onToggle, onOpenTask }) 
   const dueOver = project.dueDate && toDay(project.dueDate) < TODAY && prog.pct < 100;
 
   return (
-    <Card className="overflow-hidden">
+    // @container, not a viewport breakpoint: the row condenses off its OWN width,
+    // so it stays correct when the sidebar expands or the pane narrows.
+    <Card className="overflow-hidden @container">
       <div className={cx('flex items-center gap-3', DENSITY.rowPad)}>
         <span className={cx('w-1 self-stretch min-h-10 rounded-full flex-shrink-0', c.rail)} />
         <button
@@ -905,17 +906,17 @@ function ProjectRow({ project, tasks, people, expanded, onToggle, onOpenTask }) 
           <p className={cx('text-xs truncate', t.textMuted)}>{project.description}</p>
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 w-40 flex-shrink-0">
+        <div className="hidden @2xl:flex items-center gap-2 w-40 flex-shrink-0">
           <ProgressBar pct={prog.pct} hue={hue} className="flex-1" />
           <span className={cx('text-xs tabular-nums w-8 text-right', t.textSecondary)}>{prog.pct}%</span>
         </div>
 
-        <div className={cx('hidden md:block text-xs tabular-nums w-24 text-right flex-shrink-0', t.textMuted)}>
+        <div className={cx('hidden @4xl:block text-xs tabular-nums w-24 text-right flex-shrink-0', t.textMuted)}>
           {prog.done}/{prog.total} done
           {overdue > 0 && <span className={cx('block font-medium', a('red').fg)}>{overdue} overdue</span>}
         </div>
 
-        <div className="flex-shrink-0"><AvatarStack names={memberNames} max={4} size="sm" /></div>
+        <div className="hidden @lg:block flex-shrink-0"><AvatarStack names={memberNames} max={4} size="sm" /></div>
 
         <div className="w-24 flex-shrink-0 text-right">
           <DueDateLabel value={project.dueDate} overdue={dueOver} />
@@ -1103,6 +1104,13 @@ function patchTask(id, patch) {
   patchIn('tasks', id, { ...patch, updatedAt: dayKey(TODAY) });
 }
 
+/** Status changes carry the completion stamp with them, wherever they are made. */
+function setStatus(project, task, statusId) {
+  const meta = statusMetaOf(project, statusId);
+  const finished = meta.group === 'done' || meta.group === 'closed';
+  patchTask(task.id, { status: statusId, completedAt: finished ? (task.completedAt || dayKey(TODAY)) : null });
+}
+
 function patchField(task, fieldId, value) {
   const fields = { ...(task.fields || {}) };
   if (value == null || value === '') delete fields[fieldId];
@@ -1114,7 +1122,7 @@ function patchField(task, fieldId, value) {
  * Project workspace
  * ==================================================================== */
 
-function ProjectWorkspace({ project, view, tasks, people, courses, curricula, onOpenTask }) {
+function ProjectWorkspace({ project, view, tasks, people, curricula, onOpenTask }) {
   const { t } = useTheme();
   const [groupBy, setGroupBy] = useState('status');
   const [query, setQuery] = useState('');
@@ -1397,7 +1405,7 @@ function TaskListRow({ project, task, rows, people, columns, template, depth, sh
           }
           if (col.id === 'status') {
             return <StatusCell key={col.id} project={project} task={task}
-              onChange={(v) => patchTask(task.id, { status: v })} />;
+              onChange={(v) => setStatus(project, task, v)} />;
           }
           if (col.id === 'assignee') {
             return <AssigneeCell key={col.id} task={task} people={people} memberIds={memberIds}
@@ -1472,7 +1480,12 @@ function BoardView({ project, rows, topLevel, people, groupBy, onOpenTask, onAdd
       onOpenTask(d.taskId);
     } else if (d.over) {
       const target = groups.find(g => g.key === d.over);
-      if (target) patchTask(d.taskId, target.patch);
+      if (target) {
+        // Dropping into a Done/Closed column completes the task, exactly as the
+        // List view's completion toggle does — one behaviour, two entry points.
+        const finished = target.kind === 'status' && (target.group === 'done' || target.group === 'closed');
+        patchTask(d.taskId, { ...target.patch, ...(target.kind === 'status' ? { completedAt: finished ? dayKey(TODAY) : null } : {}) });
+      }
     }
     setDrag(null);
   };
@@ -1659,7 +1672,7 @@ function CalendarView({ project, rows, people, onOpenTask }) {
             const isToday = key === TODAY_KEY;
             return (
               <div key={key}
-                className={cx('min-h-24 border-b border-r p-1 last-in-row', t.borderLight,
+                className={cx('min-h-24 border-b border-r p-1', t.borderLight,
                   !inMonth && t.bgSubtle, (i + 1) % 7 === 0 && 'border-r-0')}>
                 <div className="flex items-center justify-between mb-1">
                   <span className={cx('text-[11px] tabular-nums w-5 h-5 rounded-full inline-flex items-center justify-center',
@@ -2034,7 +2047,7 @@ function TaskModal({ taskId, onClose, onOpenTask }) {
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <Field label="Status">
-              <Select accent={hue} value={task.status} onChange={(e) => patchTask(task.id, { status: e.target.value })}
+              <Select accent={hue} value={task.status} onChange={(e) => setStatus(project, task, e.target.value)}
                 options={(project.statuses || PERSONAL_STATUSES).map(s => ({ value: s.id, label: s.label }))} />
             </Field>
             <Field label="Assignee">
@@ -2263,7 +2276,7 @@ function DependencySection({ project, task, siblings, picker, setPicker, onOpenT
         icon={Link2}
         title={picker === 'waiting_on' ? 'This task is waiting on…' : 'This task blocks…'}
         subtitle="Pick a task in this project"
-        z="z-[110]"
+        z={LAYOUT.zNestedModal}
       >
         <div className="space-y-1 max-h-80 overflow-auto">
           {candidates.map(c => (
@@ -2457,7 +2470,7 @@ function SlashEditor({ value, onChange, onCommand, accent = HUE_PROJECT }) {
         <Sparkles size={ICON.xs} className={c.fg} />
         Type <code className={t.text}>/</code> at the start of a line for headings, lists, checklists, dependencies and milestone.
       </p>
-      <Menu open={open} onClose={() => setOpen(false)} width="w-72" className="top-auto bottom-14">
+      <Menu open={open} onClose={() => setOpen(false)} width="w-72">
         <MenuLabel>Commands</MenuLabel>
         {commands.map(cmd => (
           <MenuItem key={cmd.id} icon={cmd.icon} label={`/${cmd.id}`} hint={`${cmd.label} — ${cmd.hint}`}
@@ -2620,13 +2633,19 @@ function StatusSettings({ project, usage, onPatch }) {
               {list.map(s => (
                 <div key={s.id} className="flex items-center gap-2">
                   <span className={cx('w-2.5 h-2.5 rounded-full flex-shrink-0', a(s.hue).dot)} />
-                  <Input accent={HUE_PROJECT} value={s.label} className="flex-1"
-                    onChange={(e) => update(s.id, { label: e.target.value })} />
-                  <Select accent={HUE_PROJECT} value={s.hue} options={HUE_OPTIONS} className="w-32"
-                    onChange={(e) => update(s.id, { hue: e.target.value })} />
-                  <Select accent={HUE_PROJECT} value={s.group} options={STATUS_GROUP_OPTIONS} className="w-36"
-                    onChange={(e) => update(s.id, { group: e.target.value })} />
-                  <span className={cx('text-[11px] tabular-nums w-14 text-right', t.textMuted)}>
+                  <span className="flex-1 min-w-0">
+                    <Input accent={HUE_PROJECT} value={s.label}
+                      onChange={(e) => update(s.id, { label: e.target.value })} />
+                  </span>
+                  <span className="w-28 flex-shrink-0">
+                    <Select accent={HUE_PROJECT} value={s.hue} options={HUE_OPTIONS}
+                      onChange={(e) => update(s.id, { hue: e.target.value })} />
+                  </span>
+                  <span className="w-32 flex-shrink-0">
+                    <Select accent={HUE_PROJECT} value={s.group} options={STATUS_GROUP_OPTIONS}
+                      onChange={(e) => update(s.id, { group: e.target.value })} />
+                  </span>
+                  <span className={cx('text-[11px] tabular-nums w-14 text-right flex-shrink-0', t.textMuted)}>
                     {usage[s.id] || 0} tasks
                   </span>
                   <IconButton icon={Trash2} label="Delete status" accent="red"
@@ -2666,11 +2685,15 @@ function FieldSettings({ project, onPatch, onDelete }) {
           <Card key={f.id} className="p-3 space-y-2">
             <div className="flex items-center gap-2">
               <IconTile icon={FIELD_TYPE_ICON[f.type] || Type} accent={HUE_PROJECT} size="sm" />
-              <Input accent={HUE_PROJECT} value={f.label} className="flex-1"
-                onChange={(e) => update(f.id, { label: e.target.value })} />
-              <Select accent={HUE_PROJECT} value={f.type} className="w-36"
-                options={FIELD_TYPES.map(x => ({ value: x.value, label: x.label }))}
-                onChange={(e) => update(f.id, { type: e.target.value, options: e.target.value === 'select' ? (f.options || []) : undefined })} />
+              <span className="flex-1 min-w-0">
+                <Input accent={HUE_PROJECT} value={f.label}
+                  onChange={(e) => update(f.id, { label: e.target.value })} />
+              </span>
+              <span className="w-36 flex-shrink-0">
+                <Select accent={HUE_PROJECT} value={f.type}
+                  options={FIELD_TYPES.map(x => ({ value: x.value, label: x.label }))}
+                  onChange={(e) => update(f.id, { type: e.target.value, options: e.target.value === 'select' ? (f.options || []) : undefined })} />
+              </span>
               <IconButton icon={Trash2} label="Delete field" accent="red" onClick={() => onDelete(f)} />
             </div>
 
@@ -2680,10 +2703,14 @@ function FieldSettings({ project, onPatch, onDelete }) {
                 {(f.options || []).map(o => (
                   <div key={o.id} className="flex items-center gap-2">
                     <Chip accent={o.hue}>{o.label || 'Untitled'}</Chip>
-                    <Input accent={HUE_PROJECT} value={o.label} className="flex-1"
-                      onChange={(e) => update(f.id, { options: f.options.map(x => x.id === o.id ? { ...x, label: e.target.value } : x) })} />
-                    <Select accent={HUE_PROJECT} value={o.hue} options={HUE_OPTIONS} className="w-32"
-                      onChange={(e) => update(f.id, { options: f.options.map(x => x.id === o.id ? { ...x, hue: e.target.value } : x) })} />
+                    <span className="flex-1 min-w-0">
+                      <Input accent={HUE_PROJECT} value={o.label}
+                        onChange={(e) => update(f.id, { options: f.options.map(x => x.id === o.id ? { ...x, label: e.target.value } : x) })} />
+                    </span>
+                    <span className="w-28 flex-shrink-0">
+                      <Select accent={HUE_PROJECT} value={o.hue} options={HUE_OPTIONS}
+                        onChange={(e) => update(f.id, { options: f.options.map(x => x.id === o.id ? { ...x, hue: e.target.value } : x) })} />
+                    </span>
                     <IconButton icon={X} label="Remove option" accent="red"
                       onClick={() => update(f.id, { options: f.options.filter(x => x.id !== o.id) })} />
                   </div>

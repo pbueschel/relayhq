@@ -1122,6 +1122,14 @@ export const ENROLLMENTS = [
     passedQuizIds: ['quiz-co-standup'], currentLessonId: KB.CONNECT_PAYMENTS,
   }),
   enroll({
+    id: 'enr-owen-launch', learnerId: CON.OWEN, learnerKind: 'contact', courseId: CRS.CUSTOMER_ONBOARDING,
+    curriculumId: CUR.CUSTOMER_ADMIN, assignedById: USR.LISA,
+    status: 'passed', assignedAt: '2026-05-11', startedAt: '2026-05-13', dueAt: '2026-06-11', completedAt: '2026-06-02',
+    completedLessonIds: [KB.STOREFRONT_SETUP, KB.IMPORT_CATALOG, KB.CONNECT_PAYMENTS, KB.INVOICE_QUESTIONS],
+    passedQuizIds: ['quiz-co-standup', 'quiz-co-money'], score: 100, attempts: 1,
+    certified: true, certificateId: 'cert-owen-launch',
+  }),
+  enroll({
     id: 'enr-owen-admin', learnerId: CON.OWEN, learnerKind: 'contact', courseId: CRS.CUSTOMER_ADMIN,
     curriculumId: CUR.CUSTOMER_ADMIN, assignedById: USR.LISA,
     status: 'passed', assignedAt: '2026-06-08', startedAt: '2026-06-15', dueAt: '2026-07-17', completedAt: '2026-07-08',

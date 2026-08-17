@@ -645,7 +645,10 @@ export const TASKS = [
     watcherIds: [USR.LINDA], tags: ['it'],
     startDate: '2026-08-17', dueDate: '2026-09-02', completedAt: null,
     estimateHours: 16, timeSpentHours: 2, milestone: false,
-    dependencies: [], checklists: [],
+    // Declared from the blocking side. The move-day task never stores a mirror
+    // of this — the inverse is derived, so the two can never disagree.
+    dependencies: [{ type: 'blocks', taskId: 'tsk-mov-04' }],
+    checklists: [],
     fields: { [CF.MOV_VENDOR]: 'NorthLine Cabling', [CF.MOV_COST]: 21750, [CF.MOV_FLOOR]: 'f14', [CF.MOV_WALK]: '2026-08-20', [CF.MOV_PO]: false, [CF.MOV_CONTACT]: USR.EMMA },
     createdAt: '2026-07-30', updatedAt: '2026-08-15',
   },

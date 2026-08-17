@@ -4,13 +4,12 @@ import {
   Crosshair, Inbox, RefreshCw, Stamp, CalendarClock, GraduationCap, Clock, Webhook,
   MousePointerClick, GitBranch, Shuffle, Merge, Filter, Timer, Repeat, Flag, Tag, Bell,
   CheckSquare, Monitor, MessageSquare, Globe, Braces, Code, CircleSlash, StickyNote,
-  X, AlertCircle, Check, ChevronDown, ChevronUp, History, Zap, Layers, Circle,
-  Search, Split, Server,
+  X, AlertCircle, Check, ChevronDown, ChevronUp, History, Zap, Layers, Circle, Split,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, LAYOUT, statusMeta, priorityMeta,
+  useTheme, cx, ICON, DENSITY, statusMeta, priorityMeta,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag, Avatar,
-  EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat, Banner, Divider,
+  EmptyState, Card, Section, GroupLabel, ListRow, Stat, Banner,
   Field, Input, Textarea, Select, Checkbox, Toggle, SearchInput,
   Modal, ConfirmDelete, Menu, MenuItem, MenuDivider, MenuLabel,
   SubTabs, PageHeader, Toolbar, PageBody, Breadcrumbs,
@@ -18,7 +17,7 @@ import {
 import { useStore, patchIn, addTo, removeFrom, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
 import {
-  FIELDS, FIELD_BY_ID, ALL_OPERATORS, operatorsFor, operatorLabel, fieldLabel,
+  FIELDS, FIELD_BY_ID, OPERATORS, ALL_OPERATORS, operatorsFor, fieldLabel,
   isNullary, evaluate, summarize, readPath, defaultRowFor, emptyGroup, countRows,
 } from '@/lib/conditions.js';
 
@@ -1188,7 +1187,7 @@ function AutomationEditor({ automation, runs, lookup }) {
         id: uid('run'),
         automationId: automation.id,
         status: failedStep ? 'error' : 'success',
-        mode: run.partial ? 'manual' : 'manual',
+        mode: 'manual',
         trigger: run.partial ? 'Partial test run from a node' : 'Manual test run — Alex Rivera',
         startedAt: run.startedAt,
         durationMs: run.steps.reduce((n, s) => n + (s.ms || 0), 0),
@@ -1210,9 +1209,10 @@ function AutomationEditor({ automation, runs, lookup }) {
     const map = new Map();
     if (!run || !run.steps.length) return map;
     run.steps.forEach((s, i) => {
-      if (i < run.cursor) map.set(s.nodeId, s.status);
-      else if (i === run.cursor && run.playing) map.set(s.nodeId, 'running');
-      else map.set(s.nodeId, 'waiting');
+      const status = i < run.cursor ? s.status
+        : i === run.cursor && run.playing ? 'running'
+        : 'waiting';
+      map.set(s.nodeId, { status, ms: s.ms, items: s.items });
     });
     return map;
   }, [run]);
@@ -1280,6 +1280,7 @@ function AutomationEditor({ automation, runs, lookup }) {
       <div className="flex-1 flex min-h-0 min-w-0">
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           <Canvas
+            fitKey={automation.id}
             nodes={nodes}
             connections={connections}
             lookup={lookup}
@@ -1370,7 +1371,7 @@ function defaultConfigFor(type) {
  * ==================================================================== */
 
 function Canvas({
-  nodes, connections, lookup, selection, nodeStates, activeConnections,
+  fitKey, nodes, connections, lookup, selection, nodeStates, activeConnections,
   onSelect, onDragNode, onDragEnd, onConnect, onDeleteConnection, onDeleteNode,
   onDuplicateNode, onToggleNode, onRunFrom, onAddFromPort, onOpenPalette,
 }) {
@@ -1403,11 +1404,12 @@ function Canvas({
     setView({ z, x: (box.width - w * z) / 2 - minX * z, y: (box.height - h * z) / 2 - minY * z });
   }, [nodes]);
 
+  // Fit once per workflow. Refitting on every node move would fight the user
+  // mid-drag, so `fitKey` (the automation id) is the only trigger.
   useEffect(() => {
     const id = requestAnimationFrame(fit);
     return () => cancelAnimationFrame(id);
-    // Fit once per workflow — refitting on every node move would fight the user.
-  }, [nodes.length === 0]);
+  }, [fitKey]);
 
   const zoomBy = (factor) => {
     const box = rootRef.current?.getBoundingClientRect();
@@ -1598,7 +1600,7 @@ function Canvas({
             node={n}
             lookup={lookup}
             selected={selection.kind === 'node' && selection.id === n.id}
-            state={nodeStates.get(n.id)}
+            runState={nodeStates.get(n.id)}
             hoverPort={hoverPort}
             onPointerDown={(e) => beginNodeDrag(e, n)}
             onStartLink={(e, portId) => beginLink(e, n, portId)}
@@ -1639,12 +1641,15 @@ function Connector({ d, selected, active, onSelect }) {
   const tone = selected ? sky.fg : active ? emerald.fg : '';
   return (
     <g className={tone} style={!tone ? { color: t.canvasEdge } : undefined}>
+      {/* Fat transparent path = the hit area. `pointer-events: stroke` is not a
+          Tailwind utility, so it is set inline — a class here would compile to
+          nothing and the connection would be unclickable. */}
       <path
         d={d}
         stroke="transparent"
         strokeWidth="16"
         fill="none"
-        className="pointer-events-stroke cursor-pointer"
+        style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
         onPointerDown={(e) => { e.stopPropagation(); onSelect(); }}
       />
       <path d={d} stroke="currentColor" strokeWidth={selected || active ? 2.4 : 1.6} fill="none" />
@@ -1662,7 +1667,7 @@ function Connector({ d, selected, active, onSelect }) {
  * ==================================================================== */
 
 function FlowNode({
-  node, lookup, selected, state, hoverPort,
+  node, lookup, selected, runState, hoverPort,
   onPointerDown, onStartLink, onRunFrom, onToggle, onDuplicate, onDelete,
 }) {
   const { t, a } = useTheme();
@@ -1670,6 +1675,7 @@ function FlowNode({
   const cat = CATEGORIES[meta.category] || CATEGORIES.utility;
   const catColor = a(cat.hue);
   const sky = a('sky');
+  const state = runState?.status;
   const stateHue = state && state !== 'waiting' ? statusMeta(state).hue : null;
   const stateColor = stateHue ? a(stateHue) : null;
   const outs = outputsOf(node);
@@ -1763,24 +1769,26 @@ function FlowNode({
         );
       })}
 
-      {state && state !== 'waiting' && <NodeRunBadge state={state} node={node} />}
+      {state && state !== 'waiting' && <NodeRunBadge runState={runState} />}
     </div>
   );
 }
 
-function NodeRunBadge({ state, node }) {
+function NodeRunBadge({ runState }) {
   const { t, a } = useTheme();
-  const meta = statusMeta(state);
+  const meta = statusMeta(runState.status);
   const c = a(meta.hue);
-  const demo = node.demo || {};
+  const detailed = runState.status === 'success' || runState.status === 'error';
   return (
     <span
-      className={cx('absolute -bottom-6 left-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium',
+      className={cx('absolute -bottom-6 left-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium whitespace-nowrap',
         c.soft, c.fgOnSoft)}
     >
       <span className={cx('w-1.5 h-1.5 rounded-full', c.dot)} />
       {meta.label}
-      {state !== 'skipped' && demo.ms != null && <span className={t.textMuted}>· {fmtMs(demo.ms)}</span>}
+      {detailed && (
+        <span className={t.textMuted}>· {runState.items} items · {fmtMs(runState.ms)}</span>
+      )}
     </span>
   );
 }
@@ -1935,6 +1943,18 @@ function ConfigPanel({ node, step, lookup, onPatch, onConfig, onDelete, onOpenPa
         {node.disabled && (
           <Banner accent="amber" icon={AlertCircle}>
             A disabled node is skipped at run time and its items pass straight through to whatever it is connected to.
+          </Banner>
+        )}
+
+        {/* Never a silent default: if the system will do something implicit, say so. */}
+        {node.type === 'action.assignQueue' && !node.config?.queueId && (
+          <Banner accent="amber" icon={AlertCircle} title="No queue set">
+            Tickets leaving this node fall to the <strong className={t.text}>General</strong> queue and wait for human triage.
+          </Banner>
+        )}
+        {node.type === 'logic.switch' && node.config?.fallback === false && (
+          <Banner accent="amber" icon={AlertCircle} title="No fallback output">
+            Items matching none of the cases stop here and the branch ends without a trace. Turn the fallback on to catch them.
           </Banner>
         )}
 
@@ -2306,10 +2326,25 @@ function ConditionGroupEditor({ group, path, depth, onUpdate, onRemove, onAppend
   );
 }
 
+/**
+ * Automations can test paths the declared FIELDS catalogue does not carry —
+ * `answers.csatScore`, `sla.minutesToBreach` — because the item flowing through
+ * a workflow is richer than a ticket record. When the field is unknown we infer
+ * its type from the operator already on the row, so the operator picker offers
+ * the right family instead of silently resetting to text.
+ */
+function inferType(row, field) {
+  if (field?.type) return field.type;
+  for (const [type, ops] of Object.entries(OPERATORS)) {
+    if (ops.some(o => o.op === row.op)) return type;
+  }
+  return 'text';
+}
+
 function ConditionRowEditor({ row, path, onUpdate, onRemove }) {
   const { t } = useTheme();
   const field = FIELD_BY_ID[row.field];
-  const type = field?.type || 'text';
+  const type = inferType(row, field);
   const ops = operatorsFor(type);
   const opMeta = ALL_OPERATORS[row.op] || ops[0];
 

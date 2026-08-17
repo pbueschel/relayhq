@@ -3,8 +3,8 @@ import {
   Server, Monitor, Key, MapPin, FileSignature, Laptop, Smartphone, Printer,
   Network, Tablet, HardDrive, Package, PackageOpen, ArrowRightLeft, User,
   Building2, Warehouse, Home, AlertTriangle, AlertCircle, CalendarClock,
-  Scale, Trash2, ChevronRight, Plus, Wrench, Truck, History, ShieldCheck,
-  ShieldAlert, TrendingDown, Layers, Tag, FileText, Link2, Recycle, Gauge,
+  Scale, Trash2, ChevronRight, Plus, Wrench, History, ShieldCheck,
+  ShieldAlert, TrendingDown, Layers, Tag, Link2, Recycle, Gauge,
   CircleDollarSign, LogOut, LogIn, Users, Boxes,
 } from 'lucide-react';
 import {
@@ -631,7 +631,6 @@ function groupHardware(rows, group, { models, locations }) {
 }
 
 function HardwareRow({ asset, models, locations, directory, onOpen }) {
-  const { t } = useTheme();
   const model = byId(models, asset.modelId);
   const meta = categoryMeta(model?.category);
   const warranty = warrantyState(asset);
@@ -644,7 +643,11 @@ function HardwareRow({ asset, models, locations, directory, onOpen }) {
       onClick={onOpen}
       alert={asset.status === 'lost'}
       title={`${asset.assetTag} · ${modelLabel(model)}`}
-      subtitle={`S/N ${asset.serial}${owner.id ? ` · managed by ${personName(directory, owner.id)}` : ''}`}
+      subtitle={[
+        `S/N ${asset.serial}`,
+        asset.locationId ? locationName(locations, asset.locationId) : null,
+        owner.id ? `managed by ${personName(directory, owner.id)}` : null,
+      ].filter(Boolean).join(' · ')}
       meta={
         <>
           {warranty && warranty.key !== 'ok' && (
@@ -1050,7 +1053,6 @@ function MoveModal({ asset, mode, locations, directory, currentUser, onClose }) 
  * ------------------------------------------------------------------ */
 
 function SoftwareTab({ licenses, locations, contracts, directory, openId }) {
-  const { t } = useTheme();
   const [q, setQ] = useState('');
   const [position, setPosition] = useState('all');
   const [menu, setMenu] = useState(null);
@@ -1461,7 +1463,7 @@ function LocationBranch({ node, locations, counts, depth, collapsed, onToggle, o
             {direct.stock > 0 && <Chip accent="blue" icon={PackageOpen}>{direct.stock} in stock</Chip>}
             <span className={cx('text-xs tabular-nums text-right', t.textMuted)}>
               <span className={cx('block font-medium', t.text)}>{direct.here} here</span>
-              <span className="block">{rolled.total} with sites below</span>
+              {kids.length > 0 && <span className="block">{rolled.total} with sites below</span>}
             </span>
             <Chip accent="lime">{fmtMoney(rolled.value)}</Chip>
             {kids.length > 0 && (
@@ -1576,7 +1578,6 @@ function LocationDetail({ location, locations, assets, models, directory, counts
 }
 
 function MiniAssetRow({ asset, models, directory }) {
-  const { t } = useTheme();
   const model = byId(models, asset.modelId);
   const meta = categoryMeta(model?.category);
   return (
@@ -1817,7 +1818,7 @@ function ContractDetail({ contract, assets, models, directory, onClose }) {
  * ------------------------------------------------------------------ */
 
 function ComplianceTab({ licenses, hardware, models, contracts, locations }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
 
   const rows = useMemo(() => licenses
     .map(lic => ({ lic, pos: licensePosition(lic), contract: byId(contracts, lic.contractId) }))
@@ -1912,7 +1913,8 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations }) {
                     <td className={cx('px-3 py-2 tabular-nums', t.text)}>{pos.assigned}</td>
                     <td className="px-3 py-2"><PositionChip position={pos} /></td>
                     <td className={cx('px-3 py-2 tabular-nums', t.textSecondary)}>{fmtMoney(lic.costPerSeat)}</td>
-                    <td className={cx('px-3 py-2 tabular-nums font-medium', pos.exposure > 0 ? (pos.key === 'over' ? 'text-red-500' : 'text-amber-500') : t.textMuted)}>
+                    <td className={cx('px-3 py-2 tabular-nums font-medium',
+                      pos.exposure > 0 ? a(POSITION[pos.key].hue).fg : t.textMuted)}>
                       {pos.exposure > 0 ? fmtMoney(pos.exposure) : '—'}
                     </td>
                     <td className={cx('px-3 py-2 text-xs whitespace-nowrap', t.textSecondary)}>{fmtDate(lic.renewalDate)}</td>

@@ -10,7 +10,15 @@ import './index.css';
 const persisted = loadPersisted();
 initStore(persisted || buildSeed());
 
-// Signal to the headless render check that the app mounted and painted.
+/**
+ * Signal to the headless render check that the app mounted and painted.
+ *
+ * NOT a double requestAnimationFrame. Under Chrome's headless virtual-time
+ * mode a static page produces exactly one frame, so a second nested rAF never
+ * runs and the signal never lands — which reads as "the view threw on mount"
+ * when nothing is wrong. One frame to guarantee a paint, then a timeout, which
+ * always fires.
+ */
 function ready() {
   document.documentElement.setAttribute('data-relayhq-ready', '1');
 }
@@ -23,4 +31,4 @@ createRoot(document.getElementById('root')).render(
   </React.StrictMode>,
 );
 
-requestAnimationFrame(() => requestAnimationFrame(ready));
+requestAnimationFrame(() => setTimeout(ready, 0));
