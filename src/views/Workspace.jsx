@@ -56,12 +56,21 @@ import { LOC } from '@/store/seed/ids.js';
  */
 const MODULE = 'workspace';
 
+/**
+ * `type` is the SERVICE TYPE, said out loud on every row.
+ *
+ * The kind was previously carried only by a coloured rail and a 14px glyph, so
+ * telling an incident from a project task meant knowing the colour code. Naming
+ * it costs one chip and removes the decoding step. A ticket resolves to two
+ * types rather than one: raised against a service item it is a request, and
+ * everything else is an incident.
+ */
 const KIND_META = {
-  ticket:      { entity: 'ticket',      accent: 'rose',   icon: Inbox,         label: 'Ticket',       plural: 'Tickets' },
-  task:        { entity: 'task',        accent: 'teal',   icon: CheckSquare,   label: 'Task',         plural: 'Personal tasks' },
-  projectTask: { entity: 'projectTask', accent: 'violet', icon: CheckSquare,   label: 'Project task', plural: 'Project tasks' },
-  approval:    { entity: 'approval',    accent: 'amber',  icon: Stamp,         label: 'Approval',     plural: 'Approvals' },
-  learning:    { entity: 'course',      accent: 'indigo', icon: GraduationCap, label: 'Learning',     plural: 'Learning' },
+  ticket:      { entity: 'ticket',      accent: 'rose',   icon: Inbox,         label: 'Ticket',       plural: 'Tickets',       type: 'Incident' },
+  task:        { entity: 'task',        accent: 'teal',   icon: CheckSquare,   label: 'Task',         plural: 'Personal tasks', type: 'Personal Task' },
+  projectTask: { entity: 'projectTask', accent: 'violet', icon: CheckSquare,   label: 'Project task', plural: 'Project tasks',  type: 'Project Task' },
+  approval:    { entity: 'approval',    accent: 'amber',  icon: Stamp,         label: 'Approval',     plural: 'Approvals',      type: 'Approval' },
+  learning:    { entity: 'course',      accent: 'indigo', icon: GraduationCap, label: 'Learning',     plural: 'Learning',       type: 'Training' },
 };
 
 const KIND_ORDER = ['ticket', 'approval', 'task', 'projectTask', 'learning'];
@@ -374,10 +383,11 @@ function ticketItem(ticket, data, now) {
     id: ticket.id,
     title: ticket.title,
     keyLabel: ticket.key || ticket.id,
+    typeLabel: ticket.serviceItemId ? 'Service Request' : 'Incident',
+    queueName: queue?.name || null,
     subtitle: joinDots([
       requester?.name,
       requester?.external ? requester.org?.name : requester?.department,
-      queue?.name,
     ]),
     status: ticket.status,
     statusInfo: statusInfoFor(ticket.status, null),
@@ -412,8 +422,10 @@ function taskItem(task, data, now) {
     id: task.id,
     title: task.title || task.name || 'Untitled task',
     keyLabel: task.key || (kind === 'projectTask' ? 'Project task' : 'Task'),
+    typeLabel: kind === 'projectTask' ? 'Project Task' : 'Personal Task',
+    queueName: project ? (project.name || project.title) : null,
     subtitle: joinDots([
-      project ? (project.name || project.title) : 'Personal',
+      project ? null : 'Personal',
       parent ? `subtask of ${parent.title || parent.name}` : null,
       personName(data, assigneeId),
       task.milestone ? 'Milestone' : null,
@@ -448,8 +460,9 @@ function approvalItem(request, data, now) {
     id: request.id,
     title: request.subject || request.policyName || 'Approval request',
     keyLabel: request.policyName || 'Approval',
+    typeLabel: 'Approval',
+    queueName: stage?.name || null,
     subtitle: joinDots([
-      stage?.name,
       `Stage ${p.stageNumber} of ${p.totalStages}`,
       `${p.approvals} of ${p.need} approved`,
       personName(data, request.requesterId) ? `raised by ${personName(data, request.requesterId)}` : null,
@@ -497,8 +510,9 @@ function learningItem(enrollment, data, now) {
     id: enrollment.id,
     title: course?.title || course?.name || enrollment.title || 'Assigned course',
     keyLabel: curriculum ? (curriculum.title || curriculum.name || 'Curriculum') : 'Course',
+    typeLabel: 'Training',
+    queueName: curriculum ? (curriculum.title || curriculum.name) : null,
     subtitle: joinDots([
-      curriculum ? (curriculum.title || curriculum.name) : null,
       totalLessons > 0 ? `${doneLessons} of ${totalLessons} lessons` : null,
       pct != null && Number.isFinite(pct) ? `${Math.round(pct)}%` : null,
       personName(data, learnerId),
@@ -932,6 +946,7 @@ function NewMenu({ onCreate }) {
 function WorkRow({ item, data, meId, now, onOpen }) {
   const { t, a } = useTheme();
   const meta = KIND_META[item.kind];
+  const c = a(meta.accent);
   const due = relativeDay(item.due, now);
   const assignee = personName(data, item.assigneeId);
   const decidable = item.kind === 'approval' && isDecidable(item.record, meId);
@@ -941,7 +956,10 @@ function WorkRow({ item, data, meId, now, onOpen }) {
       accent={meta.accent}
       icon={meta.icon}
       title={item.title}
-      subtitle={item.subtitle}
+      /* The secondary line is built here rather than passed as a string,
+         because the service type and the queue are the two facts worth
+         calling out and a joined sentence buries both. */
+      subtitle={null}
       alert={item.overdue}
       onClick={onOpen}
       meta={
@@ -989,6 +1007,24 @@ function WorkRow({ item, data, meId, now, onOpen }) {
         </>
       ) : null}
     >
+      {/* The service type, said out loud, then the queue it sits in. Both used
+          to be encoded only in the rail colour and a joined sentence. */}
+      <span className="mt-0.5 flex items-center gap-1.5 text-xs min-w-0">
+        <span className={cx('inline-flex items-center rounded px-1.5 py-[1px] font-semibold uppercase tracking-wide text-[10px] flex-shrink-0',
+          c.soft, c.fgOnSoft)}>
+          {item.typeLabel || meta.type}
+        </span>
+        {item.queueName && (
+          <span className={cx('inline-flex items-center gap-1 flex-shrink-0', t.textSecondary)}>
+            <Tag size={ICON.xs} className="flex-shrink-0" />
+            <span className="truncate max-w-[13rem]">{item.queueName}</span>
+          </span>
+        )}
+        {item.subtitle && (
+          <span className={cx('truncate', t.textMuted)}>{item.subtitle}</span>
+        )}
+      </span>
+
       {(item.labels || []).length > 0 && (
         <span className="mt-1 flex">
           <ChipGroup items={item.labels} accent={meta.accent} icon={Tag} max={2} />
