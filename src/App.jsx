@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import {
-  LayoutGrid, Briefcase, Package, FileText, Filter, Server, BookOpen,
+  LayoutGrid, Briefcase, Package, ShoppingBag, FileText, Filter, Server, BookOpen,
   GraduationCap, Workflow, Globe, Palette, GitBranch, AlertOctagon, Stamp,
   Moon, Sun, PanelLeftClose, PanelLeft, ChevronRight, Search, ChevronDown,
 } from 'lucide-react';
@@ -17,6 +17,7 @@ const Changes       = lazy(() => import('@/views/Changes.jsx'));
 const Problems      = lazy(() => import('@/views/Problems.jsx'));
 const Approvals     = lazy(() => import('@/views/Approvals.jsx'));
 const Catalog       = lazy(() => import('@/views/Catalog.jsx'));
+const ServiceCatalog = lazy(() => import('@/views/ServiceCatalog.jsx'));
 const Knowledge     = lazy(() => import('@/views/Knowledge.jsx'));
 const Learning      = lazy(() => import('@/views/Learning.jsx'));
 const Forms         = lazy(() => import('@/views/Forms.jsx'));
@@ -33,6 +34,7 @@ const VIEWS = {
   problems: Problems,
   approvals: Approvals,
   catalog: Catalog,
+  servicecatalog: ServiceCatalog,
   knowledge: Knowledge,
   learning: Learning,
   forms: Forms,
@@ -64,6 +66,7 @@ export const NAV_GROUPS = [
     label: 'Content',
     items: [
       { id: 'catalog',   label: 'Products & Services', icon: Package,        accent: 'amber', tint: 'catalog' },
+      { id: 'servicecatalog', label: 'Service Catalog', icon: ShoppingBag,   accent: 'amber', tint: 'catalog' },
       { id: 'knowledge', label: 'Knowledge',           icon: BookOpen,       accent: 'blue', tint: 'knowledge' },
       { id: 'learning',  label: 'Learning',            icon: GraduationCap,  accent: 'indigo', tint: 'learning' },
       { id: 'forms',     label: 'Forms',               icon: FileText,       accent: 'purple', tint: 'catalog' },

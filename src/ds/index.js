@@ -13,3 +13,4 @@ export * from './primitives.jsx';
 export * from './forms.jsx';
 export * from './overlays.jsx';
 export * from './nav.jsx';
+export * from './header.jsx';

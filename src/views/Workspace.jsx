@@ -15,7 +15,8 @@ import {
   ListRow, Stat, Banner, Divider,
   Field, Input, Textarea, Checkbox, TileGroup, SearchInput,
   Modal, Menu, MenuItem, MenuLabel, FilterPill,
-  LensBar, SubTabs, PageHeader, Toolbar, PageBody,
+  LensBar, SubTabs, PageBody,
+  ModuleHeader, ScopedSearch, FilterToggle, FilterTray, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, patchIn, addTo, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
@@ -64,20 +65,15 @@ const KIND_META = {
 
 const KIND_ORDER = ['ticket', 'approval', 'task', 'projectTask', 'learning'];
 
+// `scopeNoun` is what the in-page search calls the set it is searching.
 const LENSES = [
-  { value: 'all',       label: 'Everything', icon: Layers,        accent: 'purple', kinds: KIND_ORDER },
-  { value: 'tickets',   label: 'Tickets',    icon: Inbox,         accent: 'rose',   kinds: ['ticket'] },
-  { value: 'tasks',     label: 'Tasks',      icon: CheckSquare,   accent: 'teal',   kinds: ['task', 'projectTask'] },
-  { value: 'approvals', label: 'Approvals',  icon: Stamp,         accent: 'amber',  kinds: ['approval'] },
-  { value: 'learning',  label: 'Learning',   icon: GraduationCap, accent: 'indigo', kinds: ['learning'] },
+  { value: 'all', scopeNoun: 'items',       label: 'Everything', icon: Layers,        accent: 'purple', kinds: KIND_ORDER },
+  { value: 'tickets', scopeNoun: 'tickets',   label: 'Tickets',    icon: Inbox,         accent: 'rose',   kinds: ['ticket'] },
+  { value: 'tasks', scopeNoun: 'tasks',     label: 'Tasks',      icon: CheckSquare,   accent: 'teal',   kinds: ['task', 'projectTask'] },
+  { value: 'approvals', scopeNoun: 'approvals', label: 'Approvals',  icon: Stamp,         accent: 'amber',  kinds: ['approval'] },
+  { value: 'learning', scopeNoun: 'lessons',  label: 'Learning',   icon: GraduationCap, accent: 'indigo', kinds: ['learning'] },
 ];
 
-const VIEW_OPTIONS = [
-  { value: 'mine',       label: 'Assigned to me',  hint: 'Anything with your name on it', icon: User },
-  { value: 'created',    label: 'Raised by me',    hint: 'Requests and tasks you opened',  icon: Send },
-  { value: 'unassigned', label: 'Unassigned',      hint: 'In a queue, owned by nobody',    icon: Users },
-  { value: 'all',        label: 'Everything',      hint: 'The whole desk, not just yours', icon: Globe },
-];
 
 const SOURCE_META = {
   portal: { label: 'Portal', icon: Globe },
@@ -86,14 +82,6 @@ const SOURCE_META = {
   phone:  { label: 'Phone',  icon: Phone },
 };
 
-const STAT_DEFS = [
-  { key: 'open',        label: 'open tickets',       accent: 'rose',   icon: Inbox,         lens: 'tickets' },
-  { key: 'in_progress', label: 'in progress',        accent: 'amber',  icon: Play,          lens: 'all' },
-  { key: 'my_approval', label: 'awaiting my approval', accent: 'amber', icon: Stamp,        lens: 'approvals' },
-  { key: 'open_tasks',  label: 'open tasks',         accent: 'teal',   icon: CheckSquare,   lens: 'tasks' },
-  { key: 'overdue',     label: 'overdue',            accent: 'red',    icon: AlertTriangle, lens: 'all' },
-  { key: 'total',       label: 'total',              accent: 'purple', icon: Layers,        lens: 'all' },
-];
 
 /** Locations live in the assets domain; these are the display fallbacks. */
 const LOCATION_NAMES = {
@@ -547,28 +535,26 @@ function isWorkKind(item) {
   return item.kind === 'ticket' || item.kind === 'task' || item.kind === 'projectTask';
 }
 
-function passesView(item, view, meId) {
-  if (view === 'all') return true;
-  if (view === 'mine') {
-    if (item.kind === 'approval') return (item.approverIds || []).includes(meId);
-    return item.assigneeId === meId;
-  }
-  if (view === 'created') return item.ownerId === meId;
-  if (view === 'unassigned') return item.kind === 'ticket' && !item.assigneeId;
-  return true;
+/**
+ * Assignment is MULTI-SELECT, and that is the whole reason it changed.
+ * "Unassigned OR assigned to me" is the question a service desk actually asks
+ * first thing in the morning, and a single-select control cannot express it.
+ * An empty selection means everything.
+ */
+function matchesAssignment(item, values, meId) {
+  if (!values || values.length === 0) return true;
+  return values.some(v => {
+    if (v === 'mine') {
+      if (item.kind === 'approval') return (item.approverIds || []).includes(meId);
+      return item.assigneeId === meId;
+    }
+    if (v === 'created') return item.ownerId === meId;
+    if (v === 'unassigned') return !item.assigneeId;
+    if (v === 'others') return !!item.assigneeId && item.assigneeId !== meId;
+    return false;
+  });
 }
 
-function passesQuick(item, quick, meId) {
-  switch (quick) {
-    case 'open': return item.kind === 'ticket' && statusMeta(item.status).group === 'open';
-    case 'in_progress': return isWorkKind(item) && item.statusInfo.group === 'active' && !item.done;
-    case 'my_approval': return item.kind === 'approval' && isDecidable(item.record, meId);
-    case 'open_tasks': return (item.kind === 'task' || item.kind === 'projectTask') && !item.done;
-    case 'overdue': return item.overdue;
-    case 'total': return true;
-    default: return true;
-  }
-}
 
 function dueBucket(item, now) {
   if (item.overdue) return 'overdue';
@@ -628,14 +614,17 @@ export default function Workspace({ route }) {
   const now = NOW;
 
   const [lens, setLens] = useState('all');
-  const [quick, setQuick] = useState(null);
-  const [view, setView] = useState('mine');
-  const [queueIds, setQueueIds] = useState([]);
-  const [statuses, setStatuses] = useState([]);
-  const [priorities, setPriorities] = useState([]);
-  const [search, setSearch] = useState('');
-  const [openMenu, setOpenMenu] = useState(null);
   const [creating, setCreating] = useState(null);
+
+  /* One header state: the multi-select values, the in-page query, and whether the
+   * tray is showing. The tray forces itself open whenever something is active, so
+   * a filter can never be on while its control is hidden. */
+  const [filters, setFilters] = useState({ assignment: ['mine'] });
+  const [search, setSearch] = useState('');
+  const [trayOpen, setTrayOpen] = useState(false);
+
+  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+  const showTray = trayOpen || activeFilters > 0;
 
   const items = useMemo(() => {
     const out = [];
@@ -650,15 +639,16 @@ export default function Workspace({ route }) {
   const preLens = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return items.filter(item => {
-      if (!passesView(item, view, meId)) return false;
-      if (queueIds.length && !queueIds.includes(item.queueId)) return false;
-      if (statuses.length && !statuses.includes(item.status)) return false;
-      if (priorities.length && !priorities.includes(item.priority)) return false;
-      if (quick && !passesQuick(item, quick, meId)) return false;
+      if (!matchesAssignment(item, filters.assignment, meId)) return false;
+      if (!passes(filters.queue, item.queueId)) return false;
+      if (!passes(filters.status, item.status)) return false;
+      if (!passes(filters.priority, item.priority)) return false;
+      if (!passes(filters.due, dueBucket(item, now))) return false;
+      // Search layers ON TOP of the filters rather than replacing them.
       if (needle && !item.searchText.includes(needle)) return false;
       return true;
     });
-  }, [items, view, meId, queueIds, statuses, priorities, quick, search]);
+  }, [items, filters, meId, search, now]);
 
   const activeLens = LENSES.find(l => l.value === lens) || LENSES[0];
   const visible = useMemo(
@@ -674,7 +664,7 @@ export default function Workspace({ route }) {
   /* Stats are computed over the whole desk, not the filtered view — a counter
    * that moves when you filter is a counter you cannot trust. */
   const stats = useMemo(() => {
-    const mine = items.filter(item => passesView(item, 'mine', meId));
+    const mine = items.filter(item => matchesAssignment(item, ['mine'], meId));
     return {
       open: mine.filter(i => i.kind === 'ticket' && i.statusInfo.group === 'open').length,
       in_progress: mine.filter(i => isWorkKind(i) && i.statusInfo.group === 'active' && !i.done).length,
@@ -696,8 +686,7 @@ export default function Workspace({ route }) {
       .filter(g => g.rows.length);
   }, [visible, lens, now]);
 
-  const filterCount = (view !== 'mine' ? 1 : 0) + (queueIds.length ? 1 : 0)
-    + (statuses.length ? 1 : 0) + (priorities.length ? 1 : 0) + (quick ? 1 : 0);
+  const filterCount = activeFilters;
 
   const openSub = route?.sub || null;
   const namedSub = TICKET_SUBS.includes(openSub) || TASK_SUBS.includes(openSub);
@@ -719,9 +708,7 @@ export default function Workspace({ route }) {
     navigate('learning', 'my');
   };
 
-  const clearFilters = () => {
-    setView('mine'); setQueueIds([]); setStatuses([]); setPriorities([]); setQuick(null); setSearch('');
-  };
+  const clearFilters = () => { setFilters({}); setSearch(''); setTrayOpen(false); };
 
   /* Built from the records on screen, so a project's own columns appear here
    * under their real labels rather than as raw ids. */
@@ -731,114 +718,88 @@ export default function Workspace({ route }) {
     return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
   }, [items]);
 
+  /* Counts are computed over the WHOLE desk, not the filtered view, so an option
+   * tells you how many records exist rather than how many survive the filters you
+   * have already set — the latter reads as options vanishing as you work. */
+  const FILTER_DEFS = useMemo(() => {
+    const byQueue = optionCounts(items, i => i.queueId);
+    const byStatus = optionCounts(items, i => i.status);
+    const byPriority = optionCounts(items, i => i.priority);
+    const byDue = optionCounts(items, i => dueBucket(i, now));
+    const count = (pred) => items.filter(pred).length;
+
+    return [
+      {
+        id: 'assignment', label: 'Assignment', icon: User,
+        options: [
+          { value: 'unassigned', label: 'Unassigned',        count: count(i => !i.assigneeId) },
+          { value: 'mine',       label: 'Assigned to me',    count: count(i => matchesAssignment(i, ['mine'], meId)) },
+          { value: 'others',     label: 'Assigned to others',count: count(i => !!i.assigneeId && i.assigneeId !== meId) },
+          { value: 'created',    label: 'Raised by me',      count: count(i => i.ownerId === meId) },
+        ],
+      },
+      {
+        id: 'queue', label: 'Queue', icon: Inbox,
+        options: (data.queues || []).map(q => ({ value: q.id, label: q.name, count: byQueue.get(q.id) || 0 })),
+      },
+      {
+        id: 'status', label: 'Status', icon: Target,
+        options: statusOptions.map(st => ({ value: st.key, label: st.label, count: byStatus.get(st.key) || 0 })),
+      },
+      {
+        id: 'priority', label: 'Priority', icon: Filter,
+        options: Object.keys(PRIORITY).map(pr => ({ value: pr, label: PRIORITY[pr].label, count: byPriority.get(pr) || 0 })),
+      },
+      {
+        id: 'due', label: 'Due', icon: AlertTriangle,
+        options: BUCKET_ORDER.map(b => ({ value: b, label: BUCKET_LABEL[b], count: byDue.get(b) || 0 })),
+      },
+    ];
+  }, [items, data.queues, statusOptions, meId, now]);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
+      <ModuleHeader
         icon={LayoutGrid}
         module={MODULE}
         title="My Workspace"
-        subtitle={joinDots([
-          data.currentUser?.name,
-          data.currentUser?.title,
-          `${stats.total} assigned to you`,
-        ])}
-        actions={<NewMenu onCreate={setCreating} />}
-      >
-        <div className="space-y-2.5">
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {STAT_DEFS.map(def => (
-              <Stat
-                key={def.key}
-                label={def.label}
-                value={stats[def.key] ?? 0}
-                accent={def.accent}
-                icon={def.icon}
-                active={quick === def.key}
-                onClick={() => {
-                  const next = quick === def.key ? null : def.key;
-                  setQuick(next);
-                  if (next) setLens(def.lens);
-                }}
-              />
-            ))}
-          </div>
-
-          <LensBar items={lensItems} value={lens} onChange={setLens} split={3} />
-
-          <Toolbar>
-            <div className="relative">
-              <FilterPill
-                icon={User}
-                label={VIEW_OPTIONS.find(v => v.value === view)?.label || 'View'}
-                active={view !== 'mine'}
-                open={openMenu === 'view'}
-                onClick={() => setOpenMenu(openMenu === 'view' ? null : 'view')}
-              />
-              <Menu open={openMenu === 'view'} onClose={() => setOpenMenu(null)} width="w-60">
-                <MenuLabel>Whose work</MenuLabel>
-                {VIEW_OPTIONS.map(opt => (
-                  <MenuItem
-                    key={opt.value}
-                    icon={opt.icon}
-                    label={opt.label}
-                    hint={opt.hint}
-                    selected={view === opt.value}
-                    onClick={() => { setView(opt.value); setOpenMenu(null); }}
-                  />
-                ))}
-              </Menu>
-            </div>
-
-            <MultiFilter
-              icon={Inbox}
-              label="Queue"
-              open={openMenu === 'queue'}
-              onToggle={() => setOpenMenu(openMenu === 'queue' ? null : 'queue')}
-              onClose={() => setOpenMenu(null)}
-              selected={queueIds}
-              onChange={setQueueIds}
-              options={(data.queues || []).map(q => ({
-                value: q.id,
-                label: q.name,
-                hint: q.audience === 'external' ? 'Customer facing' : q.audience === 'both' ? 'Internal and customer' : 'Internal',
-              }))}
-              emptyLabel="Queue"
-            />
-
-            <MultiFilter
-              icon={Target}
-              label="Status"
-              open={openMenu === 'status'}
-              onToggle={() => setOpenMenu(openMenu === 'status' ? null : 'status')}
-              onClose={() => setOpenMenu(null)}
-              selected={statuses}
-              onChange={setStatuses}
-              options={statusOptions.map(s => ({ value: s.key, label: s.label, hint: s.group }))}
-              emptyLabel="Status"
-            />
-
-            <MultiFilter
-              icon={Filter}
-              label="Priority"
-              open={openMenu === 'priority'}
-              onToggle={() => setOpenMenu(openMenu === 'priority' ? null : 'priority')}
-              onClose={() => setOpenMenu(null)}
-              selected={priorities}
-              onChange={setPriorities}
-              options={Object.keys(PRIORITY).map(p => ({ value: p, label: PRIORITY[p].label, hint: `rank ${PRIORITY[p].rank}` }))}
-              emptyLabel="Priority"
-            />
-
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Search titles, people, labels…"
-              accent="teal"
-              width="w-64"
-            />
-          </Toolbar>
-        </div>
-      </PageHeader>
+        /* The subtitle always tells the truth about what is on screen: the
+         * resting label when nothing narrows the list, "9 of 20 shown" when
+         * something does. One place, so a subset is never read as the whole. */
+        subtitle={subsetLabel(
+          visible.length,
+          items.length,
+          joinDots([data.currentUser?.name, data.currentUser?.title, `${stats.total} assigned to you`]),
+        )}
+        primary={<NewMenu onCreate={setCreating} />}
+        tools={<>
+          <LensBar items={lensItems} value={lens} onChange={setLens} inline />
+          <ScopedSearch
+            value={search}
+            onChange={setSearch}
+            /* Names its own scope, so it can never be mistaken for the global
+             * field in the bar above: "Search 20 items…" becomes
+             * "Search 5 tickets…" when the lens changes. */
+            scope={`${lensItems.find(l => l.value === lens)?.count ?? items.length} ${activeLens.scopeNoun || 'items'}`}
+            accent="teal"
+          />
+          <FilterToggle
+            open={showTray}
+            count={activeFilters}
+            accent="teal"
+            onClick={() => (activeFilters > 0 ? clearFilters() : setTrayOpen(o => !o))}
+          />
+        </>}
+        tray={showTray ? (
+          <FilterTray
+            open
+            filters={FILTER_DEFS}
+            value={filters}
+            onChange={setFilters}
+            onClearAll={clearFilters}
+          />
+        ) : null}
+      />
 
       <PageBody>
         <div className="space-y-3">
@@ -850,14 +811,14 @@ export default function Workspace({ route }) {
             </Banner>
           )}
 
-          {quick === 'my_approval' && stats.my_approval === 0 && (
+          {lens === 'approvals' && visible.length === 0 && (
             <Banner accent="amber" icon={Stamp} title="Nothing is waiting on your signature">
               Approval requests only appear here while you are on the current stage and have not yet decided.
               Earlier stages are somebody else's to clear first.
             </Banner>
           )}
 
-          {view === 'unassigned' && (
+          {(filters.assignment || []).includes('unassigned') && (
             <Banner accent="blue" icon={AlertCircle} title="Unrouted requests land in General">
               A request submitted without a routing rule goes to the <strong className={t.text}>General</strong> queue and is
               triaged within one business hour. It is never silently dropped, and it is never auto-assigned to a person.
@@ -922,43 +883,6 @@ export default function Workspace({ route }) {
  * Toolbar pieces
  * ==================================================================== */
 
-function MultiFilter({ icon, label, open, onToggle, onClose, selected, onChange, options, emptyLabel }) {
-  const chosen = options.filter(o => selected.includes(o.value));
-  const text = chosen.length === 0
-    ? emptyLabel
-    : chosen.length === 1
-      ? chosen[0].label
-      : `${chosen[0].label} +${chosen.length - 1}`;
-
-  return (
-    <div className="relative">
-      <FilterPill icon={icon} label={text} active={selected.length > 0} open={open} onClick={onToggle} />
-      <Menu open={open} onClose={onClose} width="w-64">
-        <MenuLabel
-          action={selected.length > 0 && (
-            <Button variant="ghost" size="xs" icon={X} onClick={() => onChange([])}>Clear</Button>
-          )}
-        >
-          {label}
-        </MenuLabel>
-        {options.length === 0 && <MenuItem label={`No ${label.toLowerCase()} yet`} />}
-        {options.map(opt => (
-          <MenuItem
-            key={opt.value}
-            label={opt.label}
-            hint={opt.hint}
-            selected={selected.includes(opt.value)}
-            onClick={() => onChange(
-              selected.includes(opt.value)
-                ? selected.filter(v => v !== opt.value)
-                : [...selected, opt.value],
-            )}
-          />
-        ))}
-      </Menu>
-    </div>
-  );
-}
 
 function NewMenu({ onCreate }) {
   const [open, setOpen] = useState(false);

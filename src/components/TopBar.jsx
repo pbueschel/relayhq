@@ -3,13 +3,26 @@ import { Search, X, CornerDownLeft, ChevronDown, RotateCcw } from 'lucide-react'
 import { useTheme, cx, ICON, Avatar, entityHue, Menu, MenuItem, MenuDivider } from '@/ds';
 import { useStore, getState, resetDemo } from '@/store/store.js';
 import { searchAll, groupResults } from '@/lib/search.js';
-import { navigate } from '@/lib/router.js';
+import { navigate, useRoute } from '@/lib/router.js';
 
 /**
  * Persistent top bar: centred global search with a live results dropdown, and
  * the account block pinned right. v1 removed the sidebar's separate search
  * trigger and user block when this landed — they are deliberately not here.
  */
+/** Module labels for the context breadcrumb, keyed by route section. */
+const SECTION_LABEL = {
+  workspace: ['Work', 'My Workspace'], projects: ['Work', 'Projects'],
+  approvals: ['Service', 'Approvals'], changes: ['Service', 'Changes'],
+  problems: ['Service', 'Problems'],
+  catalog: ['Content', 'Products & Services'], servicecatalog: ['Content', 'Service Catalog'],
+  knowledge: ['Content', 'Knowledge'], learning: ['Content', 'Learning'],
+  forms: ['Content', 'Forms'],
+  rules: ['Configure', 'Business Rules'], automations: ['Configure', 'Automations'],
+  assets: ['Configure', 'Assets'],
+  portal: ['Preview', 'Customer Portal'], design: ['Preview', 'Design System'],
+};
+
 export function TopBar({ onOpenPalette }) {
   const { t, a } = useTheme();
   const currentUser = useStore(s => s.currentUser);
@@ -17,6 +30,8 @@ export function TopBar({ onOpenPalette }) {
   const [focused, setFocused] = useState(false);
   const [active, setActive] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const route = useRoute();
+  const crumb = SECTION_LABEL[route.section] || ['RelayHQ', 'Workspace'];
 
   const results = useMemo(
     () => (query.trim() ? searchAll(getState(), query) : []),
@@ -39,11 +54,19 @@ export function TopBar({ onOpenPalette }) {
   const open = focused && query.trim() !== '';
 
   return (
-    <header className={cx('flex items-center gap-3 px-4 h-14 border-b flex-shrink-0 relative z-30',
+    <header className={cx('flex items-center gap-3 px-4 h-12 border-b flex-shrink-0 relative z-30',
       t.border, t.bgSidebar)}>
-      <div className="flex-1" />
+      {/* The left third used to be empty. It carries the context breadcrumb now,
+        * so the bar says where you are instead of only what you can search. */}
+      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 min-w-0 flex-shrink">
+        <span className={cx('text-xs truncate', t.textMuted)}>{crumb[0]}</span>
+        <span className={cx('text-xs', t.textMuted)}>›</span>
+        <span className={cx('text-xs font-semibold truncate', t.text)}>{crumb[1]}</span>
+      </nav>
 
-      <div className="relative w-full max-w-xl">
+      <div className="flex-1 min-w-[8px]" />
+
+      <div className="relative w-full max-w-md flex-shrink">
         <div className={cx('flex items-center gap-2.5 rounded-xl px-3 py-2 border transition-colors',
           t.bgInput, focused ? a('purple').borderStrong : t.borderLight)}>
           <Search size={ICON.md} className={t.textMuted} />
@@ -92,7 +115,7 @@ export function TopBar({ onOpenPalette }) {
         )}
       </div>
 
-      <div className="flex-1 flex items-center justify-end">
+      <div className="flex items-center justify-end flex-shrink-0">
         <div className="relative">
           <button
             onClick={() => setMenuOpen(o => !o)}

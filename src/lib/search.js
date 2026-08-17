@@ -1,6 +1,7 @@
 import {
   Inbox, CheckSquare, Briefcase, Folder, Layers, Circle, FileText, BookOpen,
   GraduationCap, Monitor, Key, MapPin, GitBranch, AlertOctagon, Workflow, Stamp, User,
+  ShoppingBag,
 } from 'lucide-react';
 
 /**
@@ -70,6 +71,14 @@ export function searchAll(state, raw) {
         accent: CATALOG_ACCENT[node.type] || 'gray', id: node.id,
         title: node.name, subtitle: trail.length ? trail.join(' › ') : node.type,
         to: ['catalog', null, node.id] });
+    }
+  }
+  /* The service catalog is a SECOND catalog — orderable things, not help topics —
+   * so its hits get their own group rather than joining 'Catalog' above. */
+  for (const si of state.serviceItems || []) {
+    if (hit(si.name, si.shortDescription)) {
+      out.push({ group: 'Service catalog', icon: ShoppingBag, accent: 'product', id: si.id,
+        title: si.name, subtitle: si.shortDescription, to: ['servicecatalog', null, si.id] });
     }
   }
   for (const kb of state.knowledge || []) {

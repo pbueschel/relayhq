@@ -15,10 +15,26 @@ import { IconTile } from './primitives.jsx';
  * implementation every other condensing control should copy.
  * ==================================================================== */
 
-export function LensBar({ items = [], value, onChange, split }) {
+export function LensBar({ items = [], value, onChange, split, inline = false }) {
   const { t } = useTheme();
   // `split` lets a long bar break into two centred groups rather than wrapping raggedly.
   const groups = split ? [items.slice(0, split), items.slice(split)] : [items];
+
+  // `inline` drops the container-query shell. `container-type: inline-size`
+  // CONTAINS the inline axis, so an element carrying it cannot be sized by its
+  // own contents — correct for the centred standalone bar, but inside a flex
+  // row it makes the pills overflow their box and collide with whatever sits
+  // next to them. Inline mode sizes to content and shrinks by scrolling.
+  if (inline) {
+    return (
+      <div className={cx('inline-flex flex-nowrap p-1 rounded-xl border min-w-0 overflow-x-auto',
+        t.bgSubtle, t.borderLight)}>
+        {items.map(item => (
+          <Lens key={item.value} item={item} active={value === item.value} onChange={onChange} inline />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="lens-shell flex justify-center">
@@ -34,7 +50,7 @@ export function LensBar({ items = [], value, onChange, split }) {
   );
 }
 
-function Lens({ item, active, onChange }) {
+function Lens({ item, active, onChange, inline = false }) {
   const { t, a } = useTheme();
   const c = a(item.accent || 'purple');
   const Icon = item.icon;
@@ -42,7 +58,9 @@ function Lens({ item, active, onChange }) {
     <button
       onClick={() => onChange(item.value)}
       aria-pressed={active}
-      className={cx('lens-pill flex items-center gap-1.5 py-1.5 rounded-xl text-sm font-medium transition-colors whitespace-nowrap',
+      title={item.label}
+      className={cx('flex items-center gap-1.5 rounded-lg font-medium transition-colors whitespace-nowrap flex-shrink-0',
+        inline ? 'px-2.5 py-1 text-xs' : 'lens-pill py-1.5 text-sm',
         active ? cx(t.bgCard, t.text, 'shadow-sm') : cx(t.textSecondary, t.bgHover))}
     >
       {Icon && <Icon size={ICON.base} className={active ? c.fg : t.textMuted} />}
