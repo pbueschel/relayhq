@@ -74,12 +74,39 @@ whole thing is live on GitHub Pages with verification gates in CI.
 - [x] W7.2 — Design system playbook
 - [x] W7.3 — README with the product story and local dev instructions
 
+### E8 — Design refinement, from Phil's review of the live site (2026-08-17)
+- [x] W8.1 — Restore v1's gradient treatment as first-class token roles — **AC:** `moduleGradient()`, `tint()`, `headWash()` in `tokens.js`; no module paints its own gradient
+- [x] W8.2 — Unified module header: two bands plus a filter tray — **AC:** every module uses `ModuleHeader`; filters are multi-select and show values with counts; the filter box is a scoped in-page search
+- [x] W8.3 — Portal front doors: Get Help vs Service Catalog, visibly distinct — **AC:** a first-time visitor can tell which door leads to their request without reading body copy
+- [x] W8.4 — The portal drill happens inside a contained card, not a page navigation — **AC:** the page behind never moves; every level from door to receipt is in the card
+- [x] W8.5 — Service catalog as its own record type — **AC:** `serviceCategories` + `serviceItems` separate from the help tree; `grantsAccess` on the item
+- [x] W8.6 — Service approvals actually fire from portal submissions — **AC:** 15/15 seeded service requests match a policy; smoke guards it
+- [x] W8.7 — Catalog content in fault voice — **AC:** every leaf names what went wrong; "Not listed" ends every subcategory and every product
+- [x] W8.8 — Long-pill option rows and the original user-driven guide viewer — **AC:** no timer anywhere in the Stories viewer
+- [x] W8.9 — Knowledge rows in the portal drill open the atom — **AC:** every knowledge row is clickable
+- [x] W8.10 — Landing page on the empty hash route — **AC:** rotating audience word settles on "Everything"; every figure computed from seed; reduced-motion respected
+- [x] W8.11 — Portal home shows the requester's own open work — **AC:** approvals awaiting their decision, then their open tickets; nothing about what other people request; panel hides when empty
+
+### E9 — Discovered, not yet built
+- [ ] W9.1 — General "this application is broken" subform in `src/store/seed/forms.js` — **AC:** no catalog leaf drills to a dead end; every item without its own intake falls back to this one. ~90 of the new items are currently affected.
+- [ ] W9.2 — `PRODUCT_ICON` entry for `cat-p-applications` in `src/views/Portal.jsx` — **AC:** the Application & Software product renders its own glyph, not the generic Folder
+- [ ] W9.3 — `LessonRecord` keyed by `knowledgeId` with `source: 'course' | 'deflection' | 'agent_context'` — **AC:** reading an article for deflection counts toward training; the Learning rollup shows where completion came from
+- [ ] W9.4 — Catalog-derived coverage matrix and "generate starter curriculum" — **AC:** shows which catalog items have no atom, and can seed a course from the gaps
+- [ ] W9.5 — Move `prerequisiteIds` off the knowledge atom onto the lesson placement — **AC:** the same atom can be a prerequisite in one course and not another
+- [ ] W9.6 — Promote the `SVCSF` service-subform ids into `src/store/seed/ids.js` — **AC:** no service subform id written as a bare string
+
 ## Held — awaiting Phil's go-ahead
 
-- (none) — Phil authorised the GitHub Pages deployment on 2026-08-16, so the live site is not held.
+- **The landing page** (`https://pbueschel.github.io/relayhq/`) is built, live and passing gates,
+  but **not cleared for sharing**. Phil's framing was "before we share this out to anyone" — he has
+  reviewed it and asked for changes, but has not given go. Do not send the link onward without his
+  explicit word. (The app itself was authorised for Pages on 2026-08-16; it is the *pitch* that is
+  held, and it sits at the same URL.)
 
 ## Done
 
 - Design system, architecture, engines and verification gates (E1–E4).
 - Repo created at `github.com/pbueschel/relayhq`, Pages live at
   **https://pbueschel.github.io/relayhq/**, CI green.
+- Design refinement pass from Phil's live review, 2026-08-17 (E8) — gradients, header, portal
+  rebuild, service catalog, approvals fix, catalog content, landing page.

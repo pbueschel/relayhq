@@ -184,3 +184,89 @@ grounds that "guide" collides with container vocabulary in some LMS products.
 container here, so the collision is theoretical for this product. It is also the word Phil used when
 specifying the feature ("Instagram-style how-to guides"), and matching the vocabulary the product
 owner actually uses beats matching a competitor's schema. Recorded rather than silently ignored.
+
+## 2026-08-17 — The landing page lives on the empty hash route, not a second site
+
+**Context.** Phil asked for "a sleek super sexy landing page on GitHub Pages before we share this
+out to anyone." The obvious builds are a second Pages site, or a `/landing.html` entry point.
+
+**Decision.** The empty hash (`https://pbueschel.github.io/relayhq/`) IS the landing page. The app
+starts one click away at `#/workspace`. `src/lib/router.js` returns `section: 'home'` for an empty
+hash; `Landing.jsx` renders there.
+
+**Why.** One deploy, one build, one set of gates. A second site would need its own pipeline and
+would drift from the product it is selling — and the landing page reads live seed data (`useCounts`)
+so every number on it is computed from the same store the app runs on. Nobody can update the pitch
+and forget the product.
+
+**Rejected.** A separate marketing repo (drift, second pipeline). A `/landing.html` outside the SPA
+(cannot read the store, so every stat becomes a hand-maintained lie).
+
+---
+
+## 2026-08-17 — The portal home shows the requester's own open work, never "most requested"
+
+**Context.** The portal hero carried a "Most requested" / "Ordered most often" strip under the
+search — the pattern every help centre ships.
+
+**Decision.** Removed. Replaced with `OpenWork`: approvals awaiting THIS person's decision first,
+then their unresolved tickets. The panel hides entirely when nothing is in flight.
+
+**Why.** Phil's read, and it is right: to anyone who has already raised something, a list of what
+other people ask for is catalog trivia. The question a returning requester arrives with is "where
+is my thing". The browse grid below already covers discovery for first-timers.
+
+**Two senses of "my approvals", one section.** An approval can be waiting on *you*, or holding up
+something *you asked for*. Only the first gets a row — the second is folded into the ticket row as
+"waiting on an approval". A requester's question is whether their thing is moving, not which record
+type it is stuck in.
+
+**Implementation note.** The approval filter calls `canDecide()` from `lib/approvals.js` — the same
+predicate the Approvals module uses — so the portal can never disagree with the agent console about
+whose turn it is. Seed carries `tkt-4823` + `apr-7` specifically so the demo user has an approval
+pending on load; nothing awaited Sarah Johnson before, so the panel could never prove itself.
+
+---
+
+## 2026-08-17 — Catalog items are faults, not topics
+
+**Context.** The Get Help tree read like a table of contents: "Multi-factor authentication",
+"Email", "VPN". A requester scanning it has to translate their problem into our taxonomy.
+
+**Decision.** Every leaf item is phrased as the thing that went wrong — "Multi-factor code not
+arriving", not "Multi-factor authentication". 7 products / 33 subcategories / 193 items, averaging
+5.8 items per subcategory. Every subcategory ends with a "Not listed" item, and every product ends
+with a "Not listed" subcategory.
+
+**Why.** The category → subcategory → item model only beats a search box if the leaves match the
+words in the requester's head. A topic list makes them do the mapping; a fault list does it for
+them. "Not listed" everywhere means the drill never dead-ends — the escape hatch is part of the
+structure, not a fallback.
+
+**Also added.** A new `Application & Software` product (`cat-p-applications`) where subcategory =
+the app and item = the fault, because "Slack won't load" belongs under Slack, not under a generic
+software category.
+
+---
+
+## 2026-08-17 — The header is two bands plus a tray, and the rotation runs once
+
+**Context.** Two separate rounds of feedback on chrome. (a) Module top-bars used four bands at
+mixed sizes and read as disorganised. (b) The landing headline's rotating audience word looped
+forever.
+
+**Decision.** (a) `ds/header.jsx` — `ModuleHeader` renders identity + tools in two bands with an
+optional filter tray; filters became multi-select controls that display their VALUES with per-option
+counts (`Queue · Customer Support +1`), and the old filter box became a scoped in-page search that
+names its own scope. Applied across every module. (b) `RotatingWord` cycles once at 1000ms and
+settles on "Everything", skips entirely under `prefers-reduced-motion`, and hides the cycling span
+from screen readers behind a static `aria-label`.
+
+**Why.** (a) A header that changes shape per module makes the app feel assembled rather than
+designed; one component makes conformance checkable. (b) An infinite loop in the hero is a
+distraction that never resolves — a single pass reads as a statement ("Customer, HR, IT, Finance —
+Everything") rather than an animation.
+
+**Rejected.** Leaving the filter control on its own line (Phil: "doesn't feel right"). A
+timer-driven carousel in the portal guide viewer — reverted to user-driven paging on Phil's
+instruction, because an auto-advancing how-to takes control away from someone following steps.

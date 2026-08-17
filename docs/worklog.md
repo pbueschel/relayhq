@@ -97,3 +97,91 @@ Recorded in full in `docs/decisions.md`. The load-bearing ones:
    the mechanic no competitor can copy), the catalog-derived **coverage matrix** and "generate
    starter curriculum" screen, approval delegation surfaced in more places, and moving
    `prerequisiteIds` off the atom onto the lesson placement.
+
+---
+
+## 2026-08-17 — Design feedback session: gradients restored, header unified, portal rebuilt twice, landing page
+
+Everything this session came from Phil looking at the live site and reacting. No new epics were
+invented; the work was making what exists correct.
+
+### Changed
+
+**Gradients restored as a first-class token role** (`src/ds/tokens.js`). The founding build had
+flattened v1's gradient treatment to a plain off-white. Added `MODULE_GRADIENT` / `moduleGradient()`,
+`TINT` / `tint()`, `HEAD_WASH` / `headWash()` and swept every module onto them. Shown to Phil as a
+Claude artifact before implementing.
+
+**Header architecture** (`src/ds/header.jsx`, new). Four mixed-size bands → two bands plus a filter
+tray. `ModuleHeader`, `ScopedSearch`, `FilterToggle`, `FilterTray`, `MultiSelectFilter`,
+`useHeaderFilters`. Filters became multi-select and display their values with per-option counts; the
+old filter box became a scoped in-page search. Applied to every module. Two artifacts were used to
+agree the design before code.
+
+**Portal rebuilt, twice** (`src/views/Portal.jsx`, ~3,900 lines).
+- First pass: SaaS landing shape with two explicit front doors — **Get Help** ("something is wrong")
+  and **Service Catalog** ("I want something").
+- Second pass, on Phil's note that full-page navigation was jarring: the entire drill now happens
+  inside a contained card (`LeafCard`, `createPortal`, fixed overlay). The page never moves.
+- Long-pill option rows restored over stacked pills; the Stories guide viewer reverted to the
+  original style with **no timer** — the reader pages themselves.
+- Knowledge rows in the drill now open the atom (they were dead).
+- "Most requested" removed in favour of `OpenWork` — the requester's pending approvals and open
+  tickets. See `docs/decisions.md`.
+
+**The service catalog became its own record type.** `serviceCategories` + `serviceItems`, separate
+from the Get Help `catalog` tree, with `grantsAccess` on the item. Documented in
+`src/store/schema.js`.
+
+**Catalog content reworked to fault voice.** 7 products / 33 subcategories / 193 items. New
+`Application & Software` product. "Not listed" as the last item of every subcategory and last
+subcategory of every product.
+
+**Landing page** (`src/views/Landing.jsx`, new) on the empty hash route. Three directions were
+proposed as an artifact, Phil picked one and then asked to blend all three; the final shape is his
+brief verbatim — rotating audience word ("Customer · HR · IT · Finance · Everything") over
+"Service Management", then the portal view, then a walkthrough of queues, knowledge/training and
+automations. Every number is computed from the seed. The rotation runs once, settles on
+"Everything", and is skipped under `prefers-reduced-motion`.
+
+### Bugs found and fixed
+
+- **13 of 14 service approvals never fired.** Three causes: forked intake copies meant policies
+  keying on canonical subform ids never matched; spend policies compared a MONTHLY figure against an
+  annual threshold; `pol-access-grant` required a form field most access intakes do not have. Fixed
+  with `annualCost()` in `lib/servicerequest.js`, `grantsAccess` moved onto the ITEM, a restructured
+  policy — and a smoke guard so it cannot regress. Now 15/15.
+- **A hole in the interpolated-class guard.** I wrote `'group-hover:' + c.fg` and smoke passed.
+  Scanning found a second instance in `ds/nav.jsx` that had never rendered. Guard widened to catch
+  concatenated variant prefixes as well as template interpolation.
+- **34 asset `catalogItemIds` pointed at PRODUCT ids** — resolvable, so no dangling error, but the
+  links were invisible. Fixed, plus a guard that the id must resolve to an ITEM.
+- **`max-w-[18ch]` on the landing h1** with font-size set on its children: `ch` resolved against the
+  inherited 16px, clamping the headline to ~144px. Removed the constraint.
+- **`container-type: inline-size` CONTAINS the inline axis**, so a lens bar could not size itself to
+  its own contents. Added an `inline` mode that does.
+- **A GitHub Pages 503** failed the deploy of the landing-hero commit (and the rerun API). Not code;
+  the next push carried it forward and is live.
+
+### Verification
+
+smoke **414 passed** · `bun run build` clean · `bun test/render-check.js` **15/15 routes** ·
+Actions green · **https://pbueschel.github.io/relayhq/** returns 200.
+
+### Next
+
+Work through the omissions the catalog rework left behind, in this order:
+1. `src/store/seed/forms.js` needs a general "this application is broken" subform — roughly 90 of
+   the new catalog items currently carry neither a knowledge atom nor an intake form, so they drill
+   to a dead end.
+2. `PRODUCT_ICON` in `src/views/Portal.jsx` has no entry for `cat-p-applications`, so that product
+   renders the generic Folder glyph.
+3. Then the founding session's queue: `LessonRecord` with `source: 'course' | 'deflection' |
+   'agent_context'`, the catalog-derived coverage matrix, and moving `prerequisiteIds` off the atom
+   onto the lesson placement.
+
+### Held
+
+**The landing page is built and live at the URL, but not cleared for sharing.** Phil's framing was
+"before we share this out to anyone" — he has seen it and asked for changes, but has not said go.
+Do not send the link onward without his explicit word.
