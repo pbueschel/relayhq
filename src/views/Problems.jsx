@@ -172,6 +172,14 @@ function unique(list) {
   return Array.from(new Set(list));
 }
 
+/**
+ * Modal dismissal is DOM-containment based, so a nested picker rendered through
+ * its own portal counts as "outside" its parent — one click inside the picker
+ * would otherwise close the record behind it. Handing the parent a no-op close
+ * while a child is open freezes it in place until the child is done.
+ */
+function noop() {}
+
 function nextProblemKey(problems) {
   let max = 30;
   for (const p of problems || []) {
@@ -316,6 +324,7 @@ export default function Problems({ route }) {
           tickets={tickets}
           people={people}
           tab={tab}
+          onTab={setTab}
           onOpen={(p) => navigate('problems', null, p.id)}
           onNew={() => setCreating(true)}
           violations={violations}
@@ -339,8 +348,10 @@ export default function Problems({ route }) {
  * LIST
  * ==================================================================== */
 
-function ProblemList({ problems, tickets, people, tab, onOpen, onNew, violations, missingId }) {
+function ProblemList({ problems, tickets, people, tab, onTab, onOpen, onNew, violations, missingId }) {
   const { t } = useTheme();
+  const changes = useStore(s => s.changes || []);
+  const directory = useStore(s => s.directory || []);
   const [q, setQ] = useState('');
   const [priority, setPriority] = useState('all');
   const [priorityMenu, setPriorityMenu] = useState(false);
@@ -417,9 +428,9 @@ function ProblemList({ problems, tickets, people, tab, onOpen, onNew, violations
 
       <Toolbar>
         <Stat label="open problems" value={stats.open} accent={HUE} icon={OctagonAlert}
-          active={focus === null} onClick={() => setFocus(null)} />
+          active={tab === 'open' && !focus} onClick={() => { onTab('open'); setFocus(null); }} />
         <Stat label="known errors" value={stats.known} accent="orange" icon={Lightbulb}
-          active={focus === 'known'} onClick={() => setFocus(null)} />
+          active={tab === 'known' && !focus} onClick={() => { onTab('known'); setFocus(null); }} />
         <Stat label="awaiting a permanent fix" value={stats.awaitingFix} accent="red" icon={Wrench}
           active={focus === 'awaiting'} onClick={() => setFocus(f => f === 'awaiting' ? null : 'awaiting')} />
         <Stat label="incidents explained" value={stats.incidents} accent={TICKET_HUE} icon={Inbox}
@@ -475,7 +486,8 @@ function ProblemList({ problems, tickets, people, tab, onOpen, onNew, violations
           </div>
           <div className={DENSITY.rowGap}>
             {list.map(r => (
-              <ProblemRow key={r.problem.id} problem={r.problem} impact={r.impact} onOpen={onOpen} />
+              <ProblemRow key={r.problem.id} problem={r.problem} impact={r.impact}
+                changes={changes} directory={directory} onOpen={onOpen} />
             ))}
           </div>
         </Section>
@@ -484,11 +496,9 @@ function ProblemList({ problems, tickets, people, tab, onOpen, onNew, violations
   );
 }
 
-function ProblemRow({ problem, impact, onOpen }) {
-  const { t } = useTheme();
-  const changes = useStore(s => s.changes || []);
-  const directory = useStore(s => s.directory || []);
-
+function ProblemRow({ problem, impact, changes, directory, onOpen }) {
+  const { t, a } = useTheme();
+  const kb = a(KB_HUE);
   const fix = problem.resolvedByChangeId ? changes.find(c => c.id === problem.resolvedByChangeId) : null;
   const owner = directory.find(p => p.id === problem.assigneeId);
   const violation = isKnownErrorViolation(problem);
@@ -504,16 +514,19 @@ function ProblemRow({ problem, impact, onOpen }) {
       subtitle={problem.rootCause || problem.symptom || problem.description || 'No symptom recorded yet'}
       meta={
         <>
-          <span className={cx('hidden @md:flex items-center gap-1 text-xs tabular-nums', t.textMuted)} title={`${impact.tickets.length} linked incidents`}>
-            <Inbox size={ICON.sm} />
-            {impact.tickets.length}
-          </span>
-          {fix && <Chip accent={CHANGE_HUE} icon={GitBranch} title={`${fix.key || fix.id} — ${fix.title || ''}`}>{fix.key || fix.id}</Chip>}
-          {problem.knowledgeIds.length > 0 && (
-            <span className={cx('hidden @lg:inline-flex', KB_HUE ? '' : '')}>
-              <Chip accent={KB_HUE} icon={BookOpen}>{plural(problem.knowledgeIds.length, 'atom', 'atoms')}</Chip>
+          {impact.tickets.length > 0 && (
+            <span className={cx('hidden @md:flex items-center gap-1 text-xs tabular-nums', t.textMuted)}
+              title={`${plural(impact.tickets.length, 'incident', 'incidents')} linked`}>
+              <Inbox size={ICON.sm} />
+              {impact.tickets.length}
             </span>
           )}
+          {problem.knowledgeIds.length > 0 && (
+            <span className="hidden @lg:inline-flex" title="Workaround is published as a knowledge atom">
+              <BookOpen size={ICON.sm} className={kb.fg} />
+            </span>
+          )}
+          {fix && <Chip accent={CHANGE_HUE} icon={GitBranch} title={`${fix.key || fix.id} — ${fix.title || ''}`}>{fix.key || fix.id}</Chip>}
           <StatusPill status={problem.status} />
           <PriorityFlag priority={problem.priority} withLabel={false} />
           {owner ? <Avatar name={owner.name} size="sm" /> : <Chip accent="slate">Unassigned</Chip>}
@@ -561,6 +574,7 @@ function ProblemDetail({ problemId, onClose }) {
   const owner = directory.find(p => p.id === problem.assigneeId);
   const next = NEXT_ACTION[problem.status];
   const ready = hasWorkaround(problem);
+  const locked = picker !== null || confirming;
 
   function patch(fields) {
     patchIn('problems', problem.id, fields);
@@ -583,7 +597,7 @@ function ProblemDetail({ problemId, onClose }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={locked ? noop : onClose}
       accent={HUE}
       size="modalXl"
       icon={stageIcon(problem.status)}
@@ -620,22 +634,25 @@ function ProblemDetail({ problemId, onClose }) {
           <EntityTag kind="problem" />
           <StatusPill status={problem.status} />
           <PriorityFlag priority={problem.priority} />
-          <Divider vertical className="h-4" />
-          <Select
-            accent={HUE}
-            className="w-auto py-1"
-            value={problem.priority}
-            onChange={(e) => patch({ priority: e.target.value })}
-            options={PRIORITY_KEYS.map(k => ({ value: k, label: `${priorityMeta(k).label} priority` }))}
-          />
-          <Select
-            accent={HUE}
-            className="w-auto py-1"
-            value={problem.assigneeId || ''}
-            placeholder="Unassigned"
-            onChange={(e) => patch({ assigneeId: e.target.value || null })}
-            options={directory.map(p => ({ value: p.id, label: p.name }))}
-          />
+          {owner && <Avatar name={owner.name} size="sm" />}
+          <span className="flex-1" />
+          <div className="w-36">
+            <Select
+              accent={HUE}
+              value={problem.priority}
+              onChange={(e) => patch({ priority: e.target.value })}
+              options={PRIORITY_KEYS.map(k => ({ value: k, label: `${priorityMeta(k).label} priority` }))}
+            />
+          </div>
+          <div className="w-48">
+            <Select
+              accent={HUE}
+              value={problem.assigneeId || ''}
+              placeholder="Unassigned"
+              onChange={(e) => patch({ assigneeId: e.target.value || null })}
+              options={directory.map(p => ({ value: p.id, label: p.name }))}
+            />
+          </div>
         </div>
 
         <StateLadder problem={problem} blocked={blocked} onAttempt={attempt} />
@@ -650,7 +667,7 @@ function ProblemDetail({ problemId, onClose }) {
 
         <PermanentFixSection problem={problem} onLink={() => setPicker('change')} />
 
-        <KnowledgeSection problem={problem} onLink={() => setPicker('knowledge')} />
+        <KnowledgeSection problem={problem} impact={impact} onLink={() => setPicker('knowledge')} />
       </div>
 
       <LinkIncidentModal open={picker === 'incident'} problem={problem} people={people} onClose={() => setPicker(null)} />
@@ -792,10 +809,13 @@ function ImpactSummary({ problem, impact }) {
 
       <div className={cx('border-t', t.borderLight, DENSITY.sectionPad, 'space-y-3')}>
         <div className="flex flex-wrap gap-2">
-          <Stat label="incidents linked" value={impact.tickets.length} accent={TICKET_HUE} icon={Inbox} />
+          <Stat label={impact.tickets.length === 1 ? 'incident linked' : 'incidents linked'}
+            value={impact.tickets.length} accent={TICKET_HUE} icon={Inbox} />
           <Stat label="still open" value={impact.open} accent={impact.open ? 'amber' : 'emerald'} icon={CircleDot} />
-          <Stat label={affected === 1 ? 'customer or team affected' : 'customers and teams affected'} value={affected} accent="slate" icon={Building2} />
-          <Stat label="days unresolved" value={impact.days == null ? 0 : impact.days} accent={HUE} icon={CalendarDays} />
+          <Stat label={affected === 1 ? 'customer or team affected' : 'customers and teams affected'}
+            value={affected} accent="slate" icon={Building2} />
+          <Stat label={impact.days === 1 ? 'day unresolved' : 'days unresolved'}
+            value={impact.days == null ? 0 : impact.days} accent={HUE} icon={CalendarDays} />
         </div>
 
         {impact.orgs.length > 0 && (
@@ -967,14 +987,14 @@ function IncidentsSection({ problem, impact, people, onLink }) {
 }
 
 function IncidentRow({ ticket, people, onUnlink }) {
-  const { t } = useTheme();
+  const { t, a } = useTheme();
   const requester = requesterNameOf(ticket, people);
   const aff = affiliationOf(ticket, people);
   const created = fmtDate(ticketDateOf(ticket));
 
   return (
     <div className={cx('group flex items-center gap-3', DENSITY.rowPad)}>
-      <span className={cx('w-1 self-stretch min-h-7 rounded-full flex-shrink-0', useTheme().a(TICKET_HUE).rail)} />
+      <span className={cx('w-1 self-stretch min-h-7 rounded-full flex-shrink-0', a(TICKET_HUE).rail)} />
       <div className="flex-1 min-w-0">
         <p className={cx('text-sm truncate', t.text)}>
           <span className={cx('font-mono text-xs mr-1.5', t.textMuted)}>{ticketRefOf(ticket)}</span>
@@ -1064,7 +1084,7 @@ function PermanentFixSection({ problem, onLink }) {
  * Linked knowledge — the workaround where agents actually read it
  * -------------------------------------------------------------------- */
 
-function KnowledgeSection({ problem, onLink }) {
+function KnowledgeSection({ problem, impact, onLink }) {
   const { t } = useTheme();
   const knowledge = useStore(s => s.knowledge || []);
   const atoms = (problem.knowledgeIds || []).map(id => ({ id, atom: knowledge.find(k => k.id === id) || null }));
@@ -1117,9 +1137,11 @@ function KnowledgeSection({ problem, onLink }) {
             </p>
           ) : (
             <Banner accent="emerald" icon={Check}>
-              {plural(atoms.length, 'atom is', 'atoms are')} attached, so this workaround reaches agents on every one of
-              the {plural(problem.linkedTicketIds.length, 'linked incident', 'linked incidents')} without anyone
-              retyping it.
+              {plural(atoms.length, 'atom is', 'atoms are')} attached. The workaround now reaches agents on{' '}
+              {impact.tickets.length
+                ? `all ${plural(impact.tickets.length, 'linked incident', 'linked incidents')}`
+                : 'every incident linked from here'}{' '}
+              without anyone retyping it — and the same atom serves the portal and the support-agent course.
             </Banner>
           )}
         </div>
@@ -1494,13 +1516,13 @@ function NewProblemModal({ open, onClose, problems }) {
               {candidates.map(ticket => (
                 <div key={ticket.id} className={cx('flex items-center gap-3', DENSITY.rowPad)}>
                   <Checkbox
+                    className="flex-1 min-w-0"
                     accent={TICKET_HUE}
                     checked={picked.includes(ticket.id)}
                     onChange={(on) => setPicked(prev => on ? unique([...prev, ticket.id]) : prev.filter(x => x !== ticket.id))}
                     label={`${ticketRefOf(ticket)} · ${ticketTitleOf(ticket)}`}
                     hint={fmtDate(ticketDateOf(ticket)) || undefined}
                   />
-                  <span className="flex-1" />
                   {ticket.status && <StatusPill status={ticket.status} />}
                 </div>
               ))}

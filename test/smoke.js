@@ -229,6 +229,55 @@ for (const c of seed.courses || []) {
 }
 ok('cross-collection references resolve', refProblems.length === 0, refProblems.slice(0, 6).join(' | '));
 
+/* ------------------------------------------------------------------ *
+ * RULE 0 — the author-once invariant.
+ *
+ * The product thesis is that ONE authored knowledge atom serves deflection,
+ * agent enablement and training simultaneously. That is only true if the seed
+ * actually demonstrates it — a demo where every course lesson is its own
+ * private article proves nothing, and the architecture would be pointless.
+ *
+ * So this is asserted, not hoped for. If a future change makes lessons private
+ * copies again, this fails before it ships.
+ * ------------------------------------------------------------------ */
+
+const inCatalog = new Map();
+walkCatalog(seed.catalog, (n, trail) => {
+  for (const id of n.knowledgeIds || []) {
+    if (!inCatalog.has(id)) inCatalog.set(id, []);
+    inCatalog.get(id).push([...trail, n.name].join(' › '));
+  }
+});
+
+const inCourses = new Map();
+for (const c of seed.courses || []) {
+  for (const m of c.modules || []) {
+    // A lesson may be a bare knowledge id or a placement object carrying one.
+    for (const l of m.lessonIds || m.lessons || []) {
+      const id = typeof l === 'string' ? l : l?.knowledgeId;
+      if (!id) continue;
+      if (!inCourses.has(id)) inCourses.set(id, []);
+      inCourses.get(id).push(c.id);
+    }
+  }
+}
+
+const dualPurpose = (seed.knowledge || []).filter(k => inCatalog.has(k.id) && inCourses.has(k.id));
+const orphaned = (seed.knowledge || []).filter(k => !inCatalog.has(k.id) && !inCourses.has(k.id));
+
+ok('knowledge atoms exist', (seed.knowledge || []).length >= 20, `${(seed.knowledge || []).length}`);
+ok('most atoms serve BOTH deflection and training (the author-once thesis)',
+  dualPurpose.length >= Math.floor((seed.knowledge || []).length * 0.5),
+  `${dualPurpose.length} of ${(seed.knowledge || []).length} dual-purpose`);
+ok('no knowledge atom is orphaned', orphaned.length === 0,
+  orphaned.slice(0, 5).map(k => k.id).join(', '));
+
+/* An atom reused across MORE THAN ONE catalog location is the specific thing
+ * the nested v1 model made impossible. Assert at least a few exist. */
+const multiPlaced = [...inCatalog.entries()].filter(([, places]) => places.length > 1);
+ok('some atoms appear under more than one catalog item (impossible in v1)',
+  multiPlaced.length >= 3, `${multiPlaced.length} multi-placed`);
+
 /* Guides must carry alt text — an image-only how-to with no alt is unusable
  * with a screen reader, and this product's pitch is visual instruction. */
 const altProblems = [];
