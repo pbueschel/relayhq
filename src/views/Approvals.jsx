@@ -140,10 +140,6 @@ function stageRuleLabel(stage) {
   return STAGE_RULES.find(r => r.rule === stage.rule)?.label || 'Everyone must approve';
 }
 
-function stageRuleHint(stage) {
-  return STAGE_RULES.find(r => r.rule === stage.rule)?.hint || '';
-}
-
 function timeoutLabel(stage) {
   return TIMEOUT_ACTIONS.find(a => a.value === stage.onTimeout)?.label || 'Keep waiting';
 }
@@ -212,9 +208,9 @@ const LENSES = [
 const LENS_VALUES = LENSES.map(l => l.value);
 
 const GROUPS = [
-  { key: 'overdue',  label: 'Overdue — the stage clock has passed' },
+  { key: 'overdue',  label: 'Overdue' },
   { key: 'you',      label: 'Waiting on you' },
-  { key: 'flight',   label: 'In flight — waiting on other approvers' },
+  { key: 'flight',   label: 'Waiting on other approvers' },
   { key: 'resolved', label: 'Resolved' },
 ];
 
@@ -598,7 +594,6 @@ export default function Approvals({ route }) {
     () => all.filter(r => r.state === 'awaiting' && r.stages.some(s => s.approverIds.length === 0)),
     [all],
   );
-  const isDemo = all.some(r => r.bootstrapped);
 
   const targetTypes = useMemo(() => {
     const set = new Set(all.map(r => r.targetType).filter(Boolean));
@@ -754,12 +749,10 @@ export default function Approvals({ route }) {
       {
         id: 'rule', label: 'Stage rule', icon: Users,
         options: STAGE_RULES.map(r => ({ value: r.rule, label: r.label, count: byRule.get(r.rule) || 0 })),
-        footer: 'The rule the CURRENT stage runs on, not the whole ladder.',
       },
       {
         id: 'waiting', label: 'Waiting on', icon: UserCheck,
         options: WAITING_ON.map(w => ({ value: w.value, label: w.label, count: byWaiting.get(w.value) || 0 })),
-        footer: 'Only a running request is waiting on anybody.',
       },
       {
         id: 'target', label: 'Hangs off', icon: Layers,
@@ -785,7 +778,7 @@ export default function Approvals({ route }) {
         subtitle={subsetLabel(
           visible.length,
           all.length,
-          `${counts.open} running · ${counts.mine} waiting on ${impersonating ? actingPerson?.name?.split(' ')[0] : 'you'} · policies run live, nothing here is a mock-up`,
+          `${counts.open} running · ${counts.mine} waiting on ${impersonating ? actingPerson?.name?.split(' ')[0] : 'you'}`,
         )}
         actions={
           <ActingAsControl
@@ -827,40 +820,21 @@ export default function Approvals({ route }) {
         <div className="space-y-4">
           <div className="space-y-2">
             {impersonating && (
-              <Banner accent="violet" icon={Users} title={`Viewing this inbox as ${actingPerson?.name}`}>
-                Decisions you record will be attributed to {actingPerson?.name}, not to {currentUser?.name}.
-                Switch back from the control in the header.
-              </Banner>
-            )}
-
-            {isDemo && (
-              <Banner accent="blue" icon={Info} title="These requests were started from your approval policies">
-                No running approval requests came with this instance's data, so RelayHQ instantiated
-                {' '}{all.length} of them from the policies in <strong className={t.text}>Business Rules</strong> using
-                the same <code>startApproval()</code> the intake path calls. Every stage, approver and clock below is
-                real engine output.
-              </Banner>
+              <Banner accent="violet" icon={Users} title={`Viewing this inbox as ${actingPerson?.name}`} />
             )}
 
             {overdue.length > 0 && (
               <Banner accent="red" icon={Timer} title={`${overdue.length} request${overdue.length === 1 ? '' : 's'} past the stage due time`}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span>
-                    The automation runtime applies each stage's timeout action on its hourly tick.
-                    Nothing happens silently — you can run that sweep now and watch the escalations land.
-                  </span>
-                  <Button size="xs" variant="solid" accent="red" icon={Zap} onClick={sweepOverdue}>
-                    Run timeout policy on all {overdue.length}
-                  </Button>
-                </div>
+                <Button size="xs" variant="solid" accent="red" icon={Zap} onClick={sweepOverdue}>
+                  Run timeout policy on all {overdue.length}
+                </Button>
               </Banner>
             )}
 
             {unresolved.length > 0 && (
               <Banner accent="orange" icon={TriangleAlert} title="A stage resolved to nobody">
-                {unresolved.length} open request{unresolved.length === 1 ? ' has' : 's have'} a stage whose approver
-                spec matched no one — usually a requester with no manager on file. RelayHQ holds these rather than
-                skipping the stage. Delegate someone in to unblock them.
+                {unresolved.length} open request{unresolved.length === 1 ? ' has' : 's have'} a stage with no approver.
+                Delegate someone in to unblock them.
               </Banner>
             )}
 
@@ -871,8 +845,6 @@ export default function Approvals({ route }) {
             {flash?.kind === 'swept' && (
               <Banner accent="amber" icon={Sparkles} title="Timeout sweep complete">
                 Applied each stage's own timeout action to {flash.count} overdue request{flash.count === 1 ? '' : 's'}.
-                Open one to see exactly what happened — an escalating stage names whoever was added, and says so
-                when the escalation target resolved to nobody. Stages set to “keep waiting” are deliberately untouched.
               </Banner>
             )}
           </div>
@@ -955,13 +927,11 @@ function emptyTitle(lens, total, filtered) {
 function emptyHint(lens, total, policyCount, filtered) {
   if (!total) {
     return policyCount
-      ? 'Approval requests are created when a submission matches a policy in Business Rules. None are running right now.'
-      : 'No approval policies are configured, so nothing can raise an approval. Add one in Business Rules.';
+      ? ''
+      : 'No approval policies are configured. Add one in Business Rules.';
   }
-  if (filtered) {
-    return 'Search composes with the filters in the tray rather than replacing them — clearing one filter may bring requests back.';
-  }
-  if (lens === 'mine') return 'Requests appear here the moment a stage resolves to you — including stages you were delegated into.';
+  if (filtered) return 'Clear a filter to bring requests back.';
+  if (lens === 'mine') return '';
   return 'Try another lens.';
 }
 
@@ -1233,7 +1203,6 @@ function RequestModal({ request, policy, people, directory, queues, meId, now, f
                   {stage?.onTimeout === 'escalate' && stage?.escalateTo
                     ? ` — to ${describeApprover(stage.escalateTo, { directory, queues })}`
                     : ''}.
-                  The automation tick does this hourly; a demo should not have to wait.
                 </span>
                 <Button size="xs" variant="solid" accent="red" icon={Zap} onClick={() => onTimeout(request)}>
                   Run timeout policy now
@@ -1245,8 +1214,7 @@ function RequestModal({ request, policy, people, directory, queues, meId, now, f
           {stage && stage.approverIds.length === 0 && request.state === 'awaiting' && (
             <Banner accent="orange" icon={TriangleAlert} title="This stage resolved to nobody">
               {(stage.approvers || []).map(sp => describeApprover(sp, { directory, queues })).join(', ') || 'The approver spec'}
-              {' '}matched no one in the directory. RelayHQ holds the request here rather than skipping the stage —
-              delegate someone in to unblock it.
+              {' '}matched no one in the directory. Delegate someone in to unblock it.
             </Banner>
           )}
 
@@ -1312,14 +1280,11 @@ function RequestModal({ request, policy, people, directory, queues, meId, now, f
 
 /** The demo moment: make the advance legible rather than a silent re-render. */
 function FlashBanner({ flash, request, people }) {
-  const { t } = useTheme();
   if (!flash) return null;
 
   if (flash.kind === 'delegated') {
     return (
-      <Banner accent="violet" icon={UserPlus} title={`${flash.to} was delegated into this stage`}>
-        {flash.by} added them alongside the existing approvers, and the delegation is recorded on the stage below.
-      </Banner>
+      <Banner accent="violet" icon={UserPlus} title={`${flash.to} was delegated into this stage`} />
     );
   }
   if (flash.kind === 'recorded') {
@@ -1328,8 +1293,7 @@ function FlashBanner({ flash, request, people }) {
     return (
       <Banner accent={flash.verdict === 'approved' ? 'emerald' : 'amber'} icon={CheckCheck}
         title={`${flash.by}'s ${flash.verdict === 'approved' ? 'approval' : 'rejection'} is recorded — the stage is still open`}>
-        “{flash.fromStage}” runs on <strong className={t.text}>{stageRuleLabel(stage || {}).toLowerCase()}</strong>, so it
-        needs {tally.need} approval{tally.need === 1 ? '' : 's'} and has {tally.approved}. Nothing advances until it clears.
+        “{flash.fromStage}” has {tally.approved} of {tally.need} approval{tally.need === 1 ? '' : 's'}.
       </Banner>
     );
   }
@@ -1338,36 +1302,29 @@ function FlashBanner({ flash, request, people }) {
     return (
       <Banner accent={names.length ? 'amber' : 'orange'} icon={Zap} title="Timeout policy applied">
         {names.length
-          ? `${names.join(', ')} ${names.length === 1 ? 'was' : 'were'} added as an escalation approver and the stage clock has been reset.`
+          ? `${names.join(', ')} ${names.length === 1 ? 'was' : 'were'} added as an escalation approver. The stage clock has been reset.`
           : flash.resolvedCount
-            ? `The escalation target (${flash.escalateTo}) was already on this stage, so nobody new was added. The clock has been reset.`
-            : `The escalation target (${flash.escalateTo || 'none configured'}) resolved to nobody, so nobody was added. RelayHQ reset the clock rather than skipping the stage — this is a policy configuration gap, not a decision.`}
+            ? `The escalation target (${flash.escalateTo}) was already on this stage. The stage clock has been reset.`
+            : `The escalation target (${flash.escalateTo || 'none configured'}) resolved to nobody. The stage clock has been reset.`}
       </Banner>
     );
   }
   if (flash.kind === 'advanced') {
     return (
       <Banner accent="emerald" icon={ArrowRight} title={`“${flash.fromStage}” cleared — now at “${flash.toStage}”`}>
-        {flash.timeout ? 'The timeout action resolved the stage. ' : `${flash.by} recorded an approval. `}
-        Stage {flash.toIndex + 1} of {request.stages.length} is open and waiting on
-        {' '}{(request.stages[flash.toIndex]?.approverIds || []).map(id => people.get(id)?.name || id).join(', ') || 'nobody — see the warning above'}.
+        Stage {flash.toIndex + 1} of {request.stages.length} is waiting on
+        {' '}{(request.stages[flash.toIndex]?.approverIds || []).map(id => people.get(id)?.name || id).join(', ') || 'nobody'}.
       </Banner>
     );
   }
   if (flash.kind === 'approved') {
     return (
-      <Banner accent="emerald" icon={CircleCheck} title="Fully approved">
-        Every stage has cleared. The request is closed and the target record can proceed.
-      </Banner>
+      <Banner accent="emerald" icon={CircleCheck} title="Fully approved" />
     );
   }
   if (flash.kind === 'rejected') {
     return (
-      <Banner accent="red" icon={CircleX} title="Rejected">
-        <span className={t.textSecondary}>
-          This policy stops on rejection, so no later stage runs. The requester keeps the comment as the reason.
-        </span>
-      </Banner>
+      <Banner accent="red" icon={CircleX} title="Rejected" />
     );
   }
   return null;
@@ -1495,7 +1452,6 @@ function StageCard({ stage, index, isLast, request, people, directory, queues, m
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={cx('text-[11px]', t.textMuted)}>Policy asks for</span>
                   <ChipGroup items={specs} accent="slate" icon={Users} max={3} />
-                  <span className={cx('text-[11px]', t.textMuted)} title={stageRuleHint(stage)}>· {stageRuleHint(stage)}</span>
                 </div>
               )}
 
@@ -1594,8 +1550,6 @@ function PolicyTrace({ policy, request }) {
     return (
       <Banner accent="slate" icon={Info} title="The policy behind this request is not in this instance">
         The request records it as <strong className={t.text}>{request.policyName || request.policyId || 'unknown'}</strong>.
-        Its stages are frozen onto the request, so the ladder above is still accurate — only the condition trace
-        cannot be replayed.
       </Banner>
     );
   }
@@ -1613,13 +1567,9 @@ function PolicyTrace({ policy, request }) {
       </div>
       <div className={cx('rounded-lg border p-2', t.bgSubtle, t.borderLight)}>
         {rowCount === 0
-          ? <p className={cx('text-xs', t.textMuted)}>This policy has no conditions — it applies to every submission it is attached to.</p>
+          ? <p className={cx('text-xs', t.textMuted)}>This policy has no conditions.</p>
           : <TraceNode node={trace} />}
       </div>
-      <p className={cx('text-[11px]', t.textMuted)}>
-        Evaluated live against the request context that was captured at submission — the same
-        <code> evaluate()</code> the routing rules and automation IF-nodes use.
-      </p>
     </Card>
   );
 }
@@ -1688,11 +1638,11 @@ function DecisionPanel({ request, mine, actor, meId, people, comment, setComment
         <div className="min-w-0">
           <p className={cx('text-sm font-medium', t.text)}>Your decision as {actor?.name || meId}</p>
           <p className={cx('text-[11px]', t.textMuted)}>
-            Recorded against “{request.stages[request.currentStage]?.name}” with a timestamp. It cannot be edited afterwards.
+            Recorded against “{request.stages[request.currentStage]?.name}”.
           </p>
         </div>
       </div>
-      <Field label="Comment" hint="Optional for an approval, and the reason the requester sees on a rejection.">
+      <Field label="Comment" hint="Optional; the requester sees it as the reason on a rejection.">
         <Textarea
           rows={2}
           accent="amber"
@@ -1714,7 +1664,6 @@ function DecisionPanel({ request, mine, actor, meId, people, comment, setComment
  * why, because "the button is missing" is not an explanation.
  */
 function WhyNotYou({ request, meId, actor, people }) {
-  const { t } = useTheme();
   const stage = request.stages[request.currentStage];
   const mineAlready = stage ? decisionOf(stage, meId) : null;
 
@@ -1724,7 +1673,7 @@ function WhyNotYou({ request, meId, actor, people }) {
       <Banner accent={request.state === 'approved' ? 'emerald' : 'slate'} icon={request.state === 'approved' ? CircleCheck : Ban}
         title={`This request is ${request.state}`}>
         Resolved {stamp(request.resolvedAt)}
-        {last ? ` · last decision by ${people.get(last.approverId)?.name || last.approverId}` : ''}. No further decisions are possible.
+        {last ? ` · last decision by ${people.get(last.approverId)?.name || last.approverId}` : ''}.
       </Banner>
     );
   }
@@ -1733,17 +1682,13 @@ function WhyNotYou({ request, meId, actor, people }) {
       <Banner accent={mineAlready.verdict === 'approved' ? 'emerald' : 'red'} icon={CheckCheck}
         title={`You already ${mineAlready.verdict} this stage`}>
         {stamp(mineAlready.at)}{mineAlready.comment ? ` — “${mineAlready.comment}”` : ''}.
-        The stage is still open because it needs {stageNeed(stage)} of {stage.approverIds.length}.
+        The stage still needs {stageNeed(stage)} of {stage.approverIds.length}.
       </Banner>
     );
   }
   return (
     <Banner accent="slate" icon={Users} title={`“${stage?.name || 'This stage'}” is not yours to decide`}>
-      <span className={t.textSecondary}>
-        It is waiting on {(stage?.approverIds || []).map(id => people.get(id)?.name || id).join(', ') || 'nobody'}.
-        {' '}Use the <strong className={t.text}>Acting as</strong> control in the header to sit in one of their chairs,
-        or delegate yourself in.
-      </span>
+      Waiting on {(stage?.approverIds || []).map(id => people.get(id)?.name || id).join(', ') || 'nobody'}.
     </Banner>
   );
 }
@@ -1777,11 +1722,6 @@ function DelegateModal({ open, request, directory, meId, onClose, onPick }) {
       footer={<><span /><Button variant="outline" onClick={onClose}>Cancel</Button></>}
     >
       <div className="space-y-3">
-        <Banner accent="amber" icon={Info}>
-          Delegation <strong className={t.text}>adds</strong> the person to this stage's approvers — it does not
-          remove you. With “{stageRuleLabel(stage || {})}” that means the stage will need
-          {' '}{stage?.rule === 'all' ? 'their decision too' : 'no more decisions than before'}.
-        </Banner>
         <SearchInput value={query} onChange={setQuery} placeholder="Search the directory…" accent="violet" />
         <div className="space-y-1 max-h-72 overflow-auto">
           {people.length === 0 && (

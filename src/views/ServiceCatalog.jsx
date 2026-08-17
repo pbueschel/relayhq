@@ -267,7 +267,6 @@ function matchesQuery(record, query) {
 const UNCATEGORISED = {
   id: '__uncategorised__',
   name: 'Uncategorised',
-  description: 'These items point at a category that no longer exists. They are invisible in the portal until they are moved.',
   icon: 'AlertCircle',
   audience: 'internal',
   order: Number.MAX_SAFE_INTEGER,
@@ -294,7 +293,6 @@ function groupByCategory(items, categories) {
  * ==================================================================== */
 
 export default function ServiceCatalog({ route }) {
-  const { t } = useTheme();
   const liveRoute = useRoute();
   const r = route || liveRoute;
 
@@ -364,7 +362,6 @@ export default function ServiceCatalog({ route }) {
       },
       {
         id: 'audience', label: 'Audience', icon: Users,
-        footer: 'An item marked Both answers to either audience.',
         options: AUDIENCE_TILES.map(o => ({
           value: o.value, label: o.label, count: byAudience.get(o.value) || 0,
         })),
@@ -524,7 +521,7 @@ export default function ServiceCatalog({ route }) {
           ? subsetLabel(
             shownCats.length,
             cats.length,
-            `${plural(cats.length, 'category', 'categories')} · the shelves the portal renders, in order`,
+            plural(cats.length, 'category', 'categories'),
           )
           : subsetLabel(
             filtered.length,
@@ -593,11 +590,6 @@ export default function ServiceCatalog({ route }) {
             {/* One number over a catalog that prices some things monthly and
                 some annually only means something if the normalisation is
                 stated. */}
-            {totals.monthly > 0 && (
-              <p className={cx('text-[11px] mt-1.5', t.textMuted)}>
-                Recurring total counts published items only, and states an annual price at a twelfth of it.
-              </p>
-            )}
           </div>
         )}
 
@@ -605,7 +597,7 @@ export default function ServiceCatalog({ route }) {
           <EmptyState
             icon={ShoppingCart}
             title="The service catalog is empty"
-            hint="This is the “I want something” catalog — orderable things with a price, a delivery time, a fulfilment queue and a sign-off. Start with a category; items live inside one."
+            hint="Start with a category; items live inside one."
             action={
               <Button variant="solid" accent={CATEGORY_HUE} icon={Plus} onClick={() => setEditingCategory({ category: null })}>
                 New category
@@ -682,9 +674,9 @@ function cascadeNote(pending, items) {
   if (pending.kind === 'category') {
     const held = (items || []).filter(i => i.categoryId === pending.record.id).length;
     if (!held) return 'No items point at this category.';
-    return `${plural(held, 'item points', 'items point')} at this category. They are NOT deleted — they become uncategorised and stop appearing in the portal until you move them.`;
+    return `${plural(held, 'item points', 'items point')} at this category. They become uncategorised, not deleted.`;
   }
-  return 'The request form, knowledge atoms and approval policy this item references are shared records and stay where they are — only this item is removed.';
+  return 'Only this item is removed.';
 }
 
 /* ==================================================================== *
@@ -699,9 +691,9 @@ function ItemsTab({ groups, queues, policies, filtering, onEdit, onDelete, onNew
           icon={filtering ? Search : ShoppingCart}
           title={filtering ? 'Nothing matches' : 'No service items yet'}
           hint={filtering
-            ? 'Clear a filter or widen the audience — a draft item is hidden by the Published filter.'
+            ? 'Clear a filter or widen the audience.'
             : hasCategories
-              ? 'An item is a thing somebody can order: a laptop, a licence seat, a desk move. It carries a price, a delivery time, a fulfilment queue and — when it needs one — a sign-off.'
+              ? undefined
               : 'Create a category first; every item lives inside one.'}
           action={hasCategories
             ? <Button variant="solid" accent={ITEM_HUE} icon={Plus} onClick={() => onNew('')}>New service item</Button>
@@ -762,7 +754,7 @@ function CategoryGroup({ category, items, queues, policies, onEdit, onDelete, on
 
       {orphaned && (
         <Banner accent="red" icon={AlertCircle} title="These items point at a category that does not exist" className="mb-2">
-          {category.description} Open each one and pick a category, or delete it.
+          Open each one and pick a category, or delete it.
         </Banner>
       )}
 
@@ -796,7 +788,7 @@ function ServiceItemRow({ item, queues, policies, onEdit, onDelete }) {
       accent={ITEM_HUE}
       icon={Glyph}
       title={item.name || item.id}
-      subtitle={item.shortDescription || 'No short description — the portal card will be blank.'}
+      subtitle={item.shortDescription || 'No short description.'}
       onClick={() => onEdit(item)}
       meta={<StatusPill status={item.status || 'draft'} />}
       actions={
@@ -866,8 +858,8 @@ function CategoriesTab({ categories, items, searching, onEdit, onDelete, onMove,
         icon={searching ? Search : Folder}
         title={searching ? 'No category matches' : 'No categories yet'}
         hint={searching
-          ? 'The search covers the category name and its description. Clear it to see every shelf again.'
-          : 'A category is the shelf an orderable thing sits on — Hardware, Software, Access, People. The portal renders them in this order.'}
+          ? 'Clear the search to see every category.'
+          : undefined}
         action={searching
           ? null
           : <Button variant="solid" accent={CATEGORY_HUE} icon={Plus} onClick={onNew}>New category</Button>}
@@ -909,7 +901,7 @@ function CategoryRow({ category, held, reorderable, first, last, onEdit, onDelet
       accent={CATEGORY_HUE}
       icon={Glyph}
       title={category.name || category.id}
-      subtitle={category.description || 'No description — the portal shows the name alone.'}
+      subtitle={category.description || 'No description.'}
       onClick={() => onEdit(category)}
       meta={
         <>
@@ -1039,7 +1031,7 @@ function ItemEditor({
   const footerNote = !draft.name.trim()
     ? 'A name is required.'
     : !draft.categoryId
-      ? 'Pick a category — an item with no category never renders in the portal.'
+      ? 'Pick a category.'
       : commercialLine(draft);
 
   return (
@@ -1050,7 +1042,6 @@ function ItemEditor({
       icon={iconFor(draft.icon)}
       size="modalLg"
       title={item ? draft.name || 'Service item' : 'New service item'}
-      subtitle={item ? 'Editing an orderable thing' : 'Something a person can order, with a cost and an outcome'}
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>{footerNote}</span>
@@ -1080,13 +1071,11 @@ function ItemEditor({
  * ------------------------------------------------------------------ */
 
 function EditorBasics({ draft, onPatch, categories }) {
-  const { t } = useTheme();
   return (
     <Panel
       icon={iconFor(draft.icon)}
       accent={ITEM_HUE}
       title="What it is"
-      subtitle="The card a person reads before they decide to order"
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
         <Field label="Name" required>
@@ -1099,7 +1088,7 @@ function EditorBasics({ draft, onPatch, categories }) {
           />
         </Field>
 
-        <Field label="Short description" hint="One line. This is what shows on the catalog card.">
+        <Field label="Short description" hint="One line, shown on the catalog card.">
           <Input
             accent={ITEM_HUE}
             value={draft.shortDescription}
@@ -1118,7 +1107,7 @@ function EditorBasics({ draft, onPatch, categories }) {
           />
         </Field>
 
-        <Field label="Icon" hint="A small fixed set — a consistent icon language is what makes the portal grid read as one catalog.">
+        <Field label="Icon">
           <TileGroup
             value={draft.icon}
             onChange={(value) => onPatch({ icon: value })}
@@ -1147,7 +1136,7 @@ function EditorBasics({ draft, onPatch, categories }) {
           </Field>
         </div>
 
-        <Field label="Audience" hint="One catalog serves employees and customers; this decides which portal shows it.">
+        <Field label="Audience" hint="Decides which portal shows it.">
           <TileGroup
             value={draft.audience}
             onChange={(value) => onPatch({ audience: value })}
@@ -1162,13 +1151,6 @@ function EditorBasics({ draft, onPatch, categories }) {
           accent="amber"
           label="Feature this in the portal’s popular row"
         />
-
-        {draft.status === 'draft' && (
-          <Banner accent="gray" icon={AlertCircle} title="A draft is orderable by nobody">
-            It stays visible here so the gap is not forgotten, but it does not appear in either portal until it is
-            published. Nothing is half-published — <strong className={t.text}>draft means invisible</strong>.
-          </Banner>
-        )}
       </div>
     </Panel>
   );
@@ -1187,7 +1169,6 @@ function EditorCommercials({ draft, onPatch }) {
       icon={Coins}
       accent="lime"
       title="Commercials"
-      subtitle="What it costs and how long it takes — the two questions a requester asks first"
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
         <div className="grid grid-cols-3 gap-3">
@@ -1201,7 +1182,7 @@ function EditorCommercials({ draft, onPatch }) {
               onChange={(ev) => onPatch({ price: numberOrNull(ev.target.value) })}
             />
           </Field>
-          <Field label="Recurring price" hint="A seat, a licence, a subscription.">
+          <Field label="Recurring price">
             <Input
               accent="lime"
               type="number"
@@ -1229,7 +1210,7 @@ function EditorCommercials({ draft, onPatch }) {
           </Field>
         </div>
 
-        <Field label="Delivery" hint="Working days between the request being approved and the thing arriving. Zero means same day.">
+        <Field label="Delivery" hint="Working days. Zero means same day.">
           <div className="w-32">
             <Input
               accent="lime"
@@ -1292,10 +1273,9 @@ function EditorFulfilment({ draft, onPatch, queues, policies }) {
       icon={Inbox}
       accent={QUEUE_HUE}
       title="Fulfilment"
-      subtitle="Where the request lands, and what has to happen before it does"
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
-        <Field label="Fulfilment queue" hint="The team that owns delivering this. Not the same as where the request form routes a question.">
+        <Field label="Fulfilment queue" hint="The team that owns delivering this.">
           <Select
             accent={QUEUE_HUE}
             value={draft.fulfilmentQueueId}
@@ -1313,13 +1293,12 @@ function EditorFulfilment({ draft, onPatch, queues, policies }) {
         ) : (
           <Banner accent="amber" icon={AlertCircle} title="No queue owns this yet">
             Orders land in <strong className={t.text}>{labelOf(general, 'General')}</strong> until a queue is chosen.
-            Nothing is dropped, but nobody is specifically watching for it either.
           </Banner>
         )}
 
         <Divider />
 
-        <Field label="Approval policy" hint="Chosen deliberately. A threshold policy is never attached for you.">
+        <Field label="Approval policy">
           <Select
             accent={APPROVAL_HUE}
             value={draft.approvalPolicyId}
@@ -1332,17 +1311,14 @@ function EditorFulfilment({ draft, onPatch, queues, policies }) {
         {draft.approvalPolicyId && !policy && (
           <Banner accent="red" icon={AlertCircle} title="That policy no longer exists">
             This item points at <strong className={t.text}>{draft.approvalPolicyId}</strong>, which is not in the
-            policy list. Pick a real policy, or clear the field to fulfil without sign-off.
+            policy list. Pick a real policy, or clear the field.
           </Banner>
         )}
 
         {policy && <PolicyExplainer policy={policy} />}
 
         {!draft.approvalPolicyId && (
-          <Banner accent="blue" icon={Stamp} title="No sign-off — this is fulfilled as soon as it is requested">
-            The request goes straight to the fulfilment queue. That is a real choice and it is the right one for a
-            headset; it is the wrong one for elevated access. Nothing is applied silently either way.
-          </Banner>
+          <Banner accent="blue" icon={Stamp} title="No sign-off — this is fulfilled as soon as it is requested" />
         )}
 
         {wouldMatch.length > 0 && (
@@ -1354,11 +1330,6 @@ function EditorFulfilment({ draft, onPatch, queues, policies }) {
               items={wouldMatch}
               render={(p) => p.name}
             />
-            <span className="block mt-1">
-              At {money(draft.price)}, {wouldMatch.length === 1 ? 'this policy' : 'these policies'} would fire if the
-              request form asked for an amount. Attach one above if this item should be signed off — it is not
-              attached for you.
-            </span>
           </Banner>
         )}
       </div>
@@ -1395,8 +1366,7 @@ function PolicyExplainer({ policy }) {
         <GroupLabel>{plural(stages.length, 'stage', 'stages')}, in order</GroupLabel>
         {stages.length === 0 ? (
           <p className={cx('text-xs mt-1', t.textSecondary)}>
-            This policy has no stages, so it approves the moment it starts. That is almost certainly a mistake in the
-            policy, not here.
+            This policy has no stages, so it approves the moment it starts.
           </p>
         ) : (
           <ol className="mt-1.5 space-y-1.5">
@@ -1418,7 +1388,7 @@ function PolicyExplainer({ policy }) {
       <p className={cx('text-[11px]', t.textMuted)}>
         {(policy.onReject || 'stop') === 'stop'
           ? 'Any rejection stops the request.'
-          : 'A rejection is recorded but the request continues — these approvers are advisory.'}
+          : 'A rejection is recorded but the request continues.'}
       </p>
     </Card>
   );
@@ -1450,10 +1420,9 @@ function EditorRequestForm({ draft, onPatch, subforms, queues }) {
       icon={FileQuestion}
       accent={FORM_HUE}
       title="Request form"
-      subtitle="An ordinary subform — same builder, same conditional fields, same routing"
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
-        <Field label="Intake" hint="Built in Forms. One form can serve several catalog items, which is why it is referenced rather than owned.">
+        <Field label="Intake" hint="Built in Forms.">
           <Select
             accent={FORM_HUE}
             value={draft.subformId}
@@ -1509,8 +1478,7 @@ function EditorRequestForm({ draft, onPatch, subforms, queues }) {
 
         {!draft.subformId && (
           <Banner accent="amber" icon={AlertCircle} title="Without a form, nobody can order this">
-            The item will render in the portal and the order button will have nothing to open. Attach an intake
-            built in Forms — the same builder every other request in RelayHQ uses.
+            Attach an intake built in Forms.
           </Banner>
         )}
       </div>
@@ -1554,14 +1522,10 @@ function EditorKnowledge({ draft, onPatch, knowledge, onCreateAtom }) {
       icon={BookOpen}
       accent={KB_HUE}
       title="Before you order"
-      subtitle="Knowledge atoms shown ahead of the form — referenced, never owned"
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
         {attached.length === 0 ? (
-          <p className={cx('text-xs', t.textMuted)}>
-            Nothing attached. An atom here answers “which laptop do I actually get?” before somebody raises a request
-            to ask it — and the same atom can be a lesson in a course, because it is a top-level record.
-          </p>
+          <p className={cx('text-xs', t.textMuted)}>Nothing attached.</p>
         ) : (
           <div className={cx('rounded-xl border divide-y', t.borderLight, t.divide)}>
             {attached.map(({ id, record }) => (
@@ -1589,7 +1553,7 @@ function EditorKnowledge({ draft, onPatch, knowledge, onCreateAtom }) {
         <div className="flex items-end gap-2 flex-wrap">
           <Field
             label="Or write the missing one now"
-            hint="Created as a draft in Knowledge straight away and linked here; the link saves with this item."
+            hint="Created as a draft in Knowledge and linked here."
             className="flex-1 min-w-[16rem]"
           >
             <Input
@@ -1649,10 +1613,9 @@ function EditorProvisions({ draft, onPatch, assetModels }) {
       icon={Server}
       accent={ASSET_HUE}
       title="Provisions"
-      subtitle="When ordering this creates a real asset record rather than just a task"
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
-        <Field label="Asset model" hint="Optional. A desk move provisions nothing; a laptop provisions a tracked machine.">
+        <Field label="Asset model" hint="Optional.">
           <Select
             accent={ASSET_HUE}
             value={draft.assetModelId}
@@ -1678,10 +1641,6 @@ function EditorProvisions({ draft, onPatch, assetModels }) {
             <div className="flex-1 min-w-0">
               <p className={cx('text-sm font-medium truncate', t.text)}>
                 {model.manufacturer ? `${model.manufacturer} ${model.name}` : model.name}
-              </p>
-              <p className={cx('text-xs', t.textSecondary)}>
-                Fulfilling an order creates an asset from this model, so the thing a person received is a record
-                somebody can find later — not a closed ticket.
               </p>
               <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                 {model.category && <Chip accent={ASSET_HUE} icon={Package}>{model.category}</Chip>}
@@ -1745,7 +1704,6 @@ function CategoryEditor({ category, categories, items, onClose, onSave }) {
       icon={iconFor(draft.icon)}
       size="modalMd"
       title={category ? draft.name || 'Category' : 'New category'}
-      subtitle="A shelf in the service catalog — the portal renders categories in order"
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>
@@ -1799,7 +1757,7 @@ function CategoryEditor({ category, categories, items, onClose, onSave }) {
           />
         </Field>
 
-        <Field label="Order" hint="Lower sorts first. The arrows on the Categories list do this by swapping neighbours.">
+        <Field label="Order" hint="Lower sorts first.">
           <div className="w-32">
             <Input
               accent={CATEGORY_HUE}
@@ -1824,13 +1782,6 @@ function CategoryEditor({ category, categories, items, onClose, onSave }) {
             />
           </Card>
         )}
-
-        <Banner accent={CATEGORY_HUE} icon={Folder} title="Audience is enforced downwards">
-          A category set to <strong className={t.text}>{audienceMeta(draft.audience).label}</strong> hides everything
-          under it from the other audience, even an item marked
-          <strong className={t.text}> Both</strong>. That is deliberate: the shelf is the coarse control, so hiding a
-          whole category is one edit rather than {plural(Math.max(held.length, 1), 'edit', 'edits')}.
-        </Banner>
       </div>
     </Modal>
   );

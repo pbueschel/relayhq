@@ -516,7 +516,6 @@ function HardwareTab({ assets, models, locations, contracts, directory, currentU
       {
         id: 'location', label: 'Location', icon: MapPin,
         options: locations.map(loc => ({ value: loc.id, label: loc.name, count: byLocation.get(loc.id) || 0 })),
-        footer: 'A region includes every site beneath it.',
       },
       {
         id: 'warranty', label: 'Warranty', icon: ShieldAlert,
@@ -566,10 +565,8 @@ function HardwareTab({ assets, models, locations, contracts, directory, currentU
       <PageBody width="max-w-6xl">
         <div className="space-y-4">
           {stats.unassigned > 0 && stockroom && (
-            <Banner accent="blue" icon={AlertCircle} title="Where unassigned kit lives">
-              {stats.unassigned} units have no owner. Anything checked in without a destination is parked at{' '}
-              <strong className={t.text}>{stockroom.name}</strong> and counts as stock — it will not appear on
-              anyone's equipment record until it is checked out again.
+            <Banner accent="blue" icon={AlertCircle} title={`${stats.unassigned} units have no owner`}>
+              They sit in stock at <strong className={t.text}>{stockroom.name}</strong>.
             </Banner>
           )}
 
@@ -586,7 +583,6 @@ function HardwareTab({ assets, models, locations, contracts, directory, currentU
             <>
               {rows.length === 0 ? (
                 <EmptyState icon={Package} title="No assets match"
-                  hint="Search composes with the filters rather than replacing them — clearing one may bring units back."
                   action={<Button variant="soft" accent="cyan" onClick={clearFilters}>Clear filters</Button>} />
               ) : (
                 <div className="space-y-4">
@@ -775,24 +771,21 @@ function AssetDetail({ asset, models, locations, contracts, directory, currentUs
           </div>
 
           {asset.status === 'lost' && (
-            <Banner accent="red" icon={AlertTriangle} title="This unit is recorded as lost or stolen">
-              It still shows against {personName(directory, asset.assignedToId)} deliberately — the last
-              known holder stays on the record so the loss is attributable. Retire it only once the
-              write-off is approved.
+            <Banner accent="red" icon={AlertTriangle} title="Recorded as lost or stolen">
+              Last known holder: {personName(directory, asset.assignedToId)}.
             </Banner>
           )}
 
           {!asset.assignmentType && (
-            <Banner accent="blue" icon={PackageOpen} title="Unassigned — nobody is accountable for this unit">
-              It sits in stock at <strong className={t.text}>{site ? site.name : 'no recorded location'}</strong>.
-              Check it out to a person or to a place to put it back on the books.
+            <Banner accent="blue" icon={PackageOpen} title="Unassigned">
+              In stock at <strong className={t.text}>{site ? site.name : 'no recorded location'}</strong>.
             </Banner>
           )}
 
           <Card className={DENSITY.cardPad}>
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
-                <GroupLabel>Assigned to — who uses it</GroupLabel>
+                <GroupLabel>Assigned to</GroupLabel>
                 <div className="mt-1.5">
                   {asset.assignmentType === 'person' && asset.assignedToId ? (
                     <div className="flex items-center gap-2.5">
@@ -812,7 +805,7 @@ function AssetDetail({ asset, models, locations, contracts, directory, currentUs
                       <IconTile icon={locationTypeMeta(site?.type).icon} accent="emerald" />
                       <div className="min-w-0">
                         <p className={cx('text-sm font-medium truncate', t.text)}>{site ? site.name : 'Unknown site'}</p>
-                        <p className={cx('text-xs', t.textMuted)}>Shared device — no individual holder</p>
+                        <p className={cx('text-xs', t.textMuted)}>Shared device</p>
                       </div>
                     </div>
                   ) : (
@@ -827,7 +820,7 @@ function AssetDetail({ asset, models, locations, contracts, directory, currentUs
                 </div>
               </div>
               <div>
-                <GroupLabel>Managed by — who is responsible</GroupLabel>
+                <GroupLabel>Managed by</GroupLabel>
                 <div className="mt-1.5">
                   {owner.id ? (
                     <div className="flex items-center gap-2.5">
@@ -851,15 +844,15 @@ function AssetDetail({ asset, models, locations, contracts, directory, currentUs
           <Section title="Record">
             <Card className={DENSITY.cardPad}>
               <Facts columns={3} items={[
-                { label: 'Asset tag', value: <span className="font-mono">{asset.assetTag}</span>, hint: 'The human id — stays with the unit' },
-                { label: 'Serial', value: <span className="font-mono">{asset.serial}</span>, hint: 'From the manufacturer' },
+                { label: 'Asset tag', value: <span className="font-mono">{asset.assetTag}</span> },
+                { label: 'Serial', value: <span className="font-mono">{asset.serial}</span> },
                 { label: 'Model', value: modelLabel(model), hint: model ? `${categoryMeta(model.category).label} · EOL ${fmtDate(model.eol)}` : null },
                 { label: 'Purchased', value: fmtDate(asset.purchaseDate), hint: asset.poNumber },
                 { label: 'Cost', value: fmtMoney(asset.cost), hint: asset.vendor },
                 { label: 'Warranty', value: fmtDate(asset.warrantyExpires), hint: warranty?.label },
                 { label: 'Location', value: site ? <Chip accent="emerald" icon={MapPin}>{site.name}</Chip> : '—', hint: site?.address },
-                { label: 'Contract', value: contract ? <Chip accent="lime" icon={FileSignature}>{contract.name}</Chip> : <span className={t.textMuted}>None on file</span>, hint: contract ? `Ends ${fmtDate(contract.endDate)}` : 'No maintenance cover recorded' },
-                { label: 'Catalog', value: <CatalogLinks ids={asset.catalogItemIds} />, hint: 'Where a request about this asset starts' },
+                { label: 'Contract', value: contract ? <Chip accent="lime" icon={FileSignature}>{contract.name}</Chip> : <span className={t.textMuted}>None on file</span>, hint: contract ? `Ends ${fmtDate(contract.endDate)}` : null },
+                { label: 'Catalog', value: <CatalogLinks ids={asset.catalogItemIds} /> },
               ]} />
               {asset.notes && (
                 <p className={cx('text-sm mt-4 pt-3 border-t leading-relaxed', t.borderLight, t.textSecondary)}>
@@ -869,7 +862,7 @@ function AssetDetail({ asset, models, locations, contracts, directory, currentUs
             </Card>
           </Section>
 
-          <Section title="Chain of custody" hint="Every check-in, check-out and repair, newest first.">
+          <Section title="Chain of custody">
             <HistoryTrail asset={asset} directory={directory} locations={locations} />
           </Section>
         </div>
@@ -911,7 +904,7 @@ function HistoryTrail({ asset, directory, locations }) {
   const { t, a } = useTheme();
   const events = [...(asset.history || [])].reverse();
   if (!events.length) {
-    return <EmptyState icon={History} title="No movements recorded" hint="This unit has never been checked in or out." />;
+    return <EmptyState icon={History} title="No movements recorded" />;
   }
   return (
     <Card>
@@ -1005,7 +998,6 @@ function MoveModal({ asset, mode, locations, directory, currentUser, onClose }) 
       z={LAYOUT.zNestedModal}
       icon={ArrowRightLeft}
       title={mode === 'checkin' ? `Check in ${asset.assetTag}` : `Move ${asset.assetTag}`}
-      subtitle="The move is appended to the asset's history with your name on it"
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>
@@ -1033,7 +1025,7 @@ function MoveModal({ asset, mode, locations, directory, currentUser, onClose }) 
         </Field>
 
         {target === 'person' && (
-          <Field label="Holder" required hint="The asset will also inherit this person's home site.">
+          <Field label="Holder" required>
             <Select accent="cyan" value={personId} onChange={(e) => setPersonId(e.target.value)}
               placeholder="Choose a person…"
               options={directory.map(p => ({ value: p.id, label: `${p.name} — ${p.title}` }))} />
@@ -1041,29 +1033,14 @@ function MoveModal({ asset, mode, locations, directory, currentUser, onClose }) 
         )}
 
         {target === 'location' && (
-          <>
-            <Field label="Site" required>
-              <Select accent="emerald" value={locId} onChange={(e) => setLocId(e.target.value)}
-                placeholder="Choose a site…"
-                options={sites.map(l => ({ value: l.id, label: `${l.name} — ${locationTypeMeta(l.type).label}` }))} />
-            </Field>
-            <Banner accent="emerald" icon={MapPin} title="This becomes a shared device">
-              Assigning to a place clears the individual holder. The unit will show under that site's
-              roll-up and on nobody's personal equipment record — which is what you want for a
-              hot-desk monitor, a rack switch or a copy-room printer.
-            </Banner>
-          </>
+          <Field label="Site" required>
+            <Select accent="emerald" value={locId} onChange={(e) => setLocId(e.target.value)}
+              placeholder="Choose a site…"
+              options={sites.map(l => ({ value: l.id, label: `${l.name} — ${locationTypeMeta(l.type).label}` }))} />
+          </Field>
         )}
 
-        {target === 'stock' && stockroom && (
-          <Banner accent="blue" icon={PackageOpen} title="Returning to stock is not a no-op">
-            The unit is parked at <strong className={t.text}>{stockroom.name}</strong>, its owner is
-            cleared and its status becomes <strong className={t.text}>In Stock</strong>. It stays on the
-            books and in the site roll-up — it just has nobody accountable for it.
-          </Banner>
-        )}
-
-        <Field label="Note" hint="Shown on the history entry. Say why, not what.">
+        <Field label="Note">
           <Textarea accent="cyan" rows={3} value={note} onChange={(e) => setNote(e.target.value)}
             placeholder="e.g. Refresh — old unit returned and wiped" />
         </Field>
@@ -1113,15 +1090,15 @@ function SoftwareTab({ licenses, locations, contracts, directory, openId, tabs }
    * counts on the Compliance filter's options, one place rather than two.
    */
   const totals = useMemo(() => {
-    let owned = 0, assigned = 0, spend = 0, site = 0;
+    let owned = 0, assigned = 0, spend = 0;
     for (const lic of licenses) {
       const pos = licensePosition(lic);
       spend += annualSpend(lic);
-      if (pos.key === 'site') { site += 1; continue; }
+      if (pos.key === 'site') continue;
       owned += lic.seatsOwned || 0;
       assigned += pos.assigned;
     }
-    return { owned, assigned, spend, site };
+    return { owned, assigned, spend };
   }, [licenses]);
 
   const FILTER_DEFS = useMemo(() => {
@@ -1147,7 +1124,6 @@ function SoftwareTab({ licenses, locations, contracts, directory, openId, tabs }
       {
         id: 'renewal', label: 'Renewal', icon: CalendarClock,
         options: RENEWAL_OPTIONS.map(o => ({ ...o, count: byRenewal.get(o.value) || 0 })),
-        footer: 'A licence renewing inside 30 days answers the 90-day question too.',
       },
     ];
   }, [licenses, contracts]);
@@ -1185,20 +1161,8 @@ function SoftwareTab({ licenses, locations, contracts, directory, openId, tabs }
 
       <PageBody width="max-w-6xl">
         <div className="space-y-4">
-          <Banner accent="pink" icon={AlertCircle} title="Seats assigned is derived, not typed">
-            A licence's assigned count is the sum of its allocations — people and places that actually hold a
-            seat. There is no field to type it into, so the entitlement and the deployment cannot quietly
-            disagree the way they do in a spreadsheet.
-            {totals.site > 0 && (
-              <> The {totals.site === 1 ? 'one site licence' : `${totals.site} site licences`} above{' '}
-              {totals.site === 1 ? 'is' : 'are'} left out of both seat totals — everyone is covered, so there is
-              no position to count.</>
-            )}
-          </Banner>
-
           {rows.length === 0 ? (
             <EmptyState icon={Key} title="No licences match"
-              hint="Search composes with the filters rather than replacing them — clearing one may bring products back."
               action={<Button variant="soft" accent="pink" onClick={clearFilters}>Clear filters</Button>} />
           ) : (
             <div className={DENSITY.rowGap}>
@@ -1294,40 +1258,28 @@ function LicenseDetail({ license, position, locations, contracts, directory, onC
 
         {position.key === 'over' && (
           <Banner accent="red" icon={ShieldAlert} title={`Over-deployed by ${Math.abs(position.delta)} seats`}>
-            Deployment exceeds the entitlement. At {fmtMoney(license.costPerSeat)} a seat that is{' '}
-            <strong className={t.text}>{fmtMoney(position.exposure)}</strong> of unlicensed use — the number a
-            vendor audit would bill for. Either reclaim {Math.abs(position.delta)} allocations or buy up before
-            the {fmtDate(license.renewalDate)} renewal.
+            <strong className={t.text}>{fmtMoney(position.exposure)}</strong> of unlicensed use. Reclaim{' '}
+            {Math.abs(position.delta)} allocations or buy up before the {fmtDate(license.renewalDate)} renewal.
           </Banner>
         )}
         {position.key === 'under' && (
           <Banner accent="amber" icon={TrendingDown} title={`${position.delta} seats paid for and never allocated`}>
-            That is <strong className={t.text}>{fmtMoney(position.exposure)}</strong> a year. Drop the seat count
+            <strong className={t.text}>{fmtMoney(position.exposure)}</strong> a year. Drop the seat count
             at renewal on {fmtDate(license.renewalDate)}{contract?.autoRenew ? ` — notice must be served by ${fmtDate(addDays(contract.endDate, -contract.noticeDays))}` : ''}.
-          </Banner>
-        )}
-        {position.key === 'site' && (
-          <Banner accent="blue" icon={ShieldCheck} title="Site licence — there is no seat position to manage">
-            Everyone in the organisation is covered, so allocations below are recorded for visibility only and
-            never produce a compliance gap.
           </Banner>
         )}
 
         <Card className={DENSITY.cardPad}>
           <Facts columns={3} items={[
-            { label: 'Seats owned', value: license.seatsOwned == null ? 'Unlimited' : license.seatsOwned, hint: 'The entitlement you bought' },
-            { label: 'Seats assigned', value: position.assigned, hint: 'Derived from the allocations below' },
-            {
-              label: 'Position',
-              value: <PositionChip position={position} />,
-              hint: position.key === 'over' ? 'Unlicensed use' : position.key === 'under' ? 'Reclaimable spend' : 'Within entitlement',
-            },
+            { label: 'Seats owned', value: license.seatsOwned == null ? 'Unlimited' : license.seatsOwned },
+            { label: 'Seats assigned', value: position.assigned },
+            { label: 'Position', value: <PositionChip position={position} /> },
             { label: 'Cost per seat', value: fmtMoney(license.costPerSeat), hint: 'Annual' },
             { label: 'Annual spend', value: fmtMoney(annualSpend(license)), hint: license.seatsOwned == null ? 'Flat site fee' : 'Seats × cost' },
             { label: 'Renews', value: fmtDate(license.renewalDate), hint: renewal != null ? `${renewal} days away` : null },
             { label: 'Licence model', value: LICENSE_MODEL[license.licenseModel]?.label, hint: LICENSE_MODEL[license.licenseModel]?.hint },
-            { label: 'Owner', value: license.managedById ? <span className="flex items-center gap-1.5"><Avatar name={personName(directory, license.managedById)} size="sm" />{personName(directory, license.managedById)}</span> : '—', hint: 'Accountable for renewal' },
-            { label: 'Contract', value: contract ? <Chip accent="lime" icon={FileSignature}>{contract.name}</Chip> : <span className={t.textMuted}>None on file</span>, hint: contract ? `Ends ${fmtDate(contract.endDate)}` : 'Unpapered — no agreement recorded' },
+            { label: 'Owner', value: license.managedById ? <span className="flex items-center gap-1.5"><Avatar name={personName(directory, license.managedById)} size="sm" />{personName(directory, license.managedById)}</span> : '—' },
+            { label: 'Contract', value: contract ? <Chip accent="lime" icon={FileSignature}>{contract.name}</Chip> : <span className={t.textMuted}>None on file</span>, hint: contract ? `Ends ${fmtDate(contract.endDate)}` : null },
           ]} />
           {license.notes && (
             <p className={cx('text-sm mt-4 pt-3 border-t leading-relaxed', t.borderLight, t.textSecondary)}>
@@ -1389,13 +1341,13 @@ function AllocationEditor({ license, position, locations, directory }) {
   return (
     <Section
       title="Allocations"
-      hint={`${allocations.length} allocations totalling ${position.assigned} seats — this sum IS the assigned count.`}
+      hint={`${allocations.length} allocations · ${position.assigned} seats`}
     >
       <Card>
         <div className={cx('divide-y', t.borderLight)}>
           {allocations.length === 0 && (
             <div className="px-4 py-6">
-              <EmptyState icon={Users} title="No seats allocated" hint="Every seat you own is idle until somebody holds it." />
+              <EmptyState icon={Users} title="No seats allocated" />
             </div>
           )}
           {allocations.map(al => (
@@ -1462,7 +1414,6 @@ function AllocationEditor({ license, position, locations, directory }) {
  * ------------------------------------------------------------------ */
 
 function LocationsTab({ locations, assets, models, directory, openId, tabs }) {
-  const { t } = useTheme();
   const [collapsed, setCollapsed] = useState({});
   const [q, setQ] = useState('');
   const open = openId ? byId(locations, openId) : null;
@@ -1535,15 +1486,8 @@ function LocationsTab({ locations, assets, models, directory, openId, tabs }) {
 
       <PageBody width="max-w-6xl">
         <div className="space-y-4">
-          <Banner accent="emerald" icon={MapPin} title="Counts roll up through the tree">
-            A region shows every asset at every site beneath it, not just what is parked at the region itself.
-            The two numbers on each row are <strong className={t.text}>here</strong> and{' '}
-            <strong className={t.text}>including sites below</strong>, so a total is never quietly double-counted.
-          </Banner>
-
           {roots.length === 0 ? (
             <EmptyState icon={MapPin} title="No sites match"
-              hint="Clear the search to see the whole estate."
               action={<Button variant="soft" accent="emerald" onClick={() => setQ('')}>Clear search</Button>} />
           ) : (
             <div className="space-y-1.5">
@@ -1665,7 +1609,7 @@ function LocationDetail({ location, locations, assets, models, directory, counts
         </Card>
 
         {shared.length > 0 && (
-          <Section title="Shared — assigned to this place" hint="No individual holder. This is what location ownership is for.">
+          <Section title="Shared — assigned to this place">
             <div className={DENSITY.rowGap}>
               {shared.map(asset => (
                 <MiniAssetRow key={asset.id} asset={asset} models={models} directory={directory} />
@@ -1696,7 +1640,7 @@ function LocationDetail({ location, locations, assets, models, directory, counts
 
         {here.length === 0 && (
           <EmptyState icon={Boxes} title="Nothing parked here"
-            hint={kids.length ? 'This is a grouping node — the assets sit at the sites beneath it.' : 'No assets recorded at this site.'} />
+            hint={kids.length ? 'The assets sit at the sites beneath it.' : null} />
         )}
       </div>
     </Modal>
@@ -1725,7 +1669,6 @@ function MiniAssetRow({ asset, models, directory }) {
  * ------------------------------------------------------------------ */
 
 function ContractsTab({ contracts, assets, models, directory, openId, tabs }) {
-  const { t } = useTheme();
   const [q, setQ] = useState('');
   const open = openId ? byId(contracts, openId) : null;
 
@@ -1767,17 +1710,11 @@ function ContractsTab({ contracts, assets, models, directory, openId, tabs }) {
 
       <PageBody width="max-w-6xl">
         <div className="space-y-5">
-          <Banner accent="amber" icon={AlertCircle} title="Auto-renew is the silent default this screen exists to break">
-            An auto-renewing agreement renews itself at the current terms unless notice is served before{' '}
-            <strong className={t.text}>end date − notice period</strong>. That deadline, not the end date, is the
-            one you have to hit — so it is printed on every card below.
-          </Banner>
-
           <Section title="Renewing in the next 90 days" hint={`Measured from ${fmtDate(today())}.`}>
             {renewals.length === 0 ? (
               <EmptyState icon={CalendarClock}
                 title={needle ? 'No renewals match that search' : 'Nothing renews in the next 90 days'}
-                hint={needle ? 'Clear the search to see every agreement falling due.' : 'The next agreement to fall due is further out.'} />
+                hint={needle ? 'Clear the search to see every agreement falling due.' : null} />
             ) : (
               <div className="grid sm:grid-cols-2 gap-2">
                 {renewals.map(({ contract, days, noticeBy, noticeDays }) => (
@@ -1789,7 +1726,7 @@ function ContractsTab({ contracts, assets, models, directory, openId, tabs }) {
             )}
           </Section>
 
-          <Section title="All agreements" hint="Everything not already falling due above.">
+          <Section title="All agreements">
             <div className={DENSITY.rowGap}>
               {visible.map(({ contract, days }) => (
                 <ListRow
@@ -1850,8 +1787,8 @@ function RenewalCard({ contract, days, noticeBy, noticeDays, directory, onOpen }
       {contract.autoRenew && (
         <p className={cx('text-xs leading-relaxed', noticePassed ? a('red').fg : t.textSecondary)}>
           {noticePassed
-            ? `Notice window closed ${Math.abs(noticeDays)} days ago — this renews on ${fmtDate(contract.endDate)} whatever you do now.`
-            : `Serve notice by ${fmtDate(noticeBy)} (${noticeDays} days) or it renews at the current terms.`}
+            ? `Notice window closed ${Math.abs(noticeDays)} days ago — renews ${fmtDate(contract.endDate)}.`
+            : `Serve notice by ${fmtDate(noticeBy)} (${noticeDays} days).`}
         </p>
       )}
     </Card>
@@ -1894,12 +1831,10 @@ function ContractDetail({ contract, assets, models, directory, onClose }) {
 
         {contract.autoRenew && (
           <Banner accent={noticeDays < 0 ? 'red' : noticeDays <= 45 ? 'amber' : 'blue'} icon={CalendarClock}
-            title={noticeDays < 0 ? 'The notice window has closed' : `Notice deadline ${fmtDate(noticeBy)}`}>
-            Ends {fmtDate(contract.endDate)} with a {contract.noticeDays}-day notice period, so the decision
-            date is {fmtDate(noticeBy)}
-            {noticeDays < 0
-              ? ` — that was ${Math.abs(noticeDays)} days ago. This agreement will renew at the current terms.`
-              : ` — ${noticeDays} days from today.`}
+            title={noticeDays < 0
+              ? `Notice window closed ${Math.abs(noticeDays)} days ago`
+              : `Notice deadline ${fmtDate(noticeBy)} — ${noticeDays} days from today`}>
+            Ends {fmtDate(contract.endDate)} · {contract.noticeDays}-day notice period.
           </Banner>
         )}
 
@@ -1909,7 +1844,7 @@ function ContractDetail({ contract, assets, models, directory, onClose }) {
             { label: 'Type', value: CONTRACT_TYPE[contract.type] || contract.type },
             { label: 'Owner', value: <span className="flex items-center gap-1.5"><Avatar name={personName(directory, contract.ownerId)} size="sm" />{personName(directory, contract.ownerId)}</span> },
             { label: 'Term', value: `${fmtDate(contract.startDate)} → ${fmtDate(contract.endDate)}` },
-            { label: 'Value', value: fmtMoney(contract.value), hint: 'Total contract value' },
+            { label: 'Value', value: fmtMoney(contract.value) },
             { label: 'Notice period', value: `${contract.noticeDays} days`, hint: `Decide by ${fmtDate(noticeBy)}` },
           ]} />
           {contract.notes && (
@@ -1948,7 +1883,7 @@ function ContractDetail({ contract, assets, models, directory, onClose }) {
 
         {covered.length === 0 && licenses.length === 0 && (
           <EmptyState icon={Link2} title="Nothing linked to this agreement"
-            hint="Link the assets or licences it covers so a support request can trace back to the paper behind it." />
+            hint="Link the assets or licences it covers." />
         )}
       </div>
     </Modal>
@@ -2014,8 +1949,7 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations, tabs 
           {/* Not the stat strip this module used to open with: these are the
               module's finding, priced, and the report IS this screen. */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-            <ExposureTile label="Total exposure" value={fmtMoney(totals.exposure)} accent="amber" icon={Scale}
-              hint="Unlicensed use plus spend on seats nobody holds" />
+            <ExposureTile label="Total exposure" value={fmtMoney(totals.exposure)} accent="amber" icon={Scale} />
             <ExposureTile label="Unlicensed use" value={fmtMoney(totals.risk)} accent="red" icon={ShieldAlert}
               hint={`${overs.length} products deployed beyond entitlement`} />
             <ExposureTile label="Reclaimable" value={fmtMoney(totals.reclaim)} accent="emerald" icon={TrendingDown}
@@ -2024,16 +1958,8 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations, tabs 
               hint={`${licenses.length} products · ${totals.unpapered} with no contract on file`} />
           </div>
 
-          <Banner accent="blue" icon={AlertCircle} title="How a position is decided">
-            Position is seats owned minus seats allocated. Over by any amount is{' '}
-            <strong className={t.text}>over-deployed</strong> — a vendor audit prices that at list. Idle seats
-            count as <strong className={t.text}>under-used</strong> only when they are at least 3 seats AND at
-            least 20% of the entitlement, so a licence with one spare seat does not cry wolf. Site licences have
-            no seat position at all and are excluded from both figures.
-          </Banner>
-
           {overs.length > 0 && (
-            <Section title="Over-deployed — fix or buy up" hint="Deployment exceeds what was bought. This is the number an audit bills.">
+            <Section title="Over-deployed — fix or buy up">
               <div className="grid sm:grid-cols-2 gap-2">
                 {overs.map(({ lic, pos, contract }) => (
                   <FindingCard key={lic.id} license={lic} position={pos} contract={contract} hue="red"
@@ -2044,7 +1970,7 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations, tabs 
           )}
 
           {unders.length > 0 && (
-            <Section title="Under-used — money already spent" hint="Seats paid for that nobody holds. Cut them at the next renewal.">
+            <Section title="Under-used — money already spent">
               <div className="grid sm:grid-cols-2 gap-2">
                 {unders.map(({ lic, pos, contract }) => (
                   <FindingCard key={lic.id} license={lic} position={pos} contract={contract} hue="amber"
@@ -2054,7 +1980,7 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations, tabs 
             </Section>
           )}
 
-          <Section title="Licence position by product" hint="Every licensed product, worst exposure first.">
+          <Section title="Licence position by product">
             <Card className="overflow-x-auto">
               <table className="w-full text-left text-sm min-w-[52rem]">
                 <thead>
@@ -2091,7 +2017,7 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations, tabs 
             </Card>
           </Section>
 
-          <Section title="Hardware cover" hint="The same question asked of physical kit: what is running with no warranty and no contract behind it?">
+          <Section title="Hardware cover">
             <div className="grid sm:grid-cols-2 gap-2">
               <Panel icon={ShieldAlert} accent="red" title="Out of warranty"
                 subtitle={`${outOfWarranty.length} units still in service`}>
@@ -2108,8 +2034,7 @@ function ComplianceTab({ licenses, hardware, models, contracts, locations, tabs 
                   ))}
                   {outOfWarranty.length > 6 && (
                     <p className={cx('px-4 py-2 text-xs', t.textMuted)}>
-                      +{outOfWarranty.length - 6} more out of warranty — open the Hardware tab and filter on
-                      warranty to see them all.
+                      +{outOfWarranty.length - 6} more out of warranty.
                     </p>
                   )}
                   {outOfWarranty.length === 0 && (
@@ -2197,7 +2122,7 @@ function FindingCard({ license, position, contract, hue, action }) {
       )}
       {!contract && (
         <p className={cx('text-xs leading-relaxed', t.textMuted)}>
-          No contract on file, so there is no notice date to work back from. Paper it before the next renewal.
+          No contract on file — paper it before the next renewal.
         </p>
       )}
     </Card>

@@ -445,3 +445,66 @@ reference and the product was never wired up. That is hard rule 6 earning its ke
 
 **Consequence for the plan.** A new W9.0 is inserted ahead of W9.1 and W9.2, and a smoke guard should
 assert that every root product is reachable from at least one published form — nothing checks that today.
+
+---
+
+## 2026-08-17 — On-screen copy explains state or the next action, and nothing else
+
+**Context.** Phil: "remove the explainer fluff from the entire site. it's causing us to not accurately
+display our boxes at their chosen sizes." The app carried ~200 banners and ~300 hint strings, a large
+share of which taught the reader how the product works rather than helping them work.
+
+**Decision.** One test, applied to every string in every view: does it report a REAL CURRENT STATE of the
+data, or tell the user what to do next? If yes it stays, trimmed to the fact. If it teaches the model,
+justifies a design decision, or mentions the demo, it goes. 629 removals across 14 views.
+
+**Why.** The prose was not free. A banner explaining why assigned seats are derived pushed the licence
+table below the fold; a paragraph on why tickets have no subtasks made a modal scroll. Phil's framing is
+the right one — the copy was overriding the sizes the layouts were designed at.
+
+**Kept deliberately.** `DesignSystem.jsx`, because a styleguide's explanations ARE its content, and
+`Landing.jsx`, because the pitch is the product there — and it is HELD.
+
+**Casualty worth naming.** The portal's `WhyPanel` / `computeFacts` argument panel (~900 lines, W5.13)
+went with it. It is the purest instance of the category being removed — a panel that exists to argue for
+the catalog model — so it could not survive the test. Recorded because it was a named deliverable, and
+it is one revert away if Phil wants it back.
+
+---
+
+## 2026-08-17 — The portal home shows the requester's own work, and nothing else
+
+**Context.** The space under the two front doors held "Every area we support" — a grid of the five help
+products — with a four-row teaser of the requester's open work above it in the hero.
+
+**Decision.** The grid is gone. The whole space is now `MyWork`: every approval waiting on this person,
+every open request, every closed one, uncapped. The hero's teaser was removed from BOTH doors.
+
+**Why.** Three separate reasons pointed the same way. The grid was a THIRD route into a drill that both
+doors already open, so it bought no reach. It pushed the one thing a returning requester came for — where
+is my thing — off the first screen. And a four-row teaser sitting directly above a complete list is the
+same rows rendered twice, which is the redundancy Phil had just objected to in the card header.
+
+**Rejected.** Keeping the teaser and putting the full list below it (the duplication above). Capping the
+list (the caps were `.slice(0, 3)` and `.slice(0, 4)`, which is what made it a teaser rather than an
+answer).
+
+**Open.** The Service Catalog tab now has no view of the requester's work at all, for symmetry with Get
+Help. If that reads as a loss, the fix is to give that door its own MyWork rather than to restore the
+teaser.
+
+---
+
+## 2026-08-17 — Brace-match a function body from after its parameter list
+
+**Context.** A script removing two components matched the first `{` following the function name. For
+`function OpenWork({ tickets, approvals })` that brace opens the DESTRUCTURED PARAMETER LIST, so the
+matcher closed on the parameters, cut the signature, and left the body orphaned behind a bare `) {`.
+Both files then failed to build with a bare "Unexpected token".
+
+**Decision.** Never brace-match a JS function body from the first `{` after the name. Find the end of the
+parameter list first. And after ANY scripted edit to a view, run a Bun.Transpiler parse sweep over
+`src/views`, `src/ds` and `src/components` — it names the failing FILE, which `bun run build` does not.
+
+**Why.** The build error gave no file and no line. The parse sweep found it in seconds and is four lines
+of script. Worth keeping as a habit whenever an edit is applied by script rather than by hand.

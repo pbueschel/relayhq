@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, BookOpen, Layers,
   Folder, Circle, Inbox, FileQuestion, CircleCheck, CircleAlert, AlignLeft,
   Sparkles, GraduationCap, BookMarked, Clock, Stamp, Send, ThumbsUp, ThumbsDown, Info,
   Moon, Sun, LogOut, Building2, Users, User, Route, Award, Paperclip,
-  LayoutGrid, ListOrdered, MessageSquare, ShieldCheck, Video, Search, X,
+  LayoutGrid, MessageSquare, ShieldCheck, Video, Search, X,
   KeyRound, Mail, Laptop, AppWindow, Store, LifeBuoy,
   DollarSign, Truck, ShoppingCart, CalendarClock, Monitor, Headphones, Smartphone,
   Package, Boxes, Shield, UserPlus, UserMinus, DoorOpen, CreditCard, Rocket, Wrench,
@@ -17,9 +17,9 @@ import {
   useTheme, cx, useDismiss, ICON, DENSITY, LAYOUT, GRADIENT, entityHue, moduleGradient,
   tint, statusMeta,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, PriorityFlag, EntityTag,
-  Avatar, EmptyState, Card, Panel, GroupLabel, Stat, Banner, Divider,
+  Avatar, EmptyState, Panel, GroupLabel, Banner,
   Field, Input, Textarea, Select, Checkbox,
-  Modal, Menu, MenuItem, MenuLabel, MenuDivider,
+  Modal, Menu, MenuItem, MenuLabel,
   SubTabs, Breadcrumbs,
 } from '@/ds';
 import { useStore, getState, addTo, uid, NOW } from '@/store/store.js';
@@ -491,14 +491,12 @@ const DOOR = {
     factIcon: BookOpen,
     label: 'Get Help',
     question: 'Something is wrong, or I have a question',
-    door: 'Report a problem, or find the answer that means you never have to raise anything. Every area ends in a topic with the answers attached — and a request form only if you still need one.',
     headline: 'How can we help?',
-    sub: 'Search the answers first. If none of them fit, the request form is one click further on — and it already knows what you read.',
     search: 'Search help articles and problems…',
     scope: 'help',
     browseTitle: 'Where do you need help?',
     pageTitle: 'Every area we support',
-    browseHint: 'Pick the area your question belongs to. Every path ends in a topic with the answers attached — and a request form only if you still need one.',
+    browseHint: 'Pick the area your question belongs to.',
   },
   services: {
     kind: 'service',
@@ -507,14 +505,12 @@ const DOOR = {
     factIcon: Truck,
     label: 'Service Catalog',
     question: 'I want something',
-    door: 'Equipment, software, access and workplace services you can order. Every item says what it costs, when it arrives and who has to sign it off — before you fill anything in.',
     headline: 'What do you need?',
-    sub: 'Equipment, software, access and workplace services you can order. Every item says what it costs, when it arrives and who has to sign it off.',
     search: 'Search services you can order…',
     scope: 'the service catalog',
     browseTitle: 'What kind of thing do you need?',
     pageTitle: 'Everything you can order',
-    browseHint: 'These are things you can order, not problems to report. Every one names its price, how long it takes and whether somebody has to approve it before you commit.',
+    browseHint: 'Pick the kind of thing you need.',
   },
 };
 
@@ -573,7 +569,6 @@ export default function Portal({ route }) {
   const [emphasise, setEmphasise] = useState(false);
   const [courseId, setCourseId] = useState(null);
   const [lessonId, setLessonId] = useState(null);  // academy reading, still a page
-  const [whyOpen, setWhyOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [detailId, setDetailId] = useState(null);
 
@@ -779,17 +774,11 @@ export default function Portal({ route }) {
     return mine.slice().sort((x, y) => String(y.createdAt || '').localeCompare(String(x.createdAt || '')));
   }, [s.tickets, external, requester]);
 
-  /* What is actually in flight for this person: their unresolved requests, and
-     any approval sitting on their decision right now. */
-  const openTickets = useMemo(
-    () => myTickets.filter(tk => !['resolved', 'closed', 'cancelled'].includes(tk.status)).slice(0, 4),
-    [myTickets]);
-
   /* canDecide() is the same predicate the Approvals module uses, so the portal
      can never disagree with the agent view about whose turn it is. */
   const myApprovals = useMemo(
     () => !requester?.id ? []
-      : (s.approvals || []).filter(r => canDecide(r, requester.id)).slice(0, 3),
+      : (s.approvals || []).filter(r => canDecide(r, requester.id)),
     [s.approvals, requester]);
 
   /* The OTHER sense of "my approvals": not one waiting on me, but one holding
@@ -1045,7 +1034,6 @@ export default function Portal({ route }) {
 
   /* ---------------- facts for the argument ---------------- */
 
-  const facts = useMemo(() => computeFacts(s, defaultQueue), [s, defaultQueue]);
   const orgName = s.settings?.orgName || 'Northwind Systems';
 
   /* The line under each door. COUNTED, never typed: a door that promises "answers
@@ -1087,8 +1075,7 @@ export default function Portal({ route }) {
                 Nothing published yet
               </h1>
               <p className={cx('mt-4 text-base sm:text-lg max-w-xl mx-auto leading-relaxed', t.textSecondary)}>
-                A RelayHQ portal needs at least one published form. Publish one in the Forms module and the help
-                centre appears here.
+                Publish a form in the Forms module and the help centre appears here.
               </p>
               <div className="mt-8 flex justify-center">
                 <Button variant="grad" module="portal" size="lg" icon={ArrowRight} onClick={() => navigate('forms')}>
@@ -1098,8 +1085,7 @@ export default function Portal({ route }) {
             </div>
           </section>
           <div className={cx(MID, 'pb-16')}>
-            <EmptyState icon={FileQuestion} title="No published portal form"
-              hint="Forms scope a portal to an audience and a set of products. Without one there is nothing for a customer to land on." />
+            <EmptyState icon={FileQuestion} title="No published portal form" />
           </div>
         </div>
       </div>
@@ -1159,10 +1145,11 @@ export default function Portal({ route }) {
     : leafName;
   /* The door's own words, quoted back — so the card you just opened is visibly
    * the card that door promised. */
-  const cardSubtitle = frameKind === 'root' ? `“${cardDoor.question}”`
-    : browsing ? null
-    : frameKind === 'node' || frameKind === 'service' ? leafTrail
-    : leafName;
+  /* Only the door screen gets a subtitle, and only because its question appears
+   * nowhere else. Everywhere else the subtitle was the parent level — which is
+   * already the second-to-last crumb — so the card header printed the same two
+   * facts three times: eyebrow, title, subtitle, trail. */
+  const cardSubtitle = frameKind === 'root' ? `“${cardDoor.question}”` : null;
 
   /* Crumbs ARE the stack — there is no second copy of where you are to fall out
    * of step with it. The last one is the level you are on, which <Breadcrumbs>
@@ -1188,13 +1175,6 @@ export default function Portal({ route }) {
     : frameKind === 'node' && !browsing && leafForms.length === 1
       ? { label: leafForms[0].submitLabel || 'Raise a request', icon: ArrowRight, onClick: () => openIntakeFrame(leafForms[0].id) }
     : null;
-  const cardNote = browsing
-    ? (cardKind === 'service'
-      ? 'Pick one to see what it costs, when it arrives and who signs it off.'
-      : 'Pick one to see the answers attached to it.')
-    : cardKind === 'service'
-      ? 'This service has no request form attached yet.'
-      : 'Nothing here submits until you choose a form.';
 
   return (
     <div className={cx('h-screen flex flex-col overflow-hidden', t.bg, t.text)}>
@@ -1252,32 +1232,20 @@ export default function Portal({ route }) {
               onAtom={(hit) => openCard([...helpFrames(hit.leaf.id), { type: 'atom', id: hit.id }])}
               onThing={(hit) => openHelpNode(hit.id)}
               doors={<DoorCards facts={doorFacts} onOpen={openDoor} />}
-              /* Full-width rows, so each one has room to say where it sits in
-                 the catalog rather than being a bare name in a pill. */
-              openWork={<OpenWork
-                tickets={openTickets}
-                approvals={myApprovals}
-                blocked={blockedTickets}
-                onTicket={(tk) => setDetailId(tk.id)}
-                onSeeAll={() => setTab('requests')}
-              />}
             />
 
-            <section className={cx(WIDE, 'pb-16')}>
-              {/* The page grid is the WHOLE list; the door asks the question.
-                  Titling both the same would read as the page repeating itself. */}
-              <SectionHead
-                eyebrow="Browse"
-                title={DOOR.help.pageTitle}
-                hint={DOOR.help.browseHint}
-              />
-              {products.length === 0 ? (
-                <EmptyState icon={Folder} title="Nothing published here"
-                  hint="This portal has no products scoped to your audience yet." />
-              ) : (
-                <BrowseGrid nodes={products} onPick={(n) => openHelpNode(n.id)} />
-              )}
-            </section>
+            {/* The space under the doors belongs to the person, not the catalog.
+                A grid of products was a THIRD route into a drill both doors
+                already open, and it pushed the one thing a returning requester
+                came for — where is my thing — off the screen. */}
+            <MyWork
+              tickets={myTickets}
+              approvals={myApprovals}
+              blocked={blockedTickets}
+              queues={byQueue}
+              onTicket={(id) => setDetailId(id)}
+              onApproval={() => navigate('approvals')}
+            />
           </>
         )}
 
@@ -1294,13 +1262,6 @@ export default function Portal({ route }) {
               onAtom={(hit) => openCard([...serviceFrames(hit.leaf.id), { type: 'atom', id: hit.id }])}
               onThing={(hit) => openService(hit.id)}
               doors={<DoorCards facts={doorFacts} onOpen={openDoor} />}
-              openWork={<OpenWork
-                tickets={openTickets}
-                approvals={myApprovals}
-                blocked={blockedTickets}
-                onTicket={(tk) => setDetailId(tk.id)}
-                onSeeAll={() => setTab('requests')}
-              />}
             />
             <ServiceCategoriesScreen
               categories={svcCategories}
@@ -1346,7 +1307,6 @@ export default function Portal({ route }) {
               <CourseScreen
                 course={course}
                 byKb={byKb}
-                catalog={s.catalog || []}
                 onLesson={setLessonId}
               />
             </>
@@ -1372,7 +1332,6 @@ export default function Portal({ route }) {
           onServices={() => { setTab('services'); closeCard(); }}
           onRequests={() => { setTab('requests'); closeCard(); }}
           onAcademy={() => { setTab('academy'); closeCard(); }}
-          onWhy={() => setWhyOpen(true)}
         />
       </div>
 
@@ -1400,19 +1359,17 @@ export default function Portal({ route }) {
               onClose={closeCard}
               backLabel={stack.length > 1 ? 'Back' : 'Back to browse'}
               primary={cardPrimary}
-              note={cardNote}
+              resolve={frameAtom ? {
+                onYes: () => onArticleYes(frameAtom.id),
+                onNo: onArticleNo,
+              } : null}
               onRequests={() => { closeCard(); setTab('requests'); }}
               ticketId={frame?.receipt?.ticketId}
             />
           }
         >
           {frameKind === 'atom' && frameAtom ? (
-            <LeafReading
-              atom={frameAtom}
-              canAskForHelp={leafForms.length > 0}
-              onYes={() => onArticleYes(frameAtom.id)}
-              onNo={onArticleNo}
-            />
+            <LeafReading atom={frameAtom} />
           ) : frameKind === 'form' && frameIntake ? (
             <LeafIntake
               subform={frameIntake}
@@ -1435,7 +1392,7 @@ export default function Portal({ route }) {
               directory={s.directory || []}
             />
           ) : frameKind === 'resolved' && frameResolved ? (
-            <LeafResolved atom={frameResolved} itemName={leafName} />
+            <LeafResolved atom={frameResolved} />
           ) : frameKind === 'root' && cardKind === 'service' ? (
             <LeafServiceCategories
               categories={svcCategories}
@@ -1493,15 +1450,6 @@ export default function Portal({ route }) {
           )}
         </LeafCard>
       )}
-
-      <WhyPanel
-        open={whyOpen}
-        onClose={() => setWhyOpen(false)}
-        facts={facts}
-        subforms={s.subforms || []}
-        queues={byQueue}
-        defaultQueue={defaultQueue}
-      />
 
       <TicketModal
         ticket={(s.tickets || []).find(tk => tk.id === detailId) || null}
@@ -1595,11 +1543,6 @@ function BrandPicker({ forms, form, open, onOpen, onClose, onPick }) {
             onClick={() => onPick(f)}
           />
         ))}
-        <MenuDivider />
-        <div className={cx('px-3 py-2 text-[11px] leading-relaxed', t.textMuted)}>
-          One RelayHQ instance serves an internal help centre and a customer support portal.
-          Same catalog, same knowledge atoms, different audience scope.
-        </div>
       </Menu>
     </div>
   );
@@ -1640,67 +1583,6 @@ function HeroBackdrop({ compact }) {
   );
 }
 
-/**
- * The hero belongs to the active door. Get Help keeps the portal's authored
- * headline; the service catalog asks the ordering question instead, and the
- * search says which of the two it is about to look through.
- *
- * `doors` sits between the search and the requester's open work — search first
- * for the person who knows the words for their problem, the two doors
- * immediately after for the person who does not.
- */
-function OpenWork({ tickets, approvals, blocked, onTicket, onSeeAll }) {
-  const { t, a } = useTheme();
-  const ticketHue = entityHue('ticket');
-  const approvalHue = entityHue('approval');
-
-  /* Nothing in flight means no panel at all. An empty shelf under the search
-     reads as a broken page, not as good news. */
-  if (!tickets.length && !approvals.length) return null;
-
-  return (
-    <div className={cx('mt-10 text-left', OPTION_COL)}>
-      <div className="flex items-baseline justify-between mb-3.5 px-1">
-        <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em]', t.textMuted)}>
-          Your open requests
-        </p>
-        <button onClick={onSeeAll} className={cx('text-xs font-medium hover:underline', a(ticketHue).fg)}>
-          See all
-        </button>
-      </div>
-
-      <div className={OPTION_STACK}>
-        {/* Approvals lead: something waiting on YOU outranks something you are
-            waiting on. */}
-        {approvals.map(ap => (
-          <OptionRow
-            key={ap.id}
-            icon={Stamp}
-            hue={approvalHue}
-            name={ap.subject || 'Approval request'}
-            secondary="Waiting on your decision"
-            trailing={<Chip accent={approvalHue}>Needs you</Chip>}
-            onClick={onSeeAll}
-          />
-        ))}
-        {tickets.map(tk => (
-          <OptionRow
-            key={tk.id}
-            icon={Inbox}
-            hue={ticketHue}
-            name={tk.title}
-            secondary={blocked.has(tk.id)
-              ? `${tk.key} · waiting on an approval`
-              : `${tk.key} · raised ${relDays(tk.createdAt)}`}
-            trailing={<StatusPill status={tk.status} />}
-            onClick={() => onTicket(tk)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /** "3 days ago" / "today" — enough to know whether a request is moving. */
 function relDays(iso) {
   if (!iso) return 'recently';
@@ -1713,9 +1595,102 @@ function relDays(iso) {
   return 'a while ago';
 }
 
+function MyWork({ tickets, approvals, blocked, queues, onTicket, onApproval }) {
+  const { t } = useTheme();
+  const done = ['resolved', 'closed', 'cancelled'];
+  const open = tickets.filter(tk => !done.includes(tk.status));
+  const closed = tickets.filter(tk => done.includes(tk.status));
+
+  if (!tickets.length && !approvals.length) {
+    return (
+      <section className={cx(WIDE, 'pb-16')}>
+        <EmptyState icon={Inbox} title="Nothing open"
+          hint="Anything you raise here will show up with its status and the team working it." />
+      </section>
+    );
+  }
+
+  return (
+    <section className={cx(WIDE, 'pb-16 space-y-10')}>
+      {/* Approvals lead: something waiting on YOU outranks something you are
+          waiting on. */}
+      {approvals.length > 0 && (
+        <div>
+          <SectionHead eyebrow="Waiting on you" title={plural(approvals.length, 'approval', 'approvals')} />
+          <div className={DENSITY.rowGap}>
+            {approvals.map(ap => (
+              <ApprovalRow key={ap.id} approval={ap} onOpen={onApproval} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {open.length > 0 && (
+        <div>
+          <SectionHead eyebrow="Your requests" title={`${plural(open.length, 'request', 'requests')} on the go`} />
+          <div className={DENSITY.rowGap}>
+            {open.map(tk => (
+              <RequestRow key={tk.id} ticket={tk} queue={queues.get(tk.queueId)}
+                blocked={blocked.has(tk.id)} onOpen={() => onTicket(tk.id)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {closed.length > 0 && (
+        <div>
+          <SectionHead eyebrow="Closed" title={plural(closed.length, 'request', 'requests')} />
+          <div className={DENSITY.rowGap}>
+            {closed.map(tk => (
+              <RequestRow key={tk.id} ticket={tk} queue={queues.get(tk.queueId)} muted
+                onOpen={() => onTicket(tk.id)} />
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ApprovalRow({ approval, onOpen }) {
+  const { t, a } = useTheme();
+  const hue = entityHue('approval');
+  const c = a(hue);
+  return (
+    <button
+      onClick={onOpen}
+      className={cx('group w-full text-left rounded-xl border flex items-center gap-3 shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg',
+        DENSITY.rowPad, t.portalCard)}
+    >
+      <IconTile icon={Stamp} accent={hue} size="sm" />
+      <span className="min-w-0 flex-1">
+        <span className={cx('block text-sm font-medium truncate', t.text)}>{approval.subject || 'Approval request'}</span>
+        <span className={cx('block text-xs truncate', t.textMuted)}>Waiting on your decision</span>
+      </span>
+      <span className="flex items-center gap-2.5 flex-shrink-0">
+        <Chip accent={hue}>Needs you</Chip>
+        <ChevronRight size={ICON.md} className={cx('opacity-0 group-hover:opacity-100 transition-opacity', c.fg)} />
+      </span>
+    </button>
+  );
+}
+
+/**
+ * THE HERO — the same shape behind both doors.
+ *
+ * The help centre leads with the form's own headline; the service catalog asks
+ * the ordering question instead, and the search says which of the two it is
+ * about to look through. `doors` sits directly under the search: search first
+ * for the person who knows the words for their problem, the two doors
+ * immediately after for the person who does not.
+ *
+ * It carries no list of its own any more. A summary of the requester's open
+ * work used to hang below the doors, but the full list now owns the space under
+ * the hero — a four-row teaser above a complete list is the same rows twice.
+ */
 function PortalHero({
   door, form, external, orgName, query, onQuery, results,
-  onAtom, onThing, doors, openWork,
+  onAtom, onThing, doors,
 }) {
   const { t, dark } = useTheme();
   const services = door.scope !== 'help';
@@ -1724,7 +1699,7 @@ function PortalHero({
     ? `${orgName} service catalog`
     : external ? `${orgName} support` : `${orgName} help centre`;
   const headline = services ? door.headline : (form.headline || form.name || door.headline);
-  const sub = services ? door.sub : (form.subhead || form.description || door.sub);
+  const sub = services ? null : (form.subhead || form.description || null);
 
   return (
     <section className="relative">
@@ -1759,12 +1734,6 @@ function PortalHero({
         </div>
 
         {doors}
-
-        {/* What a RETURNING requester wants under the search: not a list of
-            what other people ask for, but the state of their own. "Most
-            requested" was catalog trivia to anyone who had already raised
-            something. */}
-        {openWork}
       </div>
     </section>
   );
@@ -1827,7 +1796,6 @@ function DoorCard({ door, fact, onOpen }) {
         {door.label}
       </span>
       <span className={cx('mt-1.5 block text-sm font-medium', c.fg)}>“{door.question}”</span>
-      <span className={cx('mt-3 block text-sm leading-relaxed text-pretty', t.textSecondary)}>{door.door}</span>
 
       <span className={cx('mt-auto pt-5 flex items-center gap-2 text-xs border-t', t.textMuted, t.border)}>
         <FactGlyph size={ICON.xs} className="flex-shrink-0" />
@@ -2116,22 +2084,6 @@ function TrailBar({ crumbs, onNavigate, onBack }) {
   );
 }
 
-/* ==================================================================== *
- * Browse — Get Help
- *
- * A flex grid rather than fixed columns: cards share the row width, so the
- * last row fills instead of stranding one card on its own, and every card in
- * a row is the same height without a measuring pass.
- * ==================================================================== */
-
-function BrowseGrid({ nodes, onPick }) {
-  return (
-    <div className="flex flex-wrap gap-4 items-stretch">
-      {nodes.map(node => <NodeCard key={node.id} node={node} onPick={onPick} />)}
-    </div>
-  );
-}
-
 function NodeCard({ node, onPick }) {
   const { t, a } = useTheme();
   const hue = entityHue(node.type);
@@ -2355,13 +2307,10 @@ function ServiceItemOptionRow({ item, policy, onPick }) {
 function LeafServiceCategories({ categories, items, onPick }) {
   return (
     <div>
-      <LeafSectionHead
-        title={categories.length ? 'Choose one' : 'Nothing here yet'}
-        hint={categories.length ? DOOR.services.browseHint : undefined}
-      />
+      <LeafSectionHead title={categories.length ? 'Choose one' : 'Nothing here yet'} />
       {categories.length === 0 ? (
         <EmptyState icon={ShoppingCart} title="No services published yet"
-          hint="The service catalog is empty for your audience. Published service items appear here grouped by category." />
+          hint="The service catalog is empty for your audience." />
       ) : (
         <div className={OPTION_STACK}>
           {categories.map(cat => (
@@ -2387,15 +2336,9 @@ function LeafServiceItems({ category, items, policies, onPick }) {
         <p className={cx('text-[15px] leading-relaxed', t.textSecondary)}>{category.description}</p>
       )}
       <div>
-        <LeafSectionHead
-          title={items.length ? 'Choose what to order' : 'Nothing here yet'}
-          hint={items.length
-            ? 'Prices and delivery times are the real ones attached to the item, and anything that needs a sign-off says so here rather than after you have filled the form in.'
-            : undefined}
-        />
+        <LeafSectionHead title={items.length ? 'Choose what to order' : 'Nothing here yet'} />
         {items.length === 0 ? (
-          <EmptyState icon={Package} title="Nothing published in this category"
-            hint="Service items appear here once they are published to your audience." />
+          <EmptyState icon={Package} title="Nothing published in this category" />
         ) : (
           <div className={OPTION_STACK}>
             {items.map(item => (
@@ -2424,7 +2367,7 @@ function ServiceCategoriesScreen({ categories, items, onPick }) {
       />
       {categories.length === 0 ? (
         <EmptyState icon={ShoppingCart} title="No services published yet"
-          hint="The service catalog is empty for your audience. Published service items appear here grouped by category." />
+          hint="The service catalog is empty for your audience." />
       ) : (
         <div className="flex flex-wrap gap-4 items-stretch">
           {categories.map(cat => (
@@ -2512,6 +2455,7 @@ function ServiceCategoryCard({ category, items, onPick }) {
 function LeafCard({ accent, eyebrow, title, subtitle, crumbs, onCrumb, wide, levelKey, onClose, returnFocusTo, footer, children }) {
   const { t, a } = useTheme();
   const c = a(accent);
+  const trail = (crumbs || []).slice(0, -1);
   const reduced = usePrefersReducedMotion();
   const [leaving, setLeaving] = useState(false);
   const exitTimer = useRef(null);
@@ -2580,9 +2524,12 @@ function LeafCard({ accent, eyebrow, title, subtitle, crumbs, onCrumb, wide, lev
             </span>
             <span aria-hidden className="w-20 flex-shrink-0" />
           </div>
-          {crumbs && crumbs.length > 1 && (
+          {/* The trail stops one short of where you are. The last crumb is always
+              the level you are on, which the <h2> above already says — printing
+              both put the same words twice in the same header. */}
+          {trail.length > 0 && (
             <div className="mt-2.5 flex justify-center">
-              <Breadcrumbs items={crumbs} onNavigate={(crumb) => onCrumb(crumb.id)} />
+              <Breadcrumbs items={trail} onNavigate={(crumb) => onCrumb(crumb.id)} />
             </div>
           )}
         </header>
@@ -2635,8 +2582,28 @@ function LeafLevel({ reduced, children }) {
  * left, the ONE primary action on the right. The gradient lives on that primary
  * action and nowhere else inside the card.
  */
-function LeafFooter({ frame, onBack, onClose, backLabel, primary, note, onRequests, ticketId }) {
+function LeafFooter({ frame, onBack, onClose, backLabel, primary, resolve, onRequests, ticketId }) {
   const { t } = useTheme();
+
+  /* Reading an atom: the resolve question rides the footer bar rather than
+   * sitting in a card of its own above it. It is the one decision the reader has
+   * to make, and it belongs with the other controls, not stacked on top of them. */
+  if (frame?.type === 'atom' && resolve) {
+    return (
+      <>
+        <Button variant="outline" icon={ArrowLeft} onClick={onBack}>{backLabel}</Button>
+        <div className="flex items-center gap-3 min-w-0">
+          <span className={cx('text-sm font-medium truncate', t.text)}>Did this resolve your issue?</span>
+          <Button variant="solid" accent={statusMeta('resolved').hue} icon={ThumbsUp} onClick={resolve.onYes}>
+            Yes, all done
+          </Button>
+          <Button variant="soft" accent={entityHue('ticket')} icon={ThumbsDown} onClick={resolve.onNo}>
+            No, I need help
+          </Button>
+        </div>
+      </>
+    );
+  }
 
   if (frame?.type === 'receipt') {
     return (
@@ -2665,12 +2632,10 @@ function LeafFooter({ frame, onBack, onClose, backLabel, primary, note, onReques
   return (
     <>
       <Button variant="outline" icon={ArrowLeft} onClick={onBack}>{backLabel}</Button>
-      {primary ? (
+      {primary && (
         <Button variant="grad" module="portal" size="lg" icon={primary.icon} onClick={primary.onClick}>
           {primary.label}
         </Button>
-      ) : (
-        <span className={cx('text-xs', t.textMuted)}>{note}</span>
       )}
     </>
   );
@@ -2708,7 +2673,6 @@ function LeafHelpItem({ item, trailText, atoms, forms, queues, policies, emphasi
           <LeafSectionHead
             eyebrow="Answers first"
             title="Try these before you raise anything"
-            hint={`${plural(atoms.length, 'article covers', 'articles cover')} the usual version of this. Most people stop here.`}
           />
           <div className={OPTION_STACK}>
             {atoms.map(k => <LeafAtomRow key={k.id} atom={k} onOpen={() => onAtom(k.id)} />)}
@@ -2721,15 +2685,9 @@ function LeafHelpItem({ item, trailText, atoms, forms, queues, policies, emphasi
           <LeafSectionHead
             eyebrow="Still stuck?"
             title={forms.length > 1 ? 'Tell us what you need' : 'Raise a request'}
-            hint={forms.length > 1
-              ? `${plural(forms.length, 'intake hangs', 'intakes hang')} off this one service. They ask different questions and go to different teams.`
-              : 'If none of the above answered it, this goes straight to the team that owns it.'}
           />
           {emphasise && (
-            <Banner accent={entityHue('ticket')} icon={MessageSquare} title="No problem — let's get a person on it" className="mb-3">
-              Pick the intake that fits. Everything you have already read is attached to the request, so nobody asks
-              you to try it again.
-            </Banner>
+            <Banner accent={entityHue('ticket')} icon={MessageSquare} title="Pick the intake that fits" className="mb-3" />
           )}
           <div className={OPTION_STACK}>
             {forms.map(f => (
@@ -2745,10 +2703,7 @@ function LeafHelpItem({ item, trailText, atoms, forms, queues, policies, emphasi
           </div>
         </section>
       ) : (
-        <Banner accent="blue" icon={Info} title="Reference only">
-          This service has no request form attached — it exists to explain something rather than to be ordered.
-          Close this and pick a service with an intake on it if you still need a person.
-        </Banner>
+        <Banner accent="blue" icon={Info} title="No request form attached" />
       )}
     </div>
   );
@@ -2874,7 +2829,6 @@ function LeafServiceItem({ item, categoryName, atoms, subform, queue, policy, on
           <LeafSectionHead
             eyebrow="Before you order"
             title="Worth reading first"
-            hint="The same published articles the help centre serves — attached here so nobody orders blind."
           />
           <div className={OPTION_STACK}>
             {atoms.map(k => <LeafAtomRow key={k.id} atom={k} onOpen={() => onAtom(k.id)} />)}
@@ -2893,23 +2847,16 @@ function LeafServiceItem({ item, categoryName, atoms, subform, queue, policy, on
             <IconTile icon={FileQuestion} accent={entityHue('subform')} size="sm" />
             <p className={cx('text-xs flex-1 min-w-0', t.textSecondary)}>
               {plural(fields, 'question', 'questions')}
-              {conditional ? `, ${conditional} of which only appear when your answers call for them` : ''}.
-              {' '}Everything you enter travels with the request — nobody asks for it twice.
+              {conditional ? ` · ${conditional} conditional` : ''}
             </p>
           </div>
         </section>
       ) : (
-        <Banner accent="amber" icon={CircleAlert} title="No request form attached">
-          This service item names no intake, so there is nothing to submit yet. It is visible here because it is
-          published — RelayHQ shows the gap rather than hiding the item.
-        </Banner>
+        <Banner accent="amber" icon={CircleAlert} title="No request form attached — nothing to submit yet" />
       )}
 
       {item.assetModelId && (
-        <Banner accent={entityHue('hardware')} icon={Laptop} title="Ordering this provisions a real asset">
-          Fulfilment creates an asset record against your name, so the thing you were given and the request that asked
-          for it stay attached to each other.
-        </Banner>
+        <Banner accent={entityHue('hardware')} icon={Laptop} title="Fulfilment creates an asset record in your name" />
       )}
     </div>
   );
@@ -2948,7 +2895,7 @@ function ServiceFact({ icon: Glyph, hue, label, value, note }) {
  * What stays is what helps a reader judge the answer in front of them: how long
  * it takes to read, when it was last touched, and how many people it worked for.
  */
-function LeafReading({ atom, canAskForHelp, onYes, onNo }) {
+function LeafReading({ atom }) {
   const { t } = useTheme();
   const guide = atom.format === 'guide';
 
@@ -2968,8 +2915,6 @@ function LeafReading({ atom, canAskForHelp, onYes, onNo }) {
       </div>
 
       {guide ? <GuideBody atom={atom} /> : <ArticleBody atom={atom} />}
-
-      <ResolvePrompt canAskForHelp={canAskForHelp} onYes={onYes} onNo={onNo} />
     </div>
   );
 }
@@ -3075,7 +3020,6 @@ function GuideBody({ atom }) {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <span className={cx('text-sm', t.textMuted)}>
           {plural(slides.length, 'screen', 'screens')}
-          {slides.length > 1 ? ' · you move between them; nothing advances on its own' : ''}
         </span>
         <Button
           variant={asText ? 'solid' : 'soft'}
@@ -3097,10 +3041,6 @@ function GuideAsText({ atom }) {
   const { t } = useTheme();
   return (
     <div className={cx('rounded-2xl border p-5 sm:p-6', t.portalCard)}>
-      <Banner accent="blue" icon={Info} className="mb-5">
-        The same guide as one static sequence — every screen at once, in order, with each image's description
-        written out.
-      </Banner>
       <ol className={cx('space-y-5', PROSE)}>
         {(atom.slides || []).map((sl, i) => (
           <li key={sl.id} className="flex gap-3">
@@ -3294,11 +3234,11 @@ function CarouselViewer({ atom }) {
         </div>
       )}
 
-      <p className={cx('text-[11px] text-center', t.textMuted)}>
-        {many
-          ? 'Nothing moves on its own. Use the arrows, the dots, either half of the picture, or your arrow keys.'
-          : 'One screen, and it stays put.'}
-      </p>
+      {many && (
+        <p className={cx('text-[11px] text-center', t.textMuted)}>
+          Use the arrows, the dots, either half of the picture, or your arrow keys.
+        </p>
+      )}
 
       {/* The position, the heading and — for any screen carrying media — its
           description, so a screen reader hears the same thing a sighted
@@ -3315,27 +3255,7 @@ function CarouselViewer({ atom }) {
  * Did this resolve it?
  * ==================================================================== */
 
-function ResolvePrompt({ canAskForHelp, onYes, onNo }) {
-  const { t } = useTheme();
-  return (
-    <div className={cx('rounded-2xl border p-5 flex items-center justify-between gap-4 flex-wrap', t.portalCard)}>
-      <div className="min-w-0">
-        <p className={cx('text-base font-semibold', t.text)}>Did this resolve your issue?</p>
-        <p className={cx('text-sm mt-1', t.textSecondary)}>
-          {canAskForHelp
-            ? 'If not, we will take you straight back to the request forms for this service.'
-            : 'Telling us either way is what keeps this article honest.'}
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <Button variant="solid" accent={statusMeta('resolved').hue} icon={ThumbsUp} onClick={onYes}>Yes, all done</Button>
-        <Button variant="soft" accent={entityHue('ticket')} icon={ThumbsDown} onClick={onNo}>No, I need help</Button>
-      </div>
-    </div>
-  );
-}
-
-function LeafResolved({ atom, itemName }) {
+function LeafResolved({ atom }) {
   const { t, a } = useTheme();
   const c = a(statusMeta('resolved').hue);
   return (
@@ -3344,20 +3264,11 @@ function LeafResolved({ atom, itemName }) {
         <CircleCheck size={32} className={c.fg} />
       </span>
       <h3 className={cx('text-2xl font-semibold tracking-tight', t.text)}>Glad that sorted it.</h3>
-      <p className={cx('text-base mt-3 leading-relaxed', t.textSecondary)}>
-        You did not need to raise a request, and nobody had to answer one. That is the whole point of putting
-        <strong className={t.text}> {atom.title}</strong> in front of the form instead of behind it.
-      </p>
       {atom.helpfulYes ? (
         <p className={cx('text-sm mt-4', t.textMuted)}>
           {atom.helpfulYes.toLocaleString()} other people have marked this article helpful.
         </p>
       ) : null}
-      {itemName && (
-        <p className={cx('text-xs mt-6', t.textMuted)}>
-          Back takes you to {itemName}; Done closes this and leaves you exactly where you were browsing.
-        </p>
-      )}
     </div>
   );
 }
@@ -3383,15 +3294,14 @@ function LeafIntake({
     <div className="space-y-4">
       {queue ? (
         <Banner accent="blue" icon={Route} title={`This goes to ${queue.name}`}>
-          {queue.description || 'Routed by the request form, not by keyword guessing.'}
+          {queue.description}
           {policy && (declaredApproval
-            ? <> This service requires the <strong className={t.text}>{policy.name}</strong> policy, so an approval starts the moment you submit.</>
-            : <> Because this intake carries the <strong className={t.text}>{policy.name}</strong> policy, an approval may start the moment you submit.</>)}
+            ? <> Approval required: <strong className={t.text}>{policy.name}</strong>.</>
+            : <> May need approval: <strong className={t.text}>{policy.name}</strong>.</>)}
         </Banner>
       ) : (
         <Banner accent="amber" icon={CircleAlert} title="No routing configured on this form">
-          Requests from here land in the <strong className={t.text}>{defaultQueue?.name || 'General'}</strong> queue and are
-          triaged from there. Nothing is ever silently parked.
+          Requests from here land in the <strong className={t.text}>{defaultQueue?.name || 'General'}</strong> queue.
         </Banner>
       )}
 
@@ -3448,7 +3358,7 @@ function IntakeField({ field, value, error, people, assets, requesterId, onChang
       <Field label={field.label} hint={field.help} required={field.required} error={error}>
         <div className={cx('rounded-lg border border-dashed px-3 py-3 flex items-center gap-2 text-xs', t.bgInput, t.borderLight, t.textMuted)}>
           <Paperclip size={ICON.base} />
-          Attachments are collected here in the real product. This prototype records the request without file storage.
+          Attachments are collected here.
         </div>
       </Field>
     );
@@ -3582,14 +3492,11 @@ function LeafReceipt({ receipt, queue, approval, directory }) {
 
       {receipt.fellBack ? (
         <Banner accent="amber" icon={CircleAlert} title="No routing on that form">
-          It went to <strong className={t.text}>{queue?.name || 'General'}</strong>, the catch-all queue, and will be triaged from there.
-          RelayHQ says this out loud rather than letting a request quietly disappear into a default.
+          It went to <strong className={t.text}>{queue?.name || 'General'}</strong> and will be triaged from there.
         </Banner>
       ) : (
         <Banner accent="blue" icon={Route} title={`Routed to ${queue?.name || 'a queue'}`}>
-          {receipt.serviceName
-            ? <>The service item named its own fulfilment queue — {queue?.description || 'no keyword guessing involved'}.</>
-            : <>The request form decided the destination — {queue?.description || 'no keyword guessing involved'}.</>}
+          {queue?.description}
         </Banner>
       )}
 
@@ -3605,25 +3512,24 @@ function LeafReceipt({ receipt, queue, approval, directory }) {
               </span>
             </span>
           ) : (
-            <>This stage resolved to nobody, which is a configuration fault rather than an automatic pass. It is flagged in the Approvals module instead of being skipped.</>
+            <>This stage resolved to nobody, so it is flagged in the Approvals module.</>
           )}
         </Banner>
       )}
 
       {!approval && receipt.policyName && (
         <Banner accent="slate" icon={Info} title="No approval needed">
-          The <strong className={t.text}>{receipt.policyName}</strong> policy is attached to this form, but your answers did not
-          meet its conditions, so nothing was sent for sign-off.
+          The <strong className={t.text}>{receipt.policyName}</strong> policy is attached, but your answers did not
+          meet its conditions.
         </Banner>
       )}
 
       {receipt.delivery && (
         <Banner accent={entityHue('item')} icon={Truck} title={receipt.delivery}>
-          That is the published lead time on the item{receipt.price && receipt.price !== 'No charge'
-            ? <>, and {receipt.price} — the first-year cost, one-off plus recurring — is charged to your cost centre on
-              fulfilment. That is the figure the approval was tested against, not a smaller one</>
-            : ', charged to nobody because this one is free'}.
-          {approval && ' The clock starts when the approval clears, not when you pressed submit.'}
+          {receipt.price && receipt.price !== 'No charge'
+            ? `${receipt.price} for the first year, charged to your cost centre on fulfilment.`
+            : null}
+          {approval && ' The clock starts when the approval clears.'}
         </Banner>
       )}
     </div>
@@ -3645,7 +3551,7 @@ function RequestsScreen({ tickets, orgTickets, org, queues, requester, onOpen, o
         eyebrow="My requests"
         title={tickets.length ? `${plural(tickets.length, 'request', 'requests')} on the go` : 'Nothing open'}
         sub={requester
-          ? `Everything ${requester.name} has raised through this portal — problems reported and services ordered — with the team working it and their replies.`
+          ? `Everything ${requester.name} has raised through this portal.`
           : 'Everything you have raised through this portal.'}
       />
 
@@ -3653,7 +3559,6 @@ function RequestsScreen({ tickets, orgTickets, org, queues, requester, onOpen, o
         <section>
           {tickets.length === 0 ? (
             <EmptyState icon={Inbox} title="Nothing open"
-              hint="Requests you submit show up here with their status, the team working them and the replies."
               action={<Button variant="grad" module="portal" onClick={onBrowse}>Browse the help centre</Button>} />
           ) : (
             <div className={DENSITY.rowGap}>
@@ -3669,7 +3574,7 @@ function RequestsScreen({ tickets, orgTickets, org, queues, requester, onOpen, o
             <SectionHead
               eyebrow="Shared visibility"
               title={`Also open at ${org.name}`}
-              hint="Colleagues on the same account. Shared visibility stops three people raising the same ticket."
+              hint="Colleagues on the same account."
             />
             <div className={DENSITY.rowGap}>
               {orgTickets.map(tk => (
@@ -3683,7 +3588,7 @@ function RequestsScreen({ tickets, orgTickets, org, queues, requester, onOpen, o
   );
 }
 
-function RequestRow({ ticket, queue, muted, onOpen }) {
+function RequestRow({ ticket, queue, muted, blocked, onOpen }) {
   const { t, a } = useTheme();
   const hue = muted ? 'slate' : entityHue('ticket');
   const c = a(hue);
@@ -3696,8 +3601,13 @@ function RequestRow({ ticket, queue, muted, onOpen }) {
       <IconTile icon={ticket.serviceItemId ? ShoppingCart : Inbox} accent={hue} size="sm" />
       <span className="min-w-0 flex-1">
         <span className={cx('block text-sm font-medium truncate', t.text)}>{ticket.title}</span>
+        {/* The other sense of "my approvals": not one waiting on me, but one
+            holding up something I asked for. It belongs on the ticket row, not
+            in a second list — the question is "is my thing moving". */}
         <span className={cx('block text-xs truncate', t.textMuted)}>
-          {ticket.key} · {queue?.name || 'Unrouted'} · raised {fmtWhen(ticket.createdAt)}
+          {blocked
+            ? `${ticket.key} · waiting on an approval`
+            : `${ticket.key} · ${queue?.name || 'Unrouted'} · raised ${fmtWhen(ticket.createdAt)}`}
         </span>
       </span>
       <span className="flex items-center gap-2.5 flex-shrink-0">
@@ -3795,7 +3705,6 @@ function AcademyScreen({ orgName, curricula, courses, byKb, byCourse, onCourse }
         hue={entityHue('curriculum')}
         eyebrow="Academy"
         title={`${orgName} Academy`}
-        sub="Every lesson below is a live help-centre article. The academy is an ordering over content that already exists — which is why a customer can be certified on material they could have read anyway."
       />
 
       <div className={cx(WIDE, 'pb-16 space-y-10')}>
@@ -3829,7 +3738,7 @@ function AcademyScreen({ orgName, curricula, courses, byKb, byCourse, onCourse }
           <SectionHead
             eyebrow="Courses"
             title="Learn it end to end"
-            hint={`${plural(courses.length, 'course is', 'courses are')} open to customers, built from the same articles the help centre publishes.`}
+            hint={`${plural(courses.length, 'course is', 'courses are')} open to customers.`}
           />
           <div className="flex flex-wrap gap-4 items-stretch">
             {courses.map(c => <CourseCard key={c.id} course={c} byKb={byKb} onOpen={() => onCourse(c.id)} />)}
@@ -3875,17 +3784,9 @@ function CourseCard({ course, byKb, onOpen }) {
   );
 }
 
-function CourseScreen({ course, byKb, catalog, onLesson }) {
+function CourseScreen({ course, byKb, onLesson }) {
   const { t } = useTheme();
-  const lessons = lessonIdsOf(course);
   const minutes = courseMinutes(course, byKb);
-  const placed = useMemo(() => {
-    const inCatalog = new Set();
-    for (const { node } of walkCatalog(catalog)) {
-      for (const id of node.knowledgeIds || []) inCatalog.add(id);
-    }
-    return lessons.filter(id => inCatalog.has(id)).length;
-  }, [catalog, lessons]);
 
   return (
     <>
@@ -3905,13 +3806,6 @@ function CourseScreen({ course, byKb, catalog, onLesson }) {
       />
 
       <div className={cx(MID, 'pb-16 space-y-8')}>
-        {placed > 0 && (
-          <Banner accent="blue" icon={BookOpen} title="Nothing here was written for the course">
-            {placed} of these {lessons.length} lessons are the same articles published in the help centre. Author once, and
-            the atom keeps its identity wherever it is used.
-          </Banner>
-        )}
-
         {(course.modules || []).map((m, mi) => (
           <section key={m.id}>
             <SectionHead eyebrow={`Module ${mi + 1}`} title={m.title} hint={m.summary} />
@@ -3973,7 +3867,7 @@ function LessonRow({ atom, onOpen }) {
 
 function PortalFooter({
   form, orgName, external, requester, hasAcademy,
-  onHelp, onServices, onRequests, onAcademy, onWhy,
+  onHelp, onServices, onRequests, onAcademy,
 }) {
   const { t } = useTheme();
   return (
@@ -3984,9 +3878,9 @@ function PortalFooter({
             <span className={cx('w-8 h-8 rounded-lg flex-shrink-0', GRADIENT.brand)} />
             <span className={cx('text-base font-semibold', t.text)}>{orgName}</span>
           </span>
-          <p className={cx('mt-4 text-sm leading-relaxed max-w-sm', t.textSecondary)}>
-            {form.description || 'One place to find an answer, one place to order what you need, and a person to ask when neither fits.'}
-          </p>
+          {form.description && (
+            <p className={cx('mt-4 text-sm leading-relaxed max-w-sm', t.textSecondary)}>{form.description}</p>
+          )}
         </div>
 
         <nav aria-label="Portal">
@@ -4006,12 +3900,6 @@ function PortalFooter({
                 <button onClick={onAcademy} className={cx('text-sm hover:underline', t.textSecondary)}>Academy</button>
               </li>
             )}
-            <li>
-              <button onClick={onWhy}
-                className={cx('text-sm hover:underline inline-flex items-center gap-1.5', t.textSecondary)}>
-                <Sparkles size={ICON.sm} />Why this works
-              </button>
-            </li>
           </ul>
         </nav>
 
@@ -4020,14 +3908,12 @@ function PortalFooter({
           <p className={cx('text-sm leading-relaxed', t.textSecondary)}>
             {form.requireSignIn ? (
               <>
-                This portal requires an {external ? 'account' : `${orgName}`} sign-in, so requests arrive already attached
-                to the person who raised them — no “what is your email address” round trip.
+                This portal requires an {external ? 'account' : `${orgName}`} sign-in.
                 {requester && <> You are signed in as <strong className={t.text}>{requester.name}</strong>.</>}
               </>
             ) : (
               <>
-                Anyone can read and search here without signing in. A sign-in is only asked for when you raise a request,
-                so we can attach it to you and show you the reply.
+                Anyone can read and search without signing in. A sign-in is only asked for when you raise a request.
               </>
             )}
           </p>
@@ -4043,7 +3929,6 @@ function PortalFooter({
               <span className={cx('w-3.5 h-3.5 rounded-[4px] flex-shrink-0', GRADIENT.brand)} />
               RelayHQ
             </span>
-            · service, support and training on one substrate
           </span>
         </div>
       </div>
@@ -4060,408 +3945,3 @@ function PortalFooter({
  * pitch — but a viewer evaluating the product can still open it in one click.
  * ==================================================================== */
 
-function computeFacts(s, defaultQueue) {
-  const flat = walkCatalog(s.catalog || []);
-  const products = flat.filter(x => x.node.type === 'product');
-  const subcategories = flat.filter(x => x.node.type === 'subcategory');
-  const items = flat.filter(x => x.node.type === 'item');
-  const knowledge = (s.knowledge || []).filter(publishedAtom);
-  const subforms = s.subforms || [];
-  const courses = s.courses || [];
-  const services = (s.serviceItems || []).filter(i => i.status !== 'draft');
-  const serviceCategories = s.serviceCategories || [];
-
-  const lessonSet = new Set();
-  for (const c of courses) for (const id of lessonIdsOf(c)) lessonSet.add(id);
-  const reusedAsLessons = knowledge.filter(k => lessonSet.has(k.id));
-
-  const placements = new Map();
-  for (const { node } of items) {
-    for (const id of node.knowledgeIds || []) {
-      if (!placements.has(id)) placements.set(id, []);
-      placements.get(id).push(node);
-    }
-  }
-  const multiPlaced = [...placements.entries()].filter(([, list]) => list.length > 1);
-
-  const routed = subforms.filter(f => f.routing?.queueId && f.routing.queueId !== defaultQueue?.id);
-  const withApproval = subforms.filter(f => f.approvalPolicyId);
-  const helpBeforeForm = items.filter(x => (x.node.knowledgeIds || []).length && (x.node.subformIds || []).length);
-  const multiIntake = items.filter(x => (x.node.subformIds || []).length > 1);
-  const conditionalFields = subforms.reduce((n, f) => n + (f.fields || []).filter(x => x.showIf).length, 0);
-
-  /* The service catalog answers a different question, so it is counted
-   * separately rather than folded into the help numbers above. */
-  const servicesFree = services.filter(i => !Number(i.price));
-  const servicesApproved = services.filter(i => i.approvalPolicyId);
-  const servicesWithHelp = services.filter(i => (i.knowledgeIds || []).length);
-  const serviceSubformIds = new Set(services.map(i => i.subformId).filter(Boolean));
-
-  /* The exemplar for the three-way diagram — a real atom with all three
-   * destinations populated, picked by score rather than named in code. */
-  let exemplar = null;
-  for (const k of knowledge) {
-    const places = placements.get(k.id) || [];
-    const internalCourses = courses.filter(c => c.audience !== 'external' && lessonIdsOf(c).includes(k.id));
-    const externalCourses = courses.filter(c => c.audience === 'external' && lessonIdsOf(c).includes(k.id));
-    if (!places.length) continue;
-    const score = (places.length ? 1 : 0) + (internalCourses.length ? 1 : 0) + (externalCourses.length ? 1 : 0);
-    const size = places.length + internalCourses.length + externalCourses.length;
-    const best = exemplar ? exemplar.score * 100 + exemplar.size : -1;
-    if (score * 100 + size > best) exemplar = { atom: k, places, internalCourses, externalCourses, score, size };
-  }
-
-  /* A real drill-down path, used for the side-by-side comparison. */
-  let sample = null;
-  for (const { node, trail } of items) {
-    const help = (node.knowledgeIds || []).length;
-    const forms = (node.subformIds || []).length;
-    if (!help || !forms) continue;
-    if (!sample || help + forms > sample.help + sample.forms) sample = { node, trail, help, forms };
-  }
-
-  return {
-    products: products.length,
-    subcategories: subcategories.length,
-    items: items.length,
-    knowledge: knowledge.length,
-    reusedAsLessons: reusedAsLessons.length,
-    subforms: subforms.length,
-    routed: routed.length,
-    withApproval: withApproval.length,
-    multiPlaced: multiPlaced.length,
-    helpBeforeForm: helpBeforeForm.length,
-    multiIntake: multiIntake.length,
-    conditionalFields,
-    courses: courses.length,
-    services: services.length,
-    serviceCategories: serviceCategories.length,
-    servicesFree: servicesFree.length,
-    servicesApproved: servicesApproved.length,
-    servicesWithHelp: servicesWithHelp.length,
-    serviceSubforms: serviceSubformIds.size,
-    defaultQueueName: defaultQueue?.name || 'General',
-    exemplar,
-    sample,
-  };
-}
-
-function WhyPanel({ open, onClose, facts, subforms, queues, defaultQueue }) {
-  const { t } = useTheme();
-  if (!open) return null;
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      accent="purple"
-      size="modalXl"
-      icon={Sparkles}
-      title="Why this portal is shaped like this"
-      subtitle="Every number below is counted from the data you are looking at right now."
-      footer={<>
-        <span className={cx('text-xs', t.textMuted)}>Reopen this any time from the footer.</span>
-        {/* A modal dismiss is a solid, per the standard modal shell. */}
-        <Button variant="solid" accent="purple" onClick={onClose}>Got it</Button>
-      </>}
-    >
-      <div className="space-y-6">
-        <WhyDoors facts={facts} />
-        <Divider />
-        <WhyCompare facts={facts} subforms={subforms} queues={queues} defaultQueue={defaultQueue} />
-        <Divider />
-        <WhyNumbers facts={facts} />
-        <Divider />
-        <WhyDiagram facts={facts} />
-      </div>
-    </Modal>
-  );
-}
-
-function WhyDoors({ facts }) {
-  const { t, a } = useTheme();
-  const help = a(DOOR.help.hue);
-  const svc = a(DOOR.services.hue);
-
-  return (
-    <section>
-      <SectionHead
-        title="Two front doors, because they are two questions"
-        hint="“Cannot sign in” and “Request a new laptop” look alike in a tree and behave nothing alike. One wants an answer; the other wants an outcome with a cost and a sign-off."
-        className="mb-4"
-      />
-      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(18rem, 1fr))' }}>
-        <Card className={DENSITY.cardPad}>
-          <div className="flex items-center gap-2.5 mb-2">
-            <IconTile icon={DOOR.help.icon} accent={DOOR.help.hue} size="sm" />
-            <p className={cx('text-sm font-semibold', t.text)}>Get Help — “{DOOR.help.question}”</p>
-          </div>
-          <p className={cx('text-xs leading-relaxed', t.textSecondary)}>
-            {facts.products} products › {facts.subcategories} subcategories › {facts.items} items, where an item carries
-            knowledge first and a report-a-problem form second. {facts.helpBeforeForm} of those items put an answer in
-            front of a form.
-          </p>
-          <p className={cx('text-[11px] mt-2', help.fg)}>Success here is a request that never had to exist.</p>
-        </Card>
-
-        <Card className={DENSITY.cardPad}>
-          <div className="flex items-center gap-2.5 mb-2">
-            <IconTile icon={DOOR.services.icon} accent={DOOR.services.hue} size="sm" />
-            <p className={cx('text-sm font-semibold', t.text)}>Service Catalog — “{DOOR.services.question}”</p>
-          </div>
-          <p className={cx('text-xs leading-relaxed', t.textSecondary)}>
-            {facts.serviceCategories
-              ? <>{facts.serviceCategories} categories holding {facts.services} orderable services, each with a price, a
-                lead time, a fulfilment queue and — for {facts.servicesApproved} of them — a named approval that runs
-                before anybody spends anything.</>
-              : <>No service items are published yet. When they are, they appear here with a price, a lead time and an
-                approval rather than as more rows in the help tree.</>}
-          </p>
-          <p className={cx('text-[11px] mt-2', svc.fg)}>Success here is an order nobody had to chase.</p>
-        </Card>
-      </div>
-      {facts.serviceSubforms > 0 && (
-        <p className={cx('text-xs mt-3 leading-relaxed', t.textSecondary)}>
-          The two doors share one form model: {plural(facts.serviceSubforms, 'service intake is', 'service intakes are')} an
-          ordinary subform — same builder, same conditional fields, same routing — and {facts.servicesWithHelp} service
-          {facts.servicesWithHelp === 1 ? ' item carries' : ' items carry'} published articles as “before you order”
-          reading. Author once still holds across both.
-        </p>
-      )}
-    </section>
-  );
-}
-
-function WhyCompare({ facts, subforms }) {
-  const { t, a } = useTheme();
-  const slate = a('slate');
-  const purple = a(entityHue('subform'));
-  const sample = facts.sample;
-
-  return (
-    <section>
-      <SectionHead
-        title="The same request, two ways"
-        hint="Left: what this instance looks like if every intake is offered at once. Right: what the portal actually does."
-        className="mb-4"
-      />
-      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(18rem, 1fr))' }}>
-        {/* Flat list */}
-        <Card className="overflow-hidden">
-          <div className={cx(DENSITY.sectionPad, 'border-b', t.borderLight)}>
-            <p className={cx('text-sm font-semibold', t.text)}>A flat form list</p>
-            <p className={cx('text-xs mt-0.5', t.textMuted)}>
-              {facts.subforms} request forms, no hierarchy, no help attached. You have to already know the name of the
-              thing you need.
-            </p>
-          </div>
-          <div className={cx('max-h-56 overflow-auto divide-y', t.divide)}>
-            {subforms.map(f => (
-              <div key={f.id} className="flex items-center gap-2 px-3 py-1.5">
-                <FileQuestion size={ICON.sm} className={cx('flex-shrink-0', slate.fg)} />
-                <span className={cx('text-xs truncate flex-1', t.textSecondary)}>{f.name}</span>
-              </div>
-            ))}
-          </div>
-          <div className={cx('px-3 py-2 border-t text-[11px]', t.borderLight, t.textMuted)}>
-            No article is offered before any of them.
-          </div>
-        </Card>
-
-        {/* RelayHQ */}
-        <Card className="overflow-hidden">
-          <div className={cx(DENSITY.sectionPad, 'border-b', t.borderLight)}>
-            <p className={cx('text-sm font-semibold', t.text)}>RelayHQ: one page, and the whole drill in one card</p>
-            <p className={cx('text-xs mt-0.5', t.textMuted)}>
-              {facts.products} products › {facts.subcategories} subcategories › {facts.items} items.
-            </p>
-          </div>
-          {sample ? (
-            <div className="p-3 space-y-2">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {sample.trail.map((n, i) => (
-                  <React.Fragment key={n.id}>
-                    {i > 0 && <ChevronRight size={ICON.xs} className={t.textMuted} />}
-                    <Chip accent={entityHue(n.type)}>{n.name}</Chip>
-                  </React.Fragment>
-                ))}
-                <ChevronRight size={ICON.xs} className={t.textMuted} />
-                <Chip accent={entityHue('item')}>{sample.node.name}</Chip>
-              </div>
-              <div className={cx('rounded-lg border p-2.5 space-y-1.5', t.borderLight)}>
-                <p className={cx('text-xs font-medium flex items-center gap-1.5', t.text)}>
-                  <BookOpen size={ICON.sm} className={a(entityHue('article')).fg} />
-                  Then {plural(sample.help, 'article', 'articles')} — shown first, every time
-                </p>
-                <p className={cx('text-xs font-medium flex items-center gap-1.5', t.text)}>
-                  <FileQuestion size={ICON.sm} className={purple.fg} />
-                  Then {plural(sample.forms, 'request form', 'request forms')}, each routed on its own
-                </p>
-              </div>
-              <p className={cx('text-[11px]', t.textMuted)}>
-                Every step of that happens in one card over the home page — the first click and the last — so closing it
-                puts you back on the same grid at the same scroll offset. Across this catalog, {facts.helpBeforeForm} items
-                put help in front of a form and {facts.multiIntake} carry more than one intake, which a single
-                form-per-item model cannot express.
-              </p>
-            </div>
-          ) : (
-            <div className={cx('p-3 text-xs', t.textMuted)}>No item in this catalog carries both help and a form yet.</div>
-          )}
-        </Card>
-      </div>
-    </section>
-  );
-}
-
-function WhyNumbers({ facts }) {
-  const { t } = useTheme();
-  return (
-    <section>
-      <SectionHead
-        title="What is actually in this instance"
-        hint="Counted from state at render time — not typed in, and not borrowed from anybody's research."
-        className="mb-4"
-      />
-      <div className="flex flex-wrap gap-2">
-        <Stat label="catalog items" value={facts.items} accent={entityHue('item')} icon={Circle} />
-        <Stat label="orderable services" value={facts.services} accent={entityHue('item')} icon={ShoppingCart} />
-        <Stat label="knowledge atoms" value={facts.knowledge} accent={entityHue('article')} icon={BookOpen} />
-        <Stat label="of those are also course lessons" value={facts.reusedAsLessons} accent={entityHue('curriculum')} icon={GraduationCap} />
-        <Stat label="request forms" value={facts.subforms} accent={entityHue('subform')} icon={FileQuestion} />
-        <Stat label="route to a named queue" value={facts.routed} accent={entityHue('ticket')} icon={Route} />
-        <Stat label="services needing sign-off" value={facts.servicesApproved} accent={entityHue('approval')} icon={Stamp} />
-        <Stat label="atoms placed under more than one item" value={facts.multiPlaced} accent="teal" icon={Layers} />
-        <Stat label="conditional questions" value={facts.conditionalFields} accent="cyan" icon={ListOrdered} />
-      </div>
-      <ul className={cx('mt-3 space-y-1.5 text-xs leading-relaxed', t.textSecondary)}>
-        <li>
-          <strong className={t.text}>{facts.reusedAsLessons} of {facts.knowledge}</strong> published atoms are doing double
-          duty right now: the article a customer reads here is the lesson a course teaches. Nothing was copied to make
-          that true — the course stores an id.
-        </li>
-        <li>
-          <strong className={t.text}>{facts.routed} of {facts.subforms}</strong> request forms name their own destination
-          queue. The remainder fall to <strong className={t.text}>{facts.defaultQueueName}</strong>, and the portal says so on
-          the form and again on the receipt rather than letting it happen quietly.
-        </li>
-        <li>
-          <strong className={t.text}>{facts.multiPlaced}</strong> atoms appear under more than one catalog item. In a model
-          where an article belongs to one item, each of those would have been written more than once and would now
-          disagree with itself.
-        </li>
-        {facts.services > 0 && (
-          <li>
-            <strong className={t.text}>{facts.servicesFree} of {facts.services}</strong> orderable services cost nothing, and
-            <strong className={t.text}> {facts.servicesApproved}</strong> cannot be fulfilled until a named policy clears. The
-            portal shows both facts on the card, before the form — not on the receipt, when it is too late to matter.
-          </li>
-        )}
-      </ul>
-
-      <Banner accent="slate" icon={CircleAlert} title="What we will not tell you" className="mt-4">
-        You will see a deflection percentage quoted almost everywhere in this category. We do not quote one, because
-        we went looking for a trustworthy source and there is not one — the published figures run from 5% to 80%, every
-        one of them is self-reported by a vendor, and the market leader publishes a formula with no benchmark at all.
-        <span className="block mt-1.5">
-          A request that was never filed leaves no record, so <strong className={t.text}>no system can observe deflection
-          directly</strong>. What RelayHQ can honestly measure is <strong className={t.text}>assisted resolution</strong>:
-          it owns both the drill path and the form, so it logs which atoms a person actually read before they submitted
-          — or before they closed the tab without submitting. That number is ours to earn on your data, not to borrow.
-        </span>
-      </Banner>
-    </section>
-  );
-}
-
-function WhyDiagram({ facts }) {
-  const { t, a } = useTheme();
-  const ex = facts.exemplar;
-  const blue = a(entityHue('article'));
-
-  if (!ex) {
-    return (
-      <section>
-        <SectionHead title="One atom, three destinations" className="mb-4" />
-        <EmptyState icon={BookOpen} title="No atom is placed yet"
-          hint="Attach a knowledge atom to a catalog item and a course module to see this drawn." />
-      </section>
-    );
-  }
-
-  return (
-    <section>
-      <SectionHead
-        title="One atom, three destinations"
-        hint={`Drawn from a real record — “${ex.atom.title}” — and its actual placements.`}
-        className="mb-4"
-      />
-      <div className="flex flex-col items-center">
-        <Card accent={entityHue('article')} className={cx(DENSITY.cardPad, 'w-full max-w-md flex items-start gap-3')}>
-          <IconTile icon={ex.atom.format === 'guide' ? LayoutGrid : BookOpen} accent={entityHue('article')} size="lg" />
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <EntityTag kind={ex.atom.format === 'guide' ? 'guide' : 'article'} />
-              {ex.atom.minutes ? <span className={cx('text-[10px]', t.textMuted)}>{ex.atom.minutes} min</span> : null}
-            </div>
-            <p className={cx('text-sm font-semibold leading-tight', t.text)}>{ex.atom.title}</p>
-            <p className={cx('text-xs mt-0.5', t.textMuted)}>Authored once, owned by one person, versioned in one place.</p>
-          </div>
-        </Card>
-        <span className={cx('w-px h-5', blue.rail)} />
-        <div className="grid gap-2 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))' }}>
-          <DestinationCard
-            hue={entityHue('item')}
-            icon={Circle}
-            title="Deflection"
-            caption="In the portal, above the request form"
-            items={ex.places.map(n => n.name)}
-            emptyNote="Not placed in the catalog."
-          />
-          <DestinationCard
-            hue={entityHue('ticket')}
-            icon={Inbox}
-            title="Agent enablement"
-            caption="Taught to the people working the queue"
-            items={ex.internalCourses.map(c => c.title)}
-            emptyNote="Not in an internal course yet."
-          />
-          <DestinationCard
-            hue={entityHue('curriculum')}
-            icon={GraduationCap}
-            title="Training"
-            caption="A lesson in the customer academy"
-            items={ex.externalCourses.map(c => c.title)}
-            emptyNote="Not in an external course yet."
-          />
-        </div>
-      </div>
-      <p className={cx('text-xs mt-3 leading-relaxed', t.textSecondary)}>
-        Those are the live references, not an illustration. Edit that atom once and all three surfaces change together —
-        which is the only reason a company can afford to keep a help centre, an enablement library and an academy at the
-        same time.
-      </p>
-    </section>
-  );
-}
-
-function DestinationCard({ hue, icon, title, caption, items, emptyNote }) {
-  const { t, a } = useTheme();
-  const c = a(hue);
-  const Glyph = icon;
-  return (
-    <div className={cx('rounded-xl border p-3', t.bgCard, t.borderLight)}>
-      <div className="flex items-center gap-2 mb-1.5">
-        <span className={cx('w-1 h-6 rounded-full', c.rail)} />
-        <Glyph size={ICON.md} className={c.fg} />
-        <div className="min-w-0">
-          <p className={cx('text-sm font-medium leading-tight', t.text)}>{title}</p>
-          <p className={cx('text-[11px]', t.textMuted)}>{caption}</p>
-        </div>
-      </div>
-      {items.length
-        ? <ChipGroup accent={hue} max={3} items={items} />
-        : <p className={cx('text-[11px] italic', t.textMuted)}>{emptyNote}</p>}
-    </div>
-  );
-}

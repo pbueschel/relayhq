@@ -3,9 +3,9 @@ import {
   Briefcase, Plus, ChevronRight, ChevronDown, ChevronLeft, List, LayoutGrid,
   SquareKanban, Calendar, ChartGantt, Circle, CircleCheck, Flag, User, Users,
   Settings2, Trash2, Check, X, Link2, ListChecks, CornerDownRight,
-  TriangleAlert, CircleAlert, Columns3, GripVertical, Hash, Type, DollarSign,
+  TriangleAlert, Columns3, Hash, Type, DollarSign,
   ToggleRight, CalendarClock, Eye, BookMarked, GraduationCap, Layers,
-  Sparkles, MoreHorizontal, ArrowRight,
+  MoreHorizontal, ArrowRight,
 } from 'lucide-react';
 import {
   useTheme, useDismiss, cx, ICON, DENSITY, LAYOUT, ENTITIES, PRIORITY, priorityMeta, CONTROL_H,
@@ -225,7 +225,7 @@ function personalProject(user) {
     personal: true,
     name: 'My Tasks',
     key: 'ME',
-    description: 'Personal tasks. No project, no custom fields — they roll up to nobody but you.',
+    description: 'Personal tasks.',
     ownerId: user?.id || null,
     memberIds: user?.id ? [user.id] : [],
     statuses: PERSONAL_STATUSES,
@@ -831,7 +831,7 @@ export default function Projects({ route: routeProp }) {
 }
 
 function ProjectsLanding({ projects, personal, tasks, people, onOpenTask, onNewProject }) {
-  const { t, a } = useTheme();
+  const { a } = useTheme();
   const [mode, setMode] = useState('list');
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(() => new Set([projects[0]?.id].filter(Boolean)));
@@ -900,7 +900,6 @@ function ProjectsLanding({ projects, personal, tasks, people, onOpenTask, onNewP
         options: [...statuses.values()]
           .sort((x, y) => x.label.localeCompare(y.label))
           .map(s => ({ value: s.id, label: s.label, dot: a(s.hue).dot, count: byStatus.get(s.id) || 0 })),
-        footer: 'Projects with work sitting in that state.',
       },
       {
         id: 'member', label: 'Members', icon: Users,
@@ -963,23 +962,11 @@ function ProjectsLanding({ projects, personal, tasks, people, onOpenTask, onNewP
 
       <PageBody width="max-w-6xl">
         <div className="space-y-4">
-          <Banner accent={HUE_PROJECT} icon={CircleAlert} title="Where a new task lands">
-            Expanding a project shows its tasks grouped by that project's own statuses. A task added from a
-            group's <strong className={t.text}>+ Add task</strong> row inherits that group — add it under
-            <em> Build</em> and it is created in <em>Build</em>, never in the default status. Tasks with no
-            project are personal, shown under <strong className={t.text}>My Tasks</strong> in teal, and they
-            roll up to no project's progress.
-          </Banner>
-
           {!filtered.length && (
             <EmptyState
               icon={Briefcase}
               title="No projects match"
-              hint={
-                query.trim() || activeFilters > 0
-                  ? 'Search composes with the filters above rather than replacing them — clearing a filter may bring projects back.'
-                  : 'Create a project to get started.'
-              }
+              hint={query.trim() || activeFilters > 0 ? undefined : 'Create a project to get started.'}
               action={
                 query.trim() || activeFilters > 0
                   ? <Button variant="soft" accent={HUE_PROJECT} icon={X} onClick={clearFilters}>Clear filters</Button>
@@ -1100,8 +1087,7 @@ function ProjectTaskGroups({ project, rows, people, onOpenTask }) {
   if (!rows.length) {
     return (
       <div className="px-4 py-6">
-        <EmptyState icon={Circle} title="No tasks yet"
-          hint="Add the first task from a status group below once the project has statuses." />
+        <EmptyState icon={Circle} title="No tasks yet" />
       </div>
     );
   }
@@ -1490,7 +1476,6 @@ function GroupByControl({ value, onChange, accent = HUE_PROJECT }) {
         <MenuLabel>Group by</MenuLabel>
         {GROUP_BY.map(g => (
           <MenuItem key={g.value} icon={g.icon} label={g.label} selected={g.value === value}
-            hint={g.value === 'status' ? "This project's own statuses" : undefined}
             onClick={() => { onChange(g.value); setOpen(false); }} />
         ))}
       </HeaderMenu>
@@ -1532,7 +1517,7 @@ function ColumnsControl({ project, hidden, onChange, showSubtasks, onShowSubtask
         ))}
         <MenuDivider />
         <MenuItem icon={CornerDownRight} label="Show subtasks" selected={showSubtasks}
-          hint="Subtasks follow their parent's group" onClick={() => onShowSubtasks(!showSubtasks)} />
+          onClick={() => onShowSubtasks(!showSubtasks)} />
       </HeaderMenu>
     </div>
   );
@@ -1564,13 +1549,6 @@ function ListView({ project, rows, topLevel, people, groupBy, hidden, showSubtas
 
   return (
     <div className="space-y-3">
-      <Banner accent={HUE_PROJECT} icon={CircleAlert}>
-        Adding a task inside a group sets that group's value automatically — grouped by
-        <strong className={t.text}> {GROUP_BY.find(g => g.value === groupBy).label.toLowerCase()}</strong>, a task added
-        under a heading is created with that {groupBy === 'status' ? 'status' : groupBy}. Subtasks always sit under their
-        parent, whatever their own {groupBy === 'status' ? 'status' : groupBy} is.
-      </Banner>
-
       <Card className="overflow-x-auto">
         <div className="min-w-[52rem]">
           <div className={cx('grid gap-2 px-3 py-2 border-b sticky top-0 z-10', t.bgCard, t.border)} style={{ gridTemplateColumns: template }}>
@@ -1756,12 +1734,6 @@ function BoardView({ project, rows, topLevel, people, groupBy, onOpenTask, onAdd
 
   return (
     <div className="space-y-3">
-      <Banner accent={HUE_PROJECT} icon={GripVertical}>
-        Drag a card to another column to change its
-        <strong className={t.text}> {groupBy === 'status' ? 'status' : groupBy}</strong> — the board writes the same field
-        the List view edits inline. Click a card without dragging to open it.
-      </Banner>
-
       <div className="overflow-x-auto pb-2">
         <div className="flex gap-3 min-w-min items-start">
           {groups.map(g => {
@@ -1960,8 +1932,6 @@ function CalendarView({ project, rows, people, onOpenTask }) {
         <div className="flex items-center gap-2 mb-2">
           <GroupLabel>Unscheduled</GroupLabel>
           <span className={cx('text-xs tabular-nums', t.textMuted)}>{unscheduled.length}</span>
-          <span className="flex-1" />
-          <span className={cx('text-[11px]', t.textMuted)}>No due date — these never appear on the grid</span>
         </div>
         {unscheduled.length ? (
           <div className="flex flex-wrap gap-1.5">
@@ -2064,11 +2034,6 @@ function TimelineView({ project, rows, people, onOpenTask }) {
 
   return (
     <div className="space-y-3">
-      <Banner accent={HUE_PROJECT} icon={Link2}>
-        Arrows run from a blocking task to the task waiting on it. A bar that starts before its blocker finishes is
-        the schedule risk this view exists to show — the same relationship raises the warning inside the task.
-      </Banner>
-
       <Card className="overflow-x-auto">
         <div style={{ width: TL_LABEL + width }}>
           {/* axis */}
@@ -2303,9 +2268,7 @@ function TaskModal({ taskId, onClose, onOpenTask }) {
 
           {started && blockers.length > 0 && (
             <Banner accent="red" icon={TriangleAlert} title="Started while blocked">
-              This task is in an active status but is still waiting on{' '}
-              <strong className={t.text}>{blockers.map(b => b.title).join(', ')}</strong>. Finish the blocker or move
-              this back to a not-started status — a task that runs ahead of its dependency is how a cutover slips.
+              Waiting on <strong className={t.text}>{blockers.map(b => b.title).join(', ')}</strong>.
             </Banner>
           )}
 
@@ -2348,7 +2311,7 @@ function TaskModal({ taskId, onClose, onOpenTask }) {
             <div className="flex items-center gap-4 flex-wrap">
               <Toggle accent={HUE_MILESTONE} checked={!!task.milestone}
                 onChange={(v) => patchTask(task.id, { milestone: v })}
-                label="Milestone — renders as an amber diamond on the timeline and calendar" />
+                label="Milestone" />
             </div>
           )}
 
@@ -2510,7 +2473,7 @@ function DependencySection({ project, task, siblings, picker, setPicker, onOpenT
       </div>
 
       {!rel.blockers.length && !rel.blocking.length && (
-        <p className={cx('text-xs', t.textMuted)}>No dependencies. This task can start whenever it is picked up.</p>
+        <p className={cx('text-xs', t.textMuted)}>No dependencies.</p>
       )}
 
       <div className="space-y-1">
@@ -2610,7 +2573,7 @@ function SubtaskSection({ project, task, kids, people, onOpenTask }) {
             </div>
           );
         })}
-        <InlineAdd accent={hue} placeholder="Add a subtask — it appears nested everywhere this task appears…" onAdd={addSubtask} />
+        <InlineAdd accent={hue} placeholder="Add a subtask…" onAdd={addSubtask} />
       </Card>
 
       <ConfirmDelete
@@ -2703,11 +2666,9 @@ function ChecklistSection({ task }) {
  * milestone) hand off to the task via onCommand, so one editor drives both.
  */
 function SlashEditor({ value, onChange, onCommand, accent = HUE_PROJECT }) {
-  const { t, a } = useTheme();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
   const ref = useRef(null);
-  const c = a(accent);
 
   const commands = SLASH_COMMANDS.filter(cmd =>
     !filter || cmd.label.toLowerCase().includes(filter.toLowerCase()) || cmd.id.includes(filter.toLowerCase()));
@@ -2753,10 +2714,6 @@ function SlashEditor({ value, onChange, onCommand, accent = HUE_PROJECT }) {
         onKeyDown={(e) => { if (e.key === 'Escape' && open) { e.stopPropagation(); setOpen(false); } }}
         placeholder="Describe the work. Type / for commands…"
       />
-      <p className={cx('text-[11px] mt-1 flex items-center gap-1', t.textMuted)}>
-        <Sparkles size={ICON.xs} className={c.fg} />
-        Type <code className={t.text}>/</code> at the start of a line for headings, lists, checklists, dependencies and milestone.
-      </p>
       <Menu open={open} onClose={() => setOpen(false)} width="w-72">
         <MenuLabel>Commands</MenuLabel>
         {commands.map(cmd => (
@@ -2799,7 +2756,6 @@ function ProjectSettingsModal({ project, people, tasks, onClose }) {
         size="modalLg"
         icon={Settings2}
         title={`${project.name} settings`}
-        subtitle="Statuses and custom fields are authored per project — two projects can run genuinely different workflows."
         footer={
           <>
             <Button variant="ghost" accent="red" icon={Trash2} onClick={() => setConfirmProject(true)}>Delete project</Button>
@@ -2828,10 +2784,6 @@ function ProjectSettingsModal({ project, people, tasks, onClose }) {
 
           {tab === 'members' && (
             <div className="space-y-2">
-              <Banner accent={HUE_PROJECT} icon={Users}>
-                Members are the people offered in every assignee and person-field menu on this project. Removing
-                someone does not unassign their tasks — it only takes them out of the pickers.
-              </Banner>
               <Card className="p-2 max-h-80 overflow-auto">
                 {people.map(p => {
                   const on = (project.memberIds || []).includes(p.id);
@@ -2924,12 +2876,6 @@ function StatusSettings({ project, usage, onPatch, onDelete }) {
 
   return (
     <div className="space-y-3">
-      <Banner accent="amber" icon={CircleAlert} title="Done is not Closed">
-        A task in a <strong className={t.text}>Done</strong> status is finished but still open — it is never counted
-        overdue and it releases anything waiting on it. <strong className={t.text}>Closed</strong> takes it off the
-        board entirely. Every project needs at least one of each, or work has nowhere to land.
-      </Banner>
-
       {STATUS_GROUPS.map(g => {
         const list = statuses.filter(s => s.group === g.id);
         return (
@@ -2992,8 +2938,7 @@ function FieldSettings({ project, onPatch, onDelete }) {
       </div>
 
       {!fields.length && (
-        <EmptyState icon={Layers} title="No custom fields"
-          hint="Custom fields become columns in List and chips on Board cards." />
+        <EmptyState icon={Layers} title="No custom fields" />
       )}
 
       <div className="space-y-2">
@@ -3037,7 +2982,7 @@ function FieldSettings({ project, onPatch, onDelete }) {
             )}
 
             {f.type === 'currency' && (
-              <p className={cx('text-[11px] pl-10', t.textMuted)}>Rendered as USD. Values are stored as plain numbers.</p>
+              <p className={cx('text-[11px] pl-10', t.textMuted)}>Rendered as USD.</p>
             )}
           </Card>
         ))}
@@ -3132,7 +3077,6 @@ function NewProjectModal({ open, people, currentUser, onClose }) {
       accent={HUE_PROJECT}
       icon={Briefcase}
       title="New project"
-      subtitle="Pick the workflow it runs — statuses can be edited afterwards in project settings."
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>{chosen.statuses.length} statuses · {members.length} members</span>
@@ -3158,7 +3102,7 @@ function NewProjectModal({ open, people, currentUser, onClose }) {
           <Input type="date" accent={HUE_PROJECT} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </Field>
 
-        <Field label="Workflow" hint="Sets the project's custom statuses. Every template has a Done and a Closed group.">
+        <Field label="Workflow">
           <div className="grid @lg:grid-cols-3 gap-2">
             {WORKFLOW_TEMPLATES.map(tpl => (
               <TemplateTile key={tpl.id} template={tpl} selected={tpl.id === template} onSelect={() => setTemplate(tpl.id)} />

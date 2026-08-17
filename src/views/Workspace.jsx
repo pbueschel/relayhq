@@ -664,8 +664,6 @@ export default function Workspace({ route }) {
   const [search, setSearch] = useState('');
   const [groupBy, setGroupBy] = useState('due');
 
-  const activeFilters = Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
-
   const items = useMemo(() => {
     const out = [];
     for (const ticket of data.tickets || []) out.push(ticketItem(ticket, data, now));
@@ -728,8 +726,6 @@ export default function Workspace({ route }) {
       .map(bucket => ({ id: bucket, label: BUCKET_LABEL[bucket], rows: visible.filter(i => dueBucket(i, now) === bucket) }))
       .filter(g => g.rows.length);
   }, [visible, groupBy, now]);
-
-  const filterCount = activeFilters;
 
   const openSub = route?.sub || null;
   const namedSub = TICKET_SUBS.includes(openSub) || TASK_SUBS.includes(openSub);
@@ -844,37 +840,15 @@ export default function Workspace({ route }) {
 
       <PageBody>
         <div className="space-y-3">
-          {search.trim() && filterCount > 0 && (
-            <Banner accent="teal" icon={AlertCircle} title="Search is layered on top of your filters">
-              “{search.trim()}” is narrowing the {filterCount === 1 ? 'one filter' : `${filterCount} filters`} already applied,
-              not replacing them. {visible.length} of {items.length} records match both.
-              <button onClick={clearFilters} className={cx('ml-1 underline font-medium', t.text)}>Clear filters</button>
-            </Banner>
-          )}
-
           {lens === 'approvals' && visible.length === 0 && (
-            <Banner accent="amber" icon={Stamp} title="Nothing is waiting on your signature">
-              Approval requests only appear here while you are on the current stage and have not yet decided.
-              Earlier stages are somebody else's to clear first.
-            </Banner>
-          )}
-
-          {(filters.assignment || []).includes('unassigned') && (
-            <Banner accent="blue" icon={AlertCircle} title="Unrouted requests land in General">
-              A request submitted without a routing rule goes to the <strong className={t.text}>General</strong> queue and is
-              triaged within one business hour. It is never silently dropped, and it is never auto-assigned to a person.
-            </Banner>
+            <Banner accent="amber" icon={Stamp} title="Nothing is waiting on your signature" />
           )}
 
           {groups.length === 0 ? (
             <EmptyState
               icon={activeLens.icon}
               title={search.trim() ? 'Nothing matches that search' : 'Nothing here right now'}
-              hint={
-                search.trim()
-                  ? 'Search composes with the filters above rather than replacing them — clearing a filter may bring results back.'
-                  : `No ${activeLens.label.toLowerCase()} match the current filters. Widen the view or clear a filter to see more.`
-              }
+              hint={search.trim() ? null : `No ${activeLens.label.toLowerCase()} match the current filters.`}
               action={<Button variant="soft" accent="teal" icon={Filter} onClick={clearFilters}>Clear filters</Button>}
             />
           ) : (
@@ -937,14 +911,12 @@ function NewMenu({ onCreate }) {
         <MenuItem
           icon={CheckSquare}
           label="New Task"
-          hint="Your own decomposable work"
           accent="teal"
           onClick={() => { setOpen(false); onCreate('task'); }}
         />
         <MenuItem
           icon={Inbox}
           label="New Ticket"
-          hint="An inbound request from a person"
           accent="rose"
           onClick={() => { setOpen(false); onCreate('ticket'); }}
         />
@@ -1110,7 +1082,7 @@ function PartyRow({ requester, ticket, now }) {
               <Fact icon={Star} label="Plan">{requester.org?.plan || 'None'}</Fact>
               <Fact icon={Users} label="Seats">{requester.org?.seats != null ? String(requester.org.seats) : 'Unknown'}</Fact>
               <Fact icon={ShieldCheck} label="Customer success">{requester.csm?.name || 'Unassigned'}</Fact>
-              <Fact icon={Crown} label="VIP">{requester.vip ? 'Yes — escalate on arrival' : 'No'}</Fact>
+              <Fact icon={Crown} label="VIP">{requester.vip ? 'Yes' : 'No'}</Fact>
               <Fact icon={Clock} label="Timezone">{requester.timezone || 'Unknown'}</Fact>
               <Fact icon={Phone} label="Phone">{requester.phone || 'Not on file'}</Fact>
               <Fact icon={Mail} label="Customer since">
@@ -1131,7 +1103,6 @@ function PartyRow({ requester, ticket, now }) {
         <div className="mt-3">
           <Banner accent="amber" icon={AlertTriangle}>
             <strong className={t.text}>{requester.org.name}</strong> is flagged at risk in the account health review.
-            Anything on this ticket that reads as a brush-off will be read that way.
           </Banner>
         </div>
       )}
@@ -1245,8 +1216,7 @@ function SlaPanel({ sla, status, now }) {
   if (!sla) {
     return (
       <Banner accent="amber" icon={AlertCircle} title="No SLA policy resolved">
-        This ticket matched no plan policy and no internal policy, so nothing is timing it. That is a configuration gap,
-        not a ticket without a deadline.
+        No plan policy and no internal policy matched, so nothing is timing this ticket.
       </Banner>
     );
   }
@@ -1263,17 +1233,13 @@ function SlaPanel({ sla, status, now }) {
       </div>
       {sla.breached && (
         <div className="p-3">
-          <Banner accent="red" icon={AlertTriangle} title="Target breached">
-            The breach stays on the record. Resetting the clock hides the miss from the account's monthly report, which is
-            exactly the number a customer checks first.
-          </Banner>
+          <Banner accent="red" icon={AlertTriangle} title="Target breached" />
         </div>
       )}
       {sla.paused && (
         <div className="p-3">
-          <Banner accent="slate" icon={Pause} title="Clock paused, not stopped">
-            The ticket is <strong className={t.text}>{statusMeta(status).label}</strong> — time spent waiting on somebody
-            outside the desk does not count against the target. It resumes the moment the status moves back.
+          <Banner accent="slate" icon={Pause} title="Clock paused">
+            The ticket is <strong className={t.text}>{statusMeta(status).label}</strong>.
           </Banner>
         </div>
       )}
@@ -1294,7 +1260,7 @@ function LinkedItems({ links, data, onOpenTicket }) {
   };
 
   return (
-    <Section title="Linked items" hint="Typed links, so the relationship is visible rather than implied by a mention in a comment.">
+    <Section title="Linked items">
       <div className={DENSITY.rowGap}>
         {links.map((link, i) => {
           const meta = LINK_META[link.type] || LINK_META.ticket;
@@ -1346,7 +1312,6 @@ function CommentBubble({ comment, data, now }) {
 }
 
 function Composer({ onSend, accent = 'rose' }) {
-  const { t } = useTheme();
   const [body, setBody] = useState('');
   const [internal, setInternal] = useState(false);
   return (
@@ -1367,12 +1332,7 @@ function Composer({ onSend, accent = 'rose' }) {
         onChange={(e) => setBody(e.target.value)}
         placeholder={internal ? 'What should the next agent know?' : 'Write a reply the requester will read…'}
       />
-      <div className="flex items-center justify-between gap-2">
-        <p className={cx('text-xs', t.textMuted)}>
-          {internal
-            ? 'Internal notes never leave RelayHQ. They still appear in an export, so write them like someone will read them.'
-            : 'This goes to the requester and stops the first-response clock.'}
-        </p>
+      <div className="flex items-center justify-end gap-2">
         <Button
           variant="solid"
           accent={internal ? 'amber' : accent}
@@ -1554,7 +1514,6 @@ function TicketModal({ ticket, data, meId, now, onClose }) {
         {!ticket.queueId && (
           <Banner accent="amber" icon={AlertCircle} title="This ticket arrived without routing">
             No request form set a queue, so it fell to <strong className={t.text}>General</strong> for triage.
-            That fallback is deliberate and it is never silent — configure routing on the request form to change it.
           </Banner>
         )}
 
@@ -1612,20 +1571,16 @@ function TicketModal({ ticket, data, meId, now, onClose }) {
 
         <LinkedItems links={ticket.links} data={data} onOpenTicket={(id) => navigate('workspace', 'ticket', id)} />
 
-        <Banner accent="rose" icon={CornerDownRight} title="A ticket is not decomposable work">
-          Tickets have no subtasks or checklists, deliberately. A ticket is somebody else's request; the work it generates is
-          yours, and work belongs on a task where it can carry subtasks, a checklist and its own due date.
-          <span className="block mt-2">
-            <Button variant="soft" accent="teal" size="sm" icon={Plus} onClick={createLinkedTask}>
-              Create a linked task
-            </Button>
-          </span>
-        </Banner>
+        <div className="flex">
+          <Button variant="soft" accent="teal" size="sm" icon={Plus} onClick={createLinkedTask}>
+            Create a linked task
+          </Button>
+        </div>
 
-        <Section title="Conversation" hint={`${comments.length} ${comments.length === 1 ? 'message' : 'messages'} · public replies reach the requester, internal notes never do.`}>
+        <Section title="Conversation" hint={`${comments.length} ${comments.length === 1 ? 'message' : 'messages'}`}>
           <div className="space-y-2">
             {comments.length === 0 && (
-              <EmptyState icon={MessageSquare} title="No messages yet" hint="The first public reply stops the first-response clock." />
+              <EmptyState icon={MessageSquare} title="No messages yet" />
             )}
             {comments.map(comment => (
               <CommentBubble key={comment.id} comment={comment} data={data} now={now} />
@@ -1817,9 +1772,7 @@ function SubtaskList({ task, project, data, accent, meId, now }) {
       icon={CornerDownRight}
       accent={accent}
       title="Subtasks"
-      subtitle={children.length
-        ? `${done} of ${children.length} done · each one is a real task with its own owner and date`
-        : 'Break the work into steps you can finish'}
+      subtitle={children.length ? `${done} of ${children.length} done` : null}
     >
       <div className={cx('divide-y', t.borderLight)}>
         {children.map(child => {
@@ -1910,7 +1863,7 @@ function Checklist({ task, list, accent, now }) {
       icon={ListChecks}
       accent={accent}
       title={list.name || 'Checklist'}
-      subtitle={items.length ? `${done} of ${items.length} checked` : 'A repeatable list you tick off every time'}
+      subtitle={items.length ? `${done} of ${items.length} checked` : null}
       action={items.length > 0 && (
         <span className={cx('text-xs tabular-nums font-medium', t.textSecondary)}>
           {Math.round((done / items.length) * 100)}%
@@ -1968,7 +1921,6 @@ function ChecklistSection({ task, accent, now }) {
         icon={ListChecks}
         accent={accent}
         title="Checklists"
-        subtitle="A repeatable list you tick off every time this kind of work comes round"
         action={
           <Button
             variant="soft"
@@ -2108,7 +2060,6 @@ function TaskModal({ task, data, meId, now, onClose }) {
 
         <Section
           title="Notes"
-          hint="Slash-command markup — the same blocks a knowledge atom uses, so notes that turn out to be useful can be lifted straight into an article."
           action={
             <Button
               variant={editing ? 'solid' : 'soft'}
@@ -2136,11 +2087,6 @@ function TaskModal({ task, data, meId, now, onClose }) {
         <ChecklistSection task={task} accent={accent} now={now} />
 
         <LinkedItems links={task.links} data={data} onOpenTicket={(id) => navigate('workspace', 'ticket', id)} />
-
-        <Banner accent={accent} icon={AlertCircle} title="Why this screen has no SLA">
-          An SLA is a promise made to a requester. A task is work you assigned yourself, so there is nobody to promise —
-          it has a due date instead. Tickets carry the clock; tasks carry the checklist.
-        </Banner>
       </div>
     </Modal>
   );
@@ -2225,9 +2171,6 @@ function NewRecordModal({ kind, data, meId, onClose, onCreated }) {
       size="modalMd"
       icon={isTicket ? Inbox : CheckSquare}
       title={isTicket ? 'New ticket' : 'New task'}
-      subtitle={isTicket
-        ? 'An inbound request from a person — it gets a queue, an SLA and a conversation'
-        : 'Your own work — it gets subtasks, a checklist and a due date'}
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>
@@ -2262,7 +2205,7 @@ function NewRecordModal({ kind, data, meId, onClose, onCreated }) {
 
         {isTicket ? (
           <>
-            <Field label="Queue" hint="Pick a destination, or leave it and see what happens below.">
+            <Field label="Queue">
               <TileGroup
                 value={queueId}
                 onChange={setQueueId}
@@ -2273,8 +2216,7 @@ function NewRecordModal({ kind, data, meId, onClose, onCreated }) {
             </Field>
             {!queueId && (
               <Banner accent="amber" icon={AlertCircle} title="No queue chosen">
-                This ticket will land in <strong className={t.text}>{generalQueue?.name || 'General'}</strong> and be triaged
-                within one business hour. Saying so here is the point — a silent default is how tickets get lost.
+                This ticket will land in <strong className={t.text}>{generalQueue?.name || 'General'}</strong>.
               </Banner>
             )}
             <Field label="Description">
@@ -2284,10 +2226,10 @@ function NewRecordModal({ kind, data, meId, onClose, onCreated }) {
           </>
         ) : (
           <>
-            <Field label="Due date" hint="Tasks have a due date, not an SLA — nobody outside has been promised anything.">
+            <Field label="Due date">
               <Input accent={accent} type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
             </Field>
-            <Field label="Notes" hint="Type / at the start of a line for headings, bullets, to-dos, quotes and dividers.">
+            <Field label="Notes">
               <SlashEditor value={body} onChange={setBody} accent={accent} rows={6} />
             </Field>
           </>

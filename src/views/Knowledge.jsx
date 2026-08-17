@@ -4,7 +4,7 @@ import {
   Tag, Package, Folder, GraduationCap, Globe, Building2, Users, Eye, ThumbsUp, ThumbsDown,
   Clock, ListChecks, Bold, Italic, Underline, List, Heading3, Image as ImageIcon,
   Video, Type, AlertCircle, Check, ArrowLeft, Layers, Circle, Lock,
-  Share2, X, Info,
+  Share2, X,
 } from 'lucide-react';
 import {
   useTheme, cx, ICON, DENSITY, ENTITIES, entityHue,
@@ -188,19 +188,15 @@ function reuseOf(atom, reuseIndex) {
 function externalState(atom, reuse) {
   const external = reuse.catalog.filter(c => c.audience === 'external' || c.audience === 'both');
   if (atom.status !== 'published') {
-    return { live: false, hue: 'gray', headline: `Not published — status is ${atom.status}`,
-      why: 'Drafts and archived atoms are served to nobody: not the help centre, not the agent panel, and any course that includes it will skip the lesson.', external };
+    return { live: false, hue: 'gray', headline: `Not published — status is ${atom.status}`, external };
   }
   if (atom.audience === 'internal') {
-    return { live: false, hue: 'slate', headline: 'Internal audience — staff only',
-      why: 'Published, but the audience is Internal. It is available to agents and to internal courses and will never appear in the customer help centre.', external };
+    return { live: false, hue: 'slate', headline: 'Internal audience — staff only', external };
   }
   if (!external.length) {
-    return { live: false, hue: 'amber', headline: 'Published for customers, but nothing links to it',
-      why: 'The audience allows customers to see it, but no customer-facing catalog item references it — so nobody will find it by browsing. Link it from a catalog item, or it is search-only.', external };
+    return { live: false, hue: 'amber', headline: 'Published for customers, but nothing links to it', external };
   }
-  return { live: true, hue: 'emerald', headline: `Live in the customer help centre`,
-    why: 'Published, customer audience, and reachable by browsing the catalog items below.', external };
+  return { live: true, hue: 'emerald', headline: `Live in the customer help centre`, external };
 }
 
 /* ------------------------------------------------------------------ *
@@ -377,7 +373,7 @@ function Library({ atoms, reuseIndex, people, tab, notFound }) {
         subtitle={subsetLabel(
           filtered.length,
           atoms.length,
-          `${atoms.length} atoms · ${reused} reused across the catalog and courses · one record, three surfaces`,
+          `${atoms.length} atoms · ${reused} reused`,
         )}
         /* The lens is centred in row 1, between the module identity and the
          * primary action, so it holds still while either of them changes width. */
@@ -409,7 +405,7 @@ function Library({ atoms, reuseIndex, people, tab, notFound }) {
         <div className="space-y-4">
           {notFound && (
             <Banner accent="amber" icon={AlertCircle} title="That atom no longer exists">
-              Nothing in the library has the id <code>{notFound}</code>. It was probably deleted in this session.
+              Nothing in the library has the id <code>{notFound}</code>.
             </Banner>
           )}
 
@@ -432,9 +428,6 @@ function Library({ atoms, reuseIndex, people, tab, notFound }) {
             <EmptyState
               icon={BookOpen}
               title={narrowed ? 'No atoms match those filters' : 'No knowledge atoms yet'}
-              hint={narrowed
-                ? 'Search composes with the filters above rather than replacing them — clearing one may bring results back.'
-                : 'An atom is authored once and reused by the help centre, the agent panel and any course that needs it.'}
               action={narrowed
                 ? <Button variant="soft" accent="blue" onClick={clearFilters}>Clear filters</Button>
                 : <Button variant="grad" module="knowledge" icon={Plus} onClick={() => setCreating(true)}>New atom</Button>}
@@ -625,20 +618,17 @@ function AtomDetail({ atom, atoms, reuse, people, directory, tab }) {
         <div className="space-y-4">
           {altGaps.length > 0 && (
             <Banner accent="red" icon={AlertCircle} title={`${altGaps.length} image slide${altGaps.length === 1 ? '' : 's'} without alt text`}>
-              A visual how-to with no alt text is unusable with a screen reader, and the build gate fails on it.
               Fix: {altGaps.map(s => s.heading || 'untitled slide').join(', ')}.
             </Banner>
           )}
           {draftInCourse && (
             <Banner accent="amber" icon={AlertCircle} title="A course includes this atom, but it is not published">
               {reuse.courses.map(c => c.title).join(', ')} reference{reuse.courses.length === 1 ? 's' : ''} this lesson.
-              Learners will have it skipped until the status is Published — the course will not show an error, it will simply be shorter.
             </Banner>
           )}
           {internalButPublic && (
             <Banner accent="amber" icon={AlertCircle} title="Linked from a customer-facing catalog item">
-              This atom is linked from a catalog item customers can see, but its audience is <strong>Internal</strong>,
-              so the help centre will render that item with one fewer article and no explanation.
+              Audience is <strong>Internal</strong>.
             </Banner>
           )}
 
@@ -668,8 +658,8 @@ function AtomDetail({ atom, atoms, reuse, people, directory, tab }) {
         name={atom.title}
         kind="knowledge atom"
         cascadeNote={linked
-          ? `It is referenced by ${reuse.catalog.length} catalog item(s) and ${reuse.courses.length} course lesson slot(s). Those references will dangle: ${[...reuse.catalog.map(c => c.name), ...reuse.courses.map(c => c.title)].join(', ')}.`
-          : 'Nothing references this atom, so nothing else changes.'}
+          ? `Referenced by ${reuse.catalog.length} catalog item(s) and ${reuse.courses.length} course lesson slot(s): ${[...reuse.catalog.map(c => c.name), ...reuse.courses.map(c => c.title)].join(', ')}.`
+          : 'Nothing references this atom.'}
         onCancel={() => setConfirming(false)}
         onConfirm={() => { removeFrom('knowledge', atom.id); navigate('knowledge', tab); }}
       />
@@ -696,9 +686,6 @@ function ReusePanel({ atom, reuse, ext, linked }) {
                 ? 'This atom is not used anywhere yet'
                 : `This atom appears in ${linked} place${linked === 1 ? '' : 's'}`}
             </h3>
-            <p className={cx('text-xs', t.textSecondary)}>
-              Authored once. The help centre, the agent panel and every course read this same record — nothing below is a copy.
-            </p>
           </div>
         </div>
         <div className="hidden @xl:flex items-center gap-2 flex-shrink-0">
@@ -714,8 +701,7 @@ function ReusePanel({ atom, reuse, ext, linked }) {
           {/* Deflection */}
           <ReuseColumn
             icon={Package} accent="amber" title="Deflection"
-            hint="Catalog items that offer it before the request form"
-            empty="No catalog item links to this atom, so a customer browsing the catalog will never be offered it."
+            empty="No catalog item links to this atom."
             rows={reuse.catalog.map(node => ({
               id: node.id,
               title: node.name,
@@ -738,8 +724,7 @@ function ReusePanel({ atom, reuse, ext, linked }) {
           {/* Training */}
           <ReuseColumn
             icon={GraduationCap} accent="indigo" title="Training"
-            hint="Courses that teach with this exact record as a lesson"
-            empty="No course uses this atom as a lesson yet. Any atom with an objective and a check is ready to be one."
+            empty="No course uses this atom as a lesson yet."
             rows={reuse.courses.map((c, i) => ({
               id: `${c.id}-${i}`,
               title: c.title,
@@ -755,12 +740,9 @@ function ReusePanel({ atom, reuse, ext, linked }) {
               <IconTile icon={Globe} accent={ext.hue} size="sm" />
               <div className="min-w-0">
                 <p className={cx('text-sm font-medium', t.text)}>Published externally</p>
-                <p className={cx('text-[11px]', t.textMuted)}>What a customer can actually reach</p>
               </div>
             </div>
-            <Banner accent={ext.hue} icon={ext.live ? Check : AlertCircle} title={ext.headline}>
-              {ext.why}
-            </Banner>
+            <Banner accent={ext.hue} icon={ext.live ? Check : AlertCircle} title={ext.headline} />
             {ext.external.length > 0 && (
               <div className="mt-2 space-y-1">
                 <GroupLabel>Reachable from</GroupLabel>
@@ -781,7 +763,7 @@ function ReusePanel({ atom, reuse, ext, linked }) {
   );
 }
 
-function ReuseColumn({ icon: Icon, accent, title, hint, rows, empty }) {
+function ReuseColumn({ icon: Icon, accent, title, rows, empty }) {
   const { t } = useTheme();
   return (
     <div className={DENSITY.cardPad}>
@@ -789,7 +771,6 @@ function ReuseColumn({ icon: Icon, accent, title, hint, rows, empty }) {
         <IconTile icon={Icon} accent={accent} size="sm" />
         <div className="min-w-0">
           <p className={cx('text-sm font-medium', t.text)}>{title}</p>
-          <p className={cx('text-[11px] truncate', t.textMuted)}>{hint}</p>
         </div>
       </div>
       {rows.length === 0 ? (
@@ -828,7 +809,7 @@ function PropertiesPanel({ atom, directory }) {
         <Field label="Title" required>
           <Input value={atom.title} accent={f.hue} onChange={e => touch(atom.id, { title: e.target.value })} />
         </Field>
-        <Field label="Summary" hint="One sentence. This is the line the help centre and the course card both show.">
+        <Field label="Summary" hint="One sentence.">
           <Textarea rows={2} value={atom.summary || ''} accent={f.hue}
             onChange={e => touch(atom.id, { summary: e.target.value })} />
         </Field>
@@ -844,12 +825,12 @@ function PropertiesPanel({ atom, directory }) {
             options={STATUSES.map(s => ({ value: s.value, label: s.label, icon: s.icon, accent: s.accent }))}
           />
         </Field>
-        <Field label="Owner" hint="Who is accountable for keeping this accurate.">
+        <Field label="Owner">
           <Select value={atom.ownerId || ''} accent={f.hue} placeholder="Unassigned"
             onChange={e => touch(atom.id, { ownerId: e.target.value })}
             options={directory.map(p => ({ value: p.id, label: `${p.name} — ${p.title}` }))} />
         </Field>
-        <Field label="Tags" hint="Tags drive help-centre browse, agent search and course assembly.">
+        <Field label="Tags">
           <div className="flex flex-wrap gap-1 mb-2">
             {(atom.tags || []).map(tg => (
               <Chip key={tg} accent="blue" icon={Tag}
@@ -879,7 +860,7 @@ function StatsPanel({ atom, owner }) {
     { icon: Clock, label: 'Last updated', value: shortDate(atom.updatedAt), accent: 'slate' },
   ];
   return (
-    <Panel icon={Eye} accent="blue" title="Feedback" subtitle="Read-only — collected from the help centre">
+    <Panel icon={Eye} accent="blue" title="Feedback" subtitle="Read-only">
       <div className={cx(DENSITY.cardPad, 'space-y-2')}>
         {pct != null && (
           <div className={cx('rounded-lg p-3 border', t.bgSubtle, t.borderLight)}>
@@ -1002,13 +983,11 @@ function RichText({ value, onCommit, placeholder = 'Write…', minHeight = 'min-
  * ==================================================================== */
 
 function ArticleEditor({ atom }) {
-  const { t } = useTheme();
   return (
     <Panel
       icon={BookOpen}
       accent="blue"
       title="Article body"
-      subtitle="Rich text, stored as HTML — the same markup the help centre and the lesson player render"
       action={<Chip accent="blue" icon={Type}>{Math.max(1, Math.round(String(atom.body || '').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).length))} words</Chip>}
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
@@ -1020,10 +999,6 @@ function ArticleEditor({ atom }) {
           placeholder="Start with the answer, then the why, then what happens next…"
           onCommit={html => touch(atom.id, { body: html })}
         />
-        <p className={cx('text-[11px]', t.textMuted)}>
-          Formatting is committed when the editor loses focus, not on every keystroke — that is what keeps the
-          cursor where you left it.
-        </p>
       </div>
     </Panel>
   );
@@ -1034,7 +1009,6 @@ function ArticleEditor({ atom }) {
  * ==================================================================== */
 
 function GuideEditor({ atom }) {
-  const { t } = useTheme();
   const slides = atom.slides || [];
   const [openId, setOpenId] = useState(slides[0]?.id || null);
 
@@ -1079,7 +1053,7 @@ function GuideEditor({ atom }) {
       icon={LayoutGrid}
       accent="purple"
       title="Slides"
-      subtitle={`${slides.length} slide${slides.length === 1 ? '' : 's'} · tap-through, auto-advance where a duration is set`}
+      subtitle={`${slides.length} slide${slides.length === 1 ? '' : 's'}`}
       action={<Button size="sm" variant="soft" accent="purple" icon={Plus} onClick={addSlide}>Add slide</Button>}
     >
       <div className={cx(DENSITY.cardPad, '@container')}>
@@ -1087,7 +1061,6 @@ function GuideEditor({ atom }) {
           <div className="space-y-2 min-w-0">
             {slides.length === 0 ? (
               <EmptyState icon={LayoutGrid} title="No slides yet"
-                hint="A guide is an ordered set of screens. Four to seven is the sweet spot — past that, split it into two atoms."
                 action={<Button variant="solid" accent="purple" icon={Plus} onClick={addSlide}>Add the first slide</Button>} />
             ) : slides.map((s, i) => (
               <SlideCard
@@ -1107,10 +1080,6 @@ function GuideEditor({ atom }) {
           <div className="@2xl:sticky @2xl:top-0">
             <GroupLabel className="mb-1.5">Live preview</GroupLabel>
             <StoriesPlayer key={`${atom.id}:${openId || 'none'}`} slides={slides} startAt={activeIndex} />
-            <p className={cx('text-[10px] mt-1.5 leading-relaxed', t.textMuted)}>
-              Tap the left or right half to move. Slides with a duration advance on their own; a slide set to
-              <strong> Manual</strong> waits for the reader.
-            </p>
           </div>
         </div>
       </div>
@@ -1157,17 +1126,17 @@ function SlideCard({ slide, index, total, open, onToggle, onPatch, onMove, onRem
 
           {slide.type !== 'text' && (
             <Field label={slide.type === 'video' ? 'Video URL' : 'Image URL'} required
-              hint={slide.type === 'video' ? 'Hosted mp4. The prototype shows a placeholder frame rather than streaming it.' : 'Portrait crops read best — the player is 9:16.'}>
+              hint={slide.type === 'video' ? 'Hosted mp4.' : 'Portrait, 9:16.'}>
               <Input value={slide.url || ''} accent="purple" placeholder="https://…"
                 onChange={e => onPatch({ url: e.target.value })} />
             </Field>
           )}
 
-          <Field label="Heading" hint="Six words or fewer. It sits over the image.">
+          <Field label="Heading" hint="Six words or fewer.">
             <Input value={slide.heading || ''} accent="purple" onChange={e => onPatch({ heading: e.target.value })} />
           </Field>
 
-          <Field label="Caption" hint="Rich text — bold the thing they must not miss.">
+          <Field label="Caption">
             <RichText
               key={slide.id}
               value={slide.caption}
@@ -1179,14 +1148,14 @@ function SlideCard({ slide, index, total, open, onToggle, onPatch, onMove, onRem
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Auto-advance" hint={slide.seconds ? 'Advances on its own.' : 'Waits for the reader.'}>
+            <Field label="Auto-advance">
               <Select value={String(slide.seconds ?? 0)} accent="purple" options={SECONDS_OPTIONS}
                 onChange={e => onPatch({ seconds: Number(e.target.value) })} />
             </Field>
             {slide.type === 'image' && (
               <Field label="Alt text" required
-                error={altMissing ? 'Required — an image-only instruction with no alt text is unusable with a screen reader.' : undefined}
-                hint={altMissing ? undefined : 'Describe what the screenshot shows, not that it is a screenshot.'}>
+                error={altMissing ? 'Required.' : undefined}
+                hint={altMissing ? undefined : 'Describe what the screenshot shows.'}>
                 <Input value={slide.alt || ''} accent={altMissing ? 'red' : 'purple'}
                   placeholder="The settings page with two-step verification switched on"
                   onChange={e => onPatch({ alt: e.target.value })} />
@@ -1357,7 +1326,7 @@ function StoriesPlayer({ slides = [], startAt = 0, large = false }) {
 
       <p className={cx('text-[11px] text-center', t.textMuted)}>
         {reduced
-          ? 'Auto-advance is off because your system asks for reduced motion. Use the arrows or arrow keys.'
+          ? 'Auto-advance off for reduced motion · arrow keys move'
           : 'Arrow keys move · space pauses'}
       </p>
     </div>
@@ -1383,16 +1352,7 @@ function PreviewModal({ atom, onClose }) {
       icon={f.icon}
       title={atom.title}
       subtitle={`${f.label} · ${au.label} · ${atom.minutes || 0} min`}
-      footer={
-        <>
-          <span className={cx('text-xs', t.textMuted)}>
-            {atom.format === 'guide'
-              ? 'The reader sees exactly this, full screen, in the help centre and inside the lesson player.'
-              : 'The same HTML renders in the help centre, the agent panel and the lesson player.'}
-          </span>
-          <Button variant="outline" onClick={onClose}>Close</Button>
-        </>
-      }
+      footer={<Button variant="outline" onClick={onClose}>Close</Button>}
     >
       {atom.format === 'guide' ? (
         <div className="max-w-[18rem] mx-auto">
@@ -1427,24 +1387,17 @@ function LessonSection({ atom, atoms }) {
       icon={GraduationCap}
       accent="indigo"
       title="Use as a lesson"
-      subtitle="The fields a course needs. Filling them in does not copy anything — the course points back here."
       action={<EntityTag kind="lesson" />}
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
-        <Banner accent="indigo" icon={Info}>
-          A lesson <strong>is</strong> a knowledge atom — that is why a lesson is blue, the same colour as an article.
-          Edit it here once and every course that uses it is current.
-        </Banner>
-
-        <Field label="Objective" required
-          hint="Finish the sentence “after this you can…”. Courses show this before the learner starts.">
+        <Field label="Objective" required>
           <Textarea rows={2} accent="indigo" value={atom.objective || ''}
             placeholder="After this you can…"
             onChange={e => touch(atom.id, { objective: e.target.value })} />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Estimated minutes" hint="Used to total up a course's length.">
+          <Field label="Estimated minutes">
             <Input type="number" min="1" accent="indigo" value={atom.minutes ?? ''}
               onChange={e => touch(atom.id, { minutes: Number(e.target.value) || 0 })} />
           </Field>
@@ -1462,7 +1415,7 @@ function LessonSection({ atom, atoms }) {
           </Field>
         </div>
 
-        <Field label="Prerequisites" hint="Atoms a learner should finish first. The course builder enforces the order.">
+        <Field label="Prerequisites" hint="Atoms a learner should finish first.">
           <div className="flex flex-wrap items-center gap-1.5">
             {prereqs.map(p => (
               <Chip key={p.id} accent="blue" icon={BookOpen}
@@ -1470,7 +1423,7 @@ function LessonSection({ atom, atoms }) {
                 {p.title}
               </Chip>
             ))}
-            {prereqs.length === 0 && <span className={cx('text-xs', t.textMuted)}>None — this atom stands alone.</span>}
+            {prereqs.length === 0 && <span className={cx('text-xs', t.textMuted)}>None</span>}
             <div className="relative">
               <Button size="xs" variant="soft" accent="blue" icon={Plus} onClick={() => setPrereqOpen(o => !o)}>
                 Add
@@ -1529,7 +1482,6 @@ function CheckEditor({ atom, questions }) {
           <IconTile icon={ListChecks} accent="amber" size="sm" />
           <div>
             <p className={cx('text-sm font-medium', t.text)}>Knowledge check</p>
-            <p className={cx('text-[11px]', t.textMuted)}>Optional. Scored inside the course; never shown in the help centre.</p>
           </div>
         </div>
         <Button size="sm" variant="soft" accent="amber" icon={Plus} onClick={addQuestion}>Add question</Button>
@@ -1537,8 +1489,7 @@ function CheckEditor({ atom, questions }) {
 
       {questions.length === 0 ? (
         <Banner accent="gray" icon={AlertCircle}>
-          No check on this atom. A course that includes it will mark the lesson complete as soon as it is opened,
-          with nothing to pass — which is fine for reference material and wrong for anything a certificate depends on.
+          No check on this atom.
         </Banner>
       ) : (
         <div className="space-y-2">
@@ -1621,7 +1572,7 @@ function QuestionCard({ question, index, onPatch, onRemove }) {
             )}
           </div>
         </Field>
-        <Field label="Explanation" hint="Shown after the learner answers. This is where the teaching actually happens.">
+        <Field label="Explanation" hint="Shown after the learner answers.">
           <Textarea rows={2} accent="amber" value={question.explanation || ''}
             onChange={e => onPatch({ explanation: e.target.value })} />
         </Field>
@@ -1692,7 +1643,6 @@ function NewAtomModal({ open, onClose, tab }) {
       size="modalMd"
       icon={FORMATS[format].icon}
       title="New knowledge atom"
-      subtitle="One record. The help centre, the agent panel and any course will all read it."
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>Starts as a draft</span>
@@ -1706,12 +1656,7 @@ function NewAtomModal({ open, onClose, tab }) {
       }
     >
       <div className="space-y-4">
-        <Banner accent="amber" icon={AlertCircle} title="New atoms are drafts">
-          A draft is served to nobody: not the help centre, not the agent panel, and any course that includes it will
-          skip past it silently. Publish it when the body is real.
-        </Banner>
-
-        <Field label="Format" hint="Guides are the Stories format — a tap-through sequence of screens.">
+        <Field label="Format">
           <TileGroup value={format} onChange={setFormat} columns={2}
             options={[
               { value: 'article', label: 'Article', icon: BookOpen, accent: 'blue', hint: 'Rich text' },
@@ -1725,7 +1670,7 @@ function NewAtomModal({ open, onClose, tab }) {
             onChange={e => setTitle(e.target.value)} />
         </Field>
 
-        <Field label="Summary" hint="One sentence. Shown on the help-centre card and the course lesson row.">
+        <Field label="Summary" hint="One sentence.">
           <Textarea rows={2} value={summary} accent={FORMATS[format].hue}
             placeholder="What this covers, in the reader's language."
             onChange={e => setSummary(e.target.value)} />
@@ -1736,7 +1681,7 @@ function NewAtomModal({ open, onClose, tab }) {
             options={Object.entries(AUDIENCES).map(([value, m]) => ({ value, label: m.label, icon: m.icon, accent: m.hue }))} />
         </Field>
 
-        <Field label="Objective" hint="Optional now, required before a course can use it as a lesson.">
+        <Field label="Objective" hint="Optional.">
           <Input value={objective} accent="indigo" placeholder="After this you can…"
             onChange={e => setObjective(e.target.value)} />
         </Field>

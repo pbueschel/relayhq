@@ -3,7 +3,7 @@ import {
   GraduationCap, BookMarked, BookOpen, Layers, ListChecks, Award, UserCheck,
   Plus, Trash2, ChevronRight, ChevronDown, ArrowUp, ArrowDown, Clock, Check,
   CircleCheck, CircleAlert, TriangleAlert, Info, Play, Pause, Users, Target,
-  Link2, Lock, GripVertical, Video, RotateCcw, ShieldCheck, CalendarClock,
+  Lock, GripVertical, Video, RotateCcw, ShieldCheck, CalendarClock,
   Package, Eye, Settings2, User, Building2, Repeat2, Image as ImageGlyph,
   ArrowLeft, ArrowRight,
 } from 'lucide-react';
@@ -513,7 +513,6 @@ function tabCount(value, s) {
  * ==================================================================== */
 
 function CurriculaList({ curricula, courseIndex, kb, enrollments, jobFunctions, dirIndex, contactIndex, orgIndex, tabs }) {
-  const { t } = useTheme();
   /* One header state: the multi-select filter values and the in-page query.
    * There is no tray flag any more — the filter bar is a permanent band, so a
    * filter can never be on with its control hidden. */
@@ -578,18 +577,10 @@ function CurriculaList({ curricula, courseIndex, kb, enrollments, jobFunctions, 
 
       <PageBody width="max-w-6xl">
         <div className="space-y-6">
-          <Banner accent="indigo" icon={Target} title="A curriculum teaches a job function, not a topic">
-            Each one below is an argument: <strong className={t.text}>here is everything this role must know</strong>, in
-            order, with a competency map showing which course covers what. Every lesson inside is a knowledge atom the
-            help centre already publishes — the curriculum is the sequence, not the content.
-          </Banner>
-
           {visible.length === 0 ? (
             <EmptyState icon={GraduationCap}
               title={curricula.length === 0 ? 'No curricula yet' : 'No curricula match'}
-              hint={curricula.length === 0
-                ? 'A curriculum is the whole reading list for one job function.'
-                : 'Search composes with the filters rather than replacing them — clearing one may bring curricula back.'}
+              hint={curricula.length === 0 ? undefined : 'Clearing a filter may bring curricula back.'}
               action={curricula.length === 0 ? undefined
                 : <Button variant="soft" accent={ACCENT} onClick={clearFilters}>Clear filters</Button>} />
           ) : (
@@ -745,27 +736,25 @@ function CurriculumDetail({
                 <Fact label="Courses" value={totals.courses.length} />
                 <Fact label="Modules" value={totals.modules} />
                 <Fact label="Lessons" value={totals.lessons} hint={`${distinct} distinct atoms`} />
-                <Fact label="Est. time" value={fmtMinutes(totals.minutes)} hint="summed from lessons" />
+                <Fact label="Est. time" value={fmtMinutes(totals.minutes)} />
                 <Fact label="Target" value={`${curriculum.targetDays} days`} hint="for a new starter" />
               </div>
             </div>
           </Card>
 
-          <Banner accent="blue" icon={Repeat2} title="Author once, serve three surfaces">
+          <Banner accent="blue" icon={Repeat2}>
             {helpLive} of the {distinct} distinct atoms in this curriculum are live help-centre content right now.
-            Nothing here was written for training — the sequence is the only new artefact.
           </Banner>
 
           {externalCourses.length > 0 && (
-            <Banner accent="amber" icon={Info} title="This curriculum crosses the audience line — deliberately">
+            <Banner accent="amber" icon={Info}>
               <ChipGroup accent="green" icon={BookMarked} max={2} items={externalCourses} render={(x) => x.title} /> is an
-              external academy course inside an internal curriculum. {curriculum.note}
+              external academy course inside an internal curriculum.
             </Banner>
           )}
 
           <Section
             title="The programme"
-            hint="Ordered. A new starter works down this list; the order is the pedagogy."
             action={
               <div className="relative">
                 <Button variant="soft" accent="indigo" size="sm" icon={Plus} onClick={() => setAddOpen(v => !v)}>
@@ -793,12 +782,12 @@ function CurriculumDetail({
               ))}
               {!totals.courses.length && (
                 <EmptyState icon={BookMarked} title="No courses in this curriculum yet"
-                  hint="Add one from the menu above — courses can appear in more than one curriculum." />
+                  hint="Add one from the menu above." />
               )}
             </div>
           </Section>
 
-          <Section title="Coverage" hint="Every competency the role needs, and which course covers it. A blank row is a gap in the programme, not a gap in the person.">
+          <Section title="Coverage">
             <CoverageMatrix curriculum={curriculum} courses={totals.courses} />
           </Section>
 
@@ -1080,11 +1069,6 @@ function CoursesList({ courses, kb, curricula, jobFunctions, enrollments, items,
 
       <PageBody width="max-w-6xl">
         <div className="space-y-4">
-          <Banner accent="indigo" icon={BookMarked} title="A course is an ordering, not a document">
-            Its lessons are references to knowledge atoms. Open one and the builder shows you, per lesson, everywhere
-            else that atom is already doing work — another course, or a help-centre catalog item.
-          </Banner>
-
           <div className={DENSITY.rowGap}>
             {filtered.map(course => (
               <CourseRow key={course.id} course={course} kb={kb} curricula={curricula}
@@ -1092,7 +1076,7 @@ function CoursesList({ courses, kb, curricula, jobFunctions, enrollments, items,
             ))}
             {!filtered.length && (
               <EmptyState icon={BookMarked} title="No courses match"
-                hint="Search composes with the filters rather than replacing them — clearing one may bring courses back."
+                hint="Clearing a filter may bring courses back."
                 action={<Button variant="soft" accent={ACCENT} onClick={clearFilters}>Clear filters</Button>} />
             )}
           </div>
@@ -1212,9 +1196,7 @@ function CourseBuilder({ course, courses, kb, knowledge, items, curricula, jobFu
           {stats.unpublished.length > 0 && (
             <Banner accent="amber" icon={TriangleAlert} title="Some lessons point at atoms that are not published">
               <ChipGroup accent="amber" icon={BookOpen} max={3} items={stats.unpublished}
-                render={(id) => kb.get(id)?.title || id} />{' '}
-              — learners see a placeholder until Knowledge publishes them. Nothing is copied here, so publishing there
-              fixes it everywhere at once.
+                render={(id) => kb.get(id)?.title || id} />
             </Banner>
           )}
 
@@ -1258,15 +1240,13 @@ function CourseBuilder({ course, courses, kb, knowledge, items, curricula, jobFu
                   ))}
                   {!(course.modules || []).length && (
                     <EmptyState icon={Layers} title="No modules yet"
-                      hint="A module groups lessons that belong together and can carry its own quiz."
                       action={<Button variant="solid" accent="indigo" size="sm" icon={Plus}
                         onClick={() => appendModule(course)}>Add module</Button>} />
                   )}
                 </div>
 
                 <div className={cx('px-3 py-2 border-t text-[11px]', t.borderLight, t.textMuted)}>
-                  Drag a lesson between modules, or use the arrows — at the top or bottom of a module the arrow moves it
-                  into the neighbouring one.
+                  Drag a lesson between modules, or use the arrows.
                 </div>
               </Card>
 
@@ -1328,8 +1308,8 @@ function CourseBuilder({ course, courses, kb, knowledge, items, curricula, jobFu
         name={confirm?.name || ''}
         kind={confirm?.kind === 'course' ? 'course' : 'module'}
         cascadeNote={confirm?.kind === 'course'
-          ? 'Enrollments on this course are deleted with it. The knowledge atoms it referenced are untouched — they belong to Knowledge, not to this course.'
-          : 'The module and its quiz are removed. The lessons inside it are references, so the atoms themselves are not deleted.'}
+          ? 'Enrollments on this course are deleted with it. The knowledge atoms it referenced are untouched.'
+          : 'The module and its quiz are removed. The knowledge atoms its lessons referenced are untouched.'}
         onCancel={() => setConfirm(null)}
         onConfirm={() => {
           if (confirm.kind === 'course') {
@@ -1491,11 +1471,7 @@ function AuthorOncePanel({ course, stats, kb, items, courses }) {
         <IconTile icon={Repeat2} accent="blue" size="lg" />
         <div className="flex-1 min-w-0">
           <p className={cx('text-sm font-semibold', t.text)}>
-            {stats.helpLive.length} of {stats.total} lessons are also published help articles — authored once, serving both.
-          </p>
-          <p className={cx('text-xs mt-0.5', t.textSecondary)}>
-            Every lesson in this course is a reference to a knowledge atom. Editing one in Knowledge updates the
-            course, the help centre and the agent panel in the same keystroke.
+            {stats.helpLive.length} of {stats.total} lessons are also published help articles.
           </p>
           <div className="mt-2 max-w-xs"><Meter value={pct} accent="blue" /></div>
         </div>
@@ -1529,17 +1505,16 @@ function CourseSettings({ course, kb, jobFunctions, enrollments }) {
   const set = (patch) => patchIn('courses', course.id, { ...patch, updatedAt: new Date().toISOString() });
 
   return (
-    <Panel icon={Settings2} accent="indigo" title="Course settings"
-      subtitle="Selected nothing in the outline, so this is the course itself">
+    <Panel icon={Settings2} accent="indigo" title="Course settings">
       <div className={cx(DENSITY.cardPad, 'space-y-4')}>
         <Field label="Title" required>
           <Input accent="indigo" value={course.title} onChange={(e) => set({ title: e.target.value })} />
         </Field>
-        <Field label="Summary" hint="Shown in the catalog of courses and on the learner's card.">
+        <Field label="Summary">
           <Textarea accent="indigo" rows={2} value={course.summary} onChange={(e) => set({ summary: e.target.value })} />
         </Field>
 
-        <Field label="Audience" hint="Internal courses never appear in the customer academy, and vice versa.">
+        <Field label="Audience">
           <TileGroup
             value={course.audience}
             onChange={(v) => set({ audience: v })}
@@ -1552,7 +1527,7 @@ function CourseSettings({ course, kb, jobFunctions, enrollments }) {
         </Field>
 
         <div className="grid gap-3 @xl:grid-cols-2">
-          <Field label="Job function" hint="What role this course serves.">
+          <Field label="Job function">
             <Select accent="indigo" value={course.jobFunction || ''} onChange={(e) => set({ jobFunction: e.target.value })}
               options={jobFunctions.map(j => ({ value: j.id, label: j.label }))} />
           </Field>
@@ -1562,7 +1537,7 @@ function CourseSettings({ course, kb, jobFunctions, enrollments }) {
           </Field>
         </div>
 
-        <Field label="Estimated time" hint="Derived — the sum of every lesson's minutes. Reorder or add a lesson and it moves on its own.">
+        <Field label="Estimated time">
           <div className={cx('flex items-center gap-2 rounded-lg px-3 py-2 border', t.bgSubtle, t.borderLight)}>
             <Clock size={ICON.base} className={t.textMuted} />
             <span className={cx('text-sm font-medium tabular-nums', t.text)}>{fmtMinutes(mins)}</span>
@@ -1570,7 +1545,7 @@ function CourseSettings({ course, kb, jobFunctions, enrollments }) {
           </div>
         </Field>
 
-        <Field label="Sequencing" hint="Linear locks each step behind the one before it. Free navigation lets a learner dip in when a ticket calls for it.">
+        <Field label="Sequencing">
           <TileGroup
             value={course.sequencing}
             onChange={(v) => set({ sequencing: v })}
@@ -1583,7 +1558,7 @@ function CourseSettings({ course, kb, jobFunctions, enrollments }) {
         </Field>
 
         <div className="grid gap-3 @xl:grid-cols-2">
-          <Field label="Passing score" hint="Applies to every knowledge check in the course unless a quiz overrides it.">
+          <Field label="Passing score">
             <Input accent="indigo" type="number" min="0" max="100" value={course.passingScore}
               onChange={(e) => set({ passingScore: Number(e.target.value) })} />
           </Field>
@@ -1601,8 +1576,7 @@ function CourseSettings({ course, kb, jobFunctions, enrollments }) {
         </div>
 
         <Banner accent="blue" icon={Info}>
-          {enrolled.length} people are enrolled. Because progress is stored as completed lesson ids rather than a
-          percentage, adding a lesson here correctly drops everyone's bar instead of leaving a number that used to be true.
+          {enrolled.length} people are enrolled.
         </Banner>
       </div>
     </Panel>
@@ -1638,11 +1612,6 @@ function LessonEditor({ course, atom, moduleId, courses, items, kb, onClear, onP
       }
     >
       <div className={cx(DENSITY.cardPad, 'space-y-4')}>
-        <Banner accent="blue" icon={Link2} title="This lesson is a reference, not a copy">
-          The body lives in Knowledge as <strong className={t.text}>{atom.id}</strong>. Edit it there and every course
-          and help-centre surface below changes with it.
-        </Banner>
-
         <div className="grid grid-cols-2 gap-3 @xl:grid-cols-4">
           <Fact label="Format" value={meta.label} />
           <Fact label="Audience" value={AUDIENCE_LABEL[atom.audience]} />
@@ -1673,14 +1642,12 @@ function LessonEditor({ course, atom, moduleId, courses, items, kb, onClear, onP
               </div>
             )}
             {!usage.courses.length && !usage.items.length && (
-              <p className={cx('text-xs', t.textMuted)}>
-                Only used here so far. That is allowed, but an atom that serves one surface is the exception in RelayHQ.
-              </p>
+              <p className={cx('text-xs', t.textMuted)}>Only used here so far.</p>
             )}
           </div>
         </div>
 
-        <Field label="Prerequisites" hint="Lessons earlier in this course that must be finished first. Course-scoped — it does not change the atom.">
+        <Field label="Prerequisites" hint="Lessons earlier in this course that must be finished first.">
           <div className="space-y-1.5">
             {before.length === 0 && <p className={cx('text-xs', t.textMuted)}>Nothing precedes this lesson in the outline.</p>}
             {before.map(id => (
@@ -1702,9 +1669,7 @@ function LessonEditor({ course, atom, moduleId, courses, items, kb, onClear, onP
             <Chip accent={ENTITIES.quiz.hue} icon={ListChecks}>{(atom.check || []).length} questions</Chip>
           </div>
           {(atom.check || []).length === 0 ? (
-            <p className={cx('text-xs mt-1', t.textMuted)}>
-              This atom carries no check. The module quiz still applies — add one on the module if this content must be assessed.
-            </p>
+            <p className={cx('text-xs mt-1', t.textMuted)}>This atom carries no check.</p>
           ) : (
             <div className="mt-2 space-y-2">
               {atom.check.map(q => <QuestionCard key={q.id} question={q} />)}
@@ -1798,11 +1763,7 @@ function ModuleEditor({ course, module, kb, onClear, onAddQuestion }) {
               label={module.quiz ? 'On' : 'Off'}
             />
           </div>
-          {!module.quiz ? (
-            <Banner accent="gray" icon={Info}>
-              Without a module quiz, the only assessment in this module is whatever check each atom carries of its own.
-            </Banner>
-          ) : (
+          {module.quiz && (
             <div className="space-y-2">
               <div className="grid gap-2 @xl:grid-cols-2">
                 <Field label="Quiz title">
@@ -1864,7 +1825,6 @@ function LessonPicker({ open, onClose, course, moduleId, knowledge, courses, ite
       size="modalLg"
       icon={BookOpen}
       title="Add lessons from knowledge"
-      subtitle="Every atom in the knowledge base is eligible. Reuse is the intended path."
       footer={
         <>
           <span className={cx('text-sm', t.textMuted)}>
@@ -1881,11 +1841,6 @@ function LessonPicker({ open, onClose, course, moduleId, knowledge, courses, ite
       }
     >
       <div className="space-y-3">
-        <Banner accent="blue" icon={Link2} title="Adding a lesson references the atom — it is never copied">
-          If an atom is already a help article or a lesson in another course, that is the point. One author, one
-          revision history, three surfaces.
-        </Banner>
-
         <div className="flex items-center gap-2 flex-wrap">
           <SearchInput value={q} onChange={setQ} placeholder="Search titles, summaries and tags…" accent="blue" width="w-64" />
           <SubTabs value={format} onChange={setFormat} items={[
@@ -2073,7 +2028,7 @@ function QuestionModal({ open, onClose, course, moduleId }) {
             />
           </Field>
         )}
-        <Field label="Explanation" hint="Shown after the learner answers. This is where the teaching actually happens.">
+        <Field label="Explanation" hint="Shown after the learner answers.">
           <Textarea accent="amber" rows={2} value={explanation} onChange={(e) => setExplanation(e.target.value)} />
         </Field>
       </div>
@@ -2110,7 +2065,7 @@ function NewCourseModal({ open, onClose, jobFunctions }) {
   return (
     <Modal
       open={open} onClose={onClose} accent={ENTITIES.course.hue} size="modalMd" icon={BookMarked}
-      title="New course" subtitle="An empty frame. The content already exists in Knowledge."
+      title="New course"
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>Starts as a draft with one empty module.</span>
@@ -2196,7 +2151,6 @@ function Learners({
       {
         id: 'progress', label: 'Progress', icon: CircleCheck,
         options: PROGRESS_OPTIONS.map(o => ({ ...o, count: byProgress.get(o.value) || 0 })),
-        footer: 'A learner with three courses can be in more than one of these at once.',
       },
     ];
   }, [everyone, jobFunctions, courses]);
@@ -2230,7 +2184,7 @@ function Learners({
 
       <PageBody width="max-w-7xl">
         <div className="space-y-5 @container">
-      <Section title="Curriculum readiness" hint="The manager's question: can this team do the job yet?">
+      <Section title="Curriculum readiness">
         <div className="grid gap-3 @2xl:grid-cols-3">
           {curricula.map(cur => (
             <RollupCard key={cur.id} curriculum={cur} courseIndex={courseIndex} enrollments={enrollments}
@@ -2265,7 +2219,7 @@ function Learners({
           </div>
           {!rows.length && (
             <EmptyState icon={Users} title="Nobody matches"
-              hint="Search composes with the filters rather than replacing them — clearing one may bring people back."
+              hint="Clearing a filter may bring people back."
               action={<Button variant="soft" accent={ACCENT} onClick={clearFilters}>Clear filters</Button>} />
           )}
         </Card>
@@ -2309,9 +2263,6 @@ function RollupCard({ curriculum, courseIndex, enrollments, directory, contacts,
         <Chip accent="amber">{started} in progress</Chip>
         <Chip accent="gray">{Math.max(0, roster.length - complete - started)} not started</Chip>
       </div>
-      <p className={cx('text-[11px]', t.textMuted)}>
-        {pct}% of the {jf?.label || 'team'} roster has finished every course in this curriculum.
-      </p>
     </Card>
   );
 }
@@ -2466,20 +2417,6 @@ function MyLearning({
 
       <PageBody>
         <div className="space-y-5">
-          <Banner accent="blue" icon={Info} title="Viewing as a learner">
-            This tab shows one person's enrollments. It is currently showing{' '}
-            <strong className={t.text}>{viewer.name}</strong>
-            {viewerId === demoLearnerId ? ' — the new support agent, twelve days in, so the demo has a live story' : ''}.
-            {viewerId !== currentUser?.id && (
-              <>
-                {' '}You are signed in as {currentUser?.name}.{' '}
-                <button className={cx('underline', t.text)} onClick={() => setViewerId(currentUser?.id)}>
-                  Switch to your own learning
-                </button>.
-              </>
-            )}
-          </Banner>
-
           <Card className={cx(DENSITY.cardPad, 'flex items-center gap-3 flex-wrap')}>
             <Avatar name={viewer.name} size="xl" />
             <div className="min-w-0 flex-1">
@@ -2551,7 +2488,7 @@ function MyLearning({
                 <EnrollmentCard key={e.id} enrollment={e} course={courseIndex.get(e.courseId)} kb={kb}
                   onPlay={(i) => openPlayer(e, i)} />
               ))}
-              {!active.length && <EmptyState icon={CircleCheck} title="Nothing outstanding" hint="Every assigned course is finished." />}
+              {!active.length && <EmptyState icon={CircleCheck} title="Nothing outstanding" />}
             </div>
           </Section>
 
@@ -2708,7 +2645,7 @@ function LessonPlayer({ open, onClose, course, enrollment, kb, startStepIndex })
       <Modal open={open} onClose={onClose} accent={ENTITIES.course.hue} size="modalMd" icon={BookMarked}
         title={course.title} subtitle="Nothing to play yet">
         <EmptyState icon={BookOpen} title="This course has no lessons"
-          hint="Add lessons to a module from the outline — every one of them is an atom that already exists in Knowledge." />
+          hint="Add lessons to a module from the outline." />
       </Modal>
     );
   }
@@ -2818,7 +2755,7 @@ function LessonPlayer({ open, onClose, course, enrollment, kb, startStepIndex })
       <div className="space-y-3">
         {locked && (
           <Banner accent="amber" icon={Lock} title="This step is locked">
-            {locked} You can read ahead, but it cannot be marked complete out of order — use the jump in the footer.
+            {locked}
           </Banner>
         )}
 
@@ -2828,21 +2765,14 @@ function LessonPlayer({ open, onClose, course, enrollment, kb, startStepIndex })
         )}
 
         {phase === 'content' && step.kind === 'lesson' && atom && (
-          <>
-            <Banner accent="blue" icon={Link2}>
-              This lesson renders the knowledge atom <strong className={t.text}>{atom.id}</strong> directly.
-              The learner and a customer reading the help centre see the same words.
-            </Banner>
-            {atom.format === 'guide'
-              ? <StoryFrame atom={atom} slide={slide} onSlide={setSlide} playing={playing} onPlaying={setPlaying} />
-              : <ArticleReader atom={atom} />}
-          </>
+          atom.format === 'guide'
+            ? <StoryFrame atom={atom} slide={slide} onSlide={setSlide} playing={playing} onPlaying={setPlaying} />
+            : <ArticleReader atom={atom} />
         )}
 
         {phase === 'content' && step.kind === 'quiz' && (
           <div className="space-y-3">
             <Banner accent={ENTITIES.quiz.hue} icon={ListChecks} title={quiz?.title}>
-              A module-level check written for this course — distinct from the checks the atoms carry.
               Pass mark {quiz?.passingScore ?? course.passingScore}%.
             </Banner>
             <Button variant="solid" accent={ENTITIES.quiz.hue} icon={Play} onClick={() => setPhase('check')}>
@@ -2974,7 +2904,7 @@ function KnowledgeCheck({ questions, answers, onAnswer, result, bar }) {
         <Banner accent={result.passed ? 'emerald' : 'red'} icon={result.passed ? CircleCheck : CircleAlert}
           title={result.passed ? `Passed — ${result.score}%` : `Not yet — ${result.score}%`}>
           {result.correct} of {result.total} correct. Pass mark is {bar}%.
-          {!result.passed && ' Read the explanations, then try again — attempts are not capped.'}
+          {!result.passed && ' Read the explanations, then try again.'}
         </Banner>
       )}
 

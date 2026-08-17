@@ -210,7 +210,7 @@ const NODE_TYPES = {
     fields: [
       { key: 'field', label: 'Route on field', type: 'field' },
       { key: 'cases', label: 'Cases', type: 'cases' },
-      { key: 'fallback', label: 'Add a fallback output', type: 'toggle', hint: 'Without it, items matching no case stop here.' },
+      { key: 'fallback', label: 'Add a fallback output', type: 'toggle' },
     ],
     output: (n, ctx) => ({ routedOn: n.config?.field || 'ticket.priority', value: String(readPath(ctx, n.config?.field || '') ?? 'unmatched') }),
   },
@@ -258,7 +258,7 @@ const NODE_TYPES = {
     outputs: () => MAIN_OUT,
     describe: (n, L) => n.config?.assigneeId ? `${L.queue(n.config?.queueId)} → ${L.person(n.config.assigneeId)}` : L.queue(n.config?.queueId),
     fields: [
-      { key: 'queueId', label: 'Queue', type: 'ref', from: 'queues', hint: 'With no queue set, the ticket falls to General.' },
+      { key: 'queueId', label: 'Queue', type: 'ref', from: 'queues' },
       { key: 'assigneeId', label: 'Assign to', type: 'ref', from: 'people' },
       { key: 'note', label: 'Internal note', type: 'textarea' },
     ],
@@ -277,7 +277,7 @@ const NODE_TYPES = {
   },
   'action.addLabel': {
     label: 'Add Label', category: 'action', icon: Tag, hue: 'purple',
-    blurb: 'Tags the record so later steps and views can find it',
+    blurb: 'Tags the record',
     outputs: () => MAIN_OUT,
     describe: (n) => listValues(n.config?.labels, 'No labels set'),
     fields: [{ key: 'labels', label: 'Labels', type: 'tags' }],
@@ -303,7 +303,7 @@ const NODE_TYPES = {
     describe: (n, L) => `${L.policy(n.config?.policyId)}${n.config?.waitForDecision ? ' · blocking' : ' · fire and forget'}`,
     fields: [
       { key: 'policyId', label: 'Approval policy', type: 'ref', from: 'policies' },
-      { key: 'waitForDecision', label: 'Wait for the decision', type: 'toggle', hint: 'Blocking means nothing downstream runs until someone decides.' },
+      { key: 'waitForDecision', label: 'Wait for the decision', type: 'toggle' },
       { key: 'dueDays', label: 'Due in (days)', type: 'number' },
       { key: 'note', label: 'Note for approvers', type: 'textarea', expr: true },
     ],
@@ -401,15 +401,15 @@ const NODE_TYPES = {
   },
   'util.noop': {
     label: 'No-Op', category: 'utility', icon: CircleSlash, hue: 'gray',
-    blurb: 'Ends a branch explicitly, so a dangling output never looks like a mistake',
+    blurb: 'Ends a branch explicitly',
     outputs: () => MAIN_OUT,
-    describe: () => 'Nothing happens here, on purpose',
+    describe: () => 'Nothing happens here',
     fields: [],
     output: () => ({ noop: true }),
   },
   'util.sticky': {
     label: 'Sticky Note', category: 'utility', icon: StickyNote, hue: 'amber',
-    blurb: 'A note on the canvas for whoever reads this workflow next',
+    blurb: 'A note on the canvas',
     outputs: () => [],
     describe: (n) => String(n.config?.text || '').slice(0, 60),
     fields: [
@@ -907,19 +907,10 @@ function AutomationList({ automations, runs, lookup }) {
 
       <PageBody>
         <div className="space-y-4">
-          <Banner accent="sky" icon={AlertCircle} title="When automations run">
-            Automations fire <strong className={t.text}>after</strong> form routing and business rules, on the same event bus.
-            A paused automation keeps its history but never fires, and a workflow whose Assign Queue node has no queue set
-            leaves the ticket in <strong className={t.text}>General</strong> — the canvas says so rather than failing quietly.
-          </Banner>
-
           {filtered.length === 0 ? (
             <EmptyState
               icon={Workflow}
               title="No workflows match"
-              hint={scoped
-                ? 'Search composes with the filters rather than replacing them — clearing one may bring workflows back.'
-                : 'Automations react to events in RelayHQ — a ticket arriving, an approval deciding, a course being completed — and run a chain of nodes.'}
               action={scoped
                 ? <Button variant="soft" accent="sky" onClick={clearFilters}>Clear filters</Button>
                 : <Button variant="grad" module="automations" icon={Plus} onClick={() => setCreating(true)}>New automation</Button>}
@@ -940,7 +931,7 @@ function AutomationList({ automations, runs, lookup }) {
 
           <Section
             title="Recent executions"
-            hint={scoped ? 'Runs from the workflows matching this filter, newest first.' : 'Every run across every workflow, newest first.'}
+            hint={scoped ? 'Runs from the workflows matching this filter.' : undefined}
           >
             <Card>
               <div className={cx('divide-y', t.borderLight)}>
@@ -1102,10 +1093,10 @@ function NewAutomationModal({ open, onClose }) {
       accent="sky"
       icon={Workflow}
       title="New automation"
-      subtitle="Pick what starts it. Everything after that is built on the canvas."
+      subtitle="Pick what starts it."
       footer={
         <>
-          <span className={cx('text-xs', t.textMuted)}>Created inactive — activate it when the canvas is right.</span>
+          <span className={cx('text-xs', t.textMuted)}>Created inactive.</span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button variant="grad" module="automations" icon={Check} onClick={create}>Create workflow</Button>
@@ -1117,7 +1108,7 @@ function NewAutomationModal({ open, onClose }) {
         <Field label="Name" required>
           <Input accent="sky" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Escalate stalled enterprise tickets" />
         </Field>
-        <Field label="What it does" hint="One line. This is what the list shows.">
+        <Field label="What it does" hint="One line.">
           <Textarea accent="sky" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the outcome, not the steps." />
         </Field>
         <Field label="Trigger">
@@ -1963,9 +1954,9 @@ function NodePalette({ pendingLink, onPick, onClose }) {
         <IconButton icon={ArrowLeft} label="Back to settings" onClick={onClose} />
         <div className="min-w-0 flex-1">
           <p className={cx('text-sm font-semibold', t.text)}>Add a node</p>
-          <p className={cx('text-[11px] truncate', t.textMuted)}>
-            {pendingLink ? 'It will be connected to the output you dragged from.' : 'Dropped in the middle of the canvas.'}
-          </p>
+          {pendingLink && (
+            <p className={cx('text-[11px] truncate', t.textMuted)}>Connects to the output you dragged from.</p>
+          )}
         </div>
       </div>
 
@@ -2031,7 +2022,6 @@ function ConfigPanel({ node, step, lookup, onPatch, onConfig, onDelete, onOpenPa
           <EmptyState
             icon={Workflow}
             title="Pick a node"
-            hint="Drag from an output endpoint to connect nodes, or use the + on a free output to add the next step inline."
             action={<Button variant="soft" accent="sky" icon={Plus} onClick={onOpenPalette}>Add a node</Button>}
           />
         </div>
@@ -2066,28 +2056,15 @@ function ConfigPanel({ node, step, lookup, onPatch, onConfig, onDelete, onOpenPa
           </span>
         </div>
 
-        {node.disabled && (
-          <Banner accent="amber" icon={AlertCircle}>
-            A disabled node is skipped at run time and its items pass straight through to whatever it is connected to.
-          </Banner>
-        )}
-
         {/* Never a silent default: if the system will do something implicit, say so. */}
         {node.type === 'action.assignQueue' && !node.config?.queueId && (
           <Banner accent="amber" icon={AlertCircle} title="No queue set">
-            Tickets leaving this node fall to the <strong className={t.text}>General</strong> queue and wait for human triage.
+            Tickets fall to the <strong className={t.text}>General</strong> queue.
           </Banner>
         )}
         {node.type === 'logic.switch' && node.config?.fallback === false && (
           <Banner accent="amber" icon={AlertCircle} title="No fallback output">
-            Items matching none of the cases stop here and the branch ends without a trace. Turn the fallback on to catch them.
-          </Banner>
-        )}
-
-        {meta.fields.length > 0 && (
-          <Banner accent="sky" icon={Braces} title="Expressions">
-            Any text field accepts <code>{'{{ $json.ticket.title }}'}</code> and resolves it against the item flowing
-            into this node. Fields holding one are marked <strong className={t.text}>fx</strong>.
+            Items matching no case stop here.
           </Banner>
         )}
 
@@ -2199,7 +2176,7 @@ function ConfigField({ spec, value, lookup, onChange }) {
   if (spec.type === 'ref') {
     const options = lookup.options(spec.from);
     return (
-      <Field label={spec.label} hint={options.length === 0 ? 'Nothing to pick from yet — this collection is empty.' : spec.hint}>
+      <Field label={spec.label} hint={options.length === 0 ? 'Nothing to pick from yet.' : spec.hint}>
         <Select
           accent="sky"
           value={value || ''}
@@ -2238,7 +2215,7 @@ function ConfigField({ spec, value, lookup, onChange }) {
 
   if (spec.type === 'code') {
     return (
-      <Field label={spec.label} hint="Runs once per batch. Return the items you want to pass on.">
+      <Field label={spec.label} hint="Return the items you want to pass on.">
         <Textarea accent="sky" rows={6} className="font-mono text-xs" value={value || ''} onChange={(e) => onChange(e.target.value)} />
       </Field>
     );
@@ -2290,7 +2267,7 @@ function TagsEditor({ label, values, onChange }) {
   const { t } = useTheme();
   const [draft, setDraft] = useState('');
   return (
-    <Field label={label} hint="Enter adds a label. Labels are how later nodes and views find these records.">
+    <Field label={label} hint="Enter adds a label.">
       <div className={cx('rounded-lg border p-2 space-y-2', t.bgInput, t.borderLight)}>
         <div className="flex flex-wrap gap-1">
           {values.map(v => (
@@ -2333,7 +2310,7 @@ function PairsEditor({ label, pairs, onChange }) {
         <Button size="xs" variant="soft" accent="sky" icon={Plus} onClick={() => onChange([...pairs, { name: '', value: '' }])}>
           Field
         </Button>
-        {pairs.length === 0 && <p className={cx('text-xs', t.textMuted)}>No fields set — items pass through unchanged.</p>}
+        {pairs.length === 0 && <p className={cx('text-xs', t.textMuted)}>No fields set.</p>}
       </div>
     </Field>
   );
@@ -2342,7 +2319,7 @@ function PairsEditor({ label, pairs, onChange }) {
 function CasesEditor({ label, cases, onChange }) {
   const { t } = useTheme();
   return (
-    <Field label={label} hint="Each case draws its own output on the node.">
+    <Field label={label}>
       <div className="space-y-1.5">
         {cases.map((c, i) => (
           <div key={c.id || i} className={cx('flex items-center gap-1.5 rounded-lg border p-1.5', t.bgCard, t.borderLight)}>
@@ -2428,7 +2405,7 @@ function ConditionGroupEditor({ group, path, depth, onUpdate, onRemove, onAppend
 
       {rows.length === 0 ? (
         <p className={cx('px-2 pb-2 text-[11px]', t.textMuted)}>
-          No conditions — every item matches. Leave it open only if you mean it.
+          No conditions — every item matches.
         </p>
       ) : (
         <div className="px-1.5 pb-1.5 space-y-1">
@@ -2643,7 +2620,7 @@ function RunBreakdown({ run, onSelectNode }) {
   if (!run) {
     return (
       <div className={cx('flex-1 flex items-center justify-center text-xs gap-2', t.textMuted)}>
-        <Play size={ICON.base} /> Press <strong className={t.text}>Test workflow</strong> to walk the graph with the sample item.
+        <Play size={ICON.base} /> Press <strong className={t.text}>Test workflow</strong> to run it.
       </div>
     );
   }

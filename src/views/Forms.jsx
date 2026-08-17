@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   FileText, FileQuestion, Plus, Trash2, Edit3, Check, ArrowUp, ArrowDown,
-  ChevronDown, ChevronRight, Eye, ExternalLink, Inbox, Stamp, AlertCircle,
+  ChevronDown, ChevronRight, Eye, ExternalLink, Inbox, Stamp,
   AlertTriangle, GitBranch, Globe, Building2, Users, Layers, Type, AlignLeft,
   List, ListChecks, CheckSquare, Mail, Phone, Calendar, Hash, DollarSign,
   Paperclip, User, Server, Folder, Settings2, Send, Filter,
@@ -375,7 +375,7 @@ export default function Forms({ route }) {
         subtitle={subsetLabel(
           visible.length,
           lensTotal,
-          'Portal entry points, and the request intakes that sit behind them',
+          'Portal forms and request intakes',
         )}
         primary={lens === 'portal'
           ? <Button variant="grad" module="forms" icon={Plus} onClick={createForm}>New form</Button>
@@ -446,7 +446,7 @@ export default function Forms({ route }) {
         open={!!deletingForm}
         name={deletingForm?.name || ''}
         kind="form"
-        cascadeNote="The portal entry point disappears. The request forms behind it are not deleted — they stay attached to their catalog items."
+        cascadeNote="The portal entry point disappears. The request forms behind it are not deleted."
         onCancel={() => setDeletingForm(null)}
         onConfirm={() => { removeFrom('forms', deletingForm.id); setDeletingForm(null); }}
       />
@@ -459,14 +459,11 @@ export default function Forms({ route }) {
  * ==================================================================== */
 
 function PortalForms({ forms, total, subforms, catalog, onEdit, onDelete, onCreate }) {
-  const { t } = useTheme();
-
   if (!total) {
     return (
       <EmptyState
         icon={FileText}
         title="No portal forms yet"
-        hint="A form is what a person lands on — it scopes the portal to a set of products for one audience."
         action={<Button variant="grad" module="forms" icon={Plus} onClick={onCreate}>New form</Button>}
       />
     );
@@ -474,17 +471,10 @@ function PortalForms({ forms, total, subforms, catalog, onEdit, onDelete, onCrea
 
   return (
     <div className="space-y-4">
-      <Banner accent="purple" icon={AlertCircle} title="A form is an entry point, not a questionnaire">
-        A form decides <strong className={t.text}>what a visitor can see</strong> — which products, which audience.
-        The request forms underneath decide <strong className={t.text}>what happens</strong> when they submit.
-        That split is why one catalog item can offer “Report a problem” and “Request access” side by side.
-      </Banner>
-
       {forms.length === 0 ? (
         <EmptyState
           icon={Filter}
           title="Nothing matches those filters"
-          hint="Search composes with the filters in the header rather than replacing them — clearing one may bring results back."
         />
       ) : (
         <div className={DENSITY.rowGap}>
@@ -553,7 +543,7 @@ function FormCard({ form, subforms, catalog, onEdit, onDelete }) {
               max={4}
               items={form.productIds || []}
               render={(id) => productName(catalog, id)}
-              empty={<span className={cx('text-xs', t.textMuted)}>Nothing scoped — this form shows an empty portal.</span>}
+              empty={<span className={cx('text-xs', t.textMuted)}>Nothing scoped.</span>}
             />
           </div>
         </div>
@@ -566,7 +556,7 @@ function FormCard({ form, subforms, catalog, onEdit, onDelete }) {
               max={3}
               items={reachable}
               render={(sf) => sf.name}
-              empty={<span className={cx('text-xs', t.textMuted)}>No catalog items under these products carry an intake yet.</span>}
+              empty={<span className={cx('text-xs', t.textMuted)}>None yet.</span>}
             />
           </div>
         </div>
@@ -631,7 +621,6 @@ function FormEditorBody({ form, products, onClose }) {
       size="modalLg"
       icon={FileText}
       title={form.__new ? 'New portal form' : draft.name || 'Form'}
-      subtitle="An entry point into the portal, scoped to products and an audience"
       footer={
         <>
           <Toggle
@@ -679,7 +668,7 @@ function FormEditorBody({ form, products, onClose }) {
           </Field>
         </div>
 
-        <Field label="Audience" hint="Decides the vocabulary and whether a corporate sign-in is expected.">
+        <Field label="Audience">
           <TileGroup
             value={draft.audience}
             onChange={(v) => set({ audience: v })}
@@ -697,7 +686,7 @@ function FormEditorBody({ form, products, onClose }) {
           </div>
           {products.length === 0 ? (
             <Banner accent="amber" icon={AlertTriangle}>
-              No products exist in the catalog yet, so this form has nothing to show. Add products under
+              No products in the catalog yet. Add them under
               <strong className={t.text}> Products &amp; Services</strong> first.
             </Banner>
           ) : (
@@ -739,7 +728,7 @@ function FormEditorBody({ form, products, onClose }) {
           <Card className={cx(DENSITY.cardPad)}>
             <Checkbox
               label="Show knowledge before the form"
-              hint="Deflection: articles for the chosen item appear above the intake."
+              hint="Articles for the chosen item appear above the intake."
               checked={!!draft.showKnowledge}
               onChange={(v) => set({ showKnowledge: v })}
             />
@@ -748,8 +737,7 @@ function FormEditorBody({ form, products, onClose }) {
 
         {!draft.published && (
           <Banner accent="amber" icon={AlertTriangle}>
-            This form is a <strong className={t.text}>draft</strong>. It will not appear in the portal, and any request
-            forms only reachable through it cannot be submitted.
+            This form is a <strong className={t.text}>draft</strong>. It will not appear in the portal.
           </Banner>
         )}
       </div>
@@ -763,14 +751,11 @@ function FormEditorBody({ form, products, onClose }) {
  * ==================================================================== */
 
 function RequestForms({ subforms, total, queues, policies, unrouted, onCreate }) {
-  const { t } = useTheme();
-
   if (!total) {
     return (
       <EmptyState
         icon={FileQuestion}
         title="No request forms yet"
-        hint="A request form is the intake behind a catalog item — its fields, its destination queue and its approval policy."
         action={<Button variant="grad" module="forms" icon={Plus} onClick={onCreate}>New request form</Button>}
       />
     );
@@ -794,22 +779,18 @@ function RequestForms({ subforms, total, queues, policies, unrouted, onCreate })
 
   return (
     <div className="space-y-4">
-      <Banner accent="blue" icon={AlertCircle} title="Several intakes per catalog item is the point">
-        “Report a problem” and “Request access” are different intakes on the same item. They ask different questions,
-        land in different queues and can carry different approval policies — which a single form-per-item model cannot express.
-      </Banner>
-
       {unrouted > 0 && (
-        <Banner accent="amber" icon={AlertTriangle} title={`${unrouted} request form${unrouted === 1 ? '' : 's'} have no destination`}>
-          Anything they collect will be created in the <strong className={t.text}>General</strong> queue until a queue is chosen.
-        </Banner>
+        <Banner
+          accent="amber"
+          icon={AlertTriangle}
+          title={`${unrouted} request form${unrouted === 1 ? '' : 's'} have no destination`}
+        />
       )}
 
       {subforms.length === 0 ? (
         <EmptyState
           icon={Filter}
           title="Nothing matches those filters"
-          hint="Search composes with the filters in the header rather than replacing them — clearing one may bring results back."
         />
       ) : (
         groups.map(group => (
@@ -916,7 +897,7 @@ function Builder({ subform, queues, policies, directory, assets }) {
     const { fields: cleaned, dropped } = dropForwardConditions(next);
     setFields(cleaned);
     setNotice(dropped.length
-      ? `Reordering removed the condition on ${dropped.map(l => `“${l}”`).join(' and ')}. A field can only react to an answer above it.`
+      ? `Reordering removed the condition on ${dropped.map(l => `“${l}”`).join(' and ')}.`
       : null);
   };
 
@@ -985,7 +966,6 @@ function Builder({ subform, queues, policies, directory, assets }) {
 
               <Section
                 title="Fields"
-                hint="Order is the order a person answers them. A condition may only point at a field above it."
                 action={<span className={cx('text-xs', t.textMuted)}>{fields.length} fields</span>}
               >
                 {notice && (
@@ -1000,7 +980,7 @@ function Builder({ subform, queues, policies, directory, assets }) {
                   <EmptyState
                     icon={Layers}
                     title="No fields yet"
-                    hint="Pick a field type from the rail on the left. Start with the question that decides everything else — later fields can be made conditional on its answer."
+                    hint="Pick a field type from the rail on the left."
                   />
                 ) : (
                   <div className={DENSITY.rowGap}>
@@ -1049,7 +1029,7 @@ function Builder({ subform, queues, policies, directory, assets }) {
         open={confirming === 'subform'}
         name={subform.name}
         kind="request form"
-        cascadeNote="Catalog items pointing at this intake lose it, and the questions it asked are gone. Submitted tickets are unaffected."
+        cascadeNote="Catalog items pointing at this intake lose it. Submitted tickets are unaffected."
         onCancel={() => setConfirming(null)}
         onConfirm={() => { removeFrom('subforms', subform.id); navigate('forms', 'requests'); }}
       />
@@ -1058,7 +1038,7 @@ function Builder({ subform, queues, policies, directory, assets }) {
         open={!!confirming && confirming !== 'subform'}
         name={confirming && confirming !== 'subform' ? confirming.label : ''}
         kind="field"
-        cascadeNote="Other fields are shown or hidden based on this answer. Deleting it makes them unconditional — they will always appear."
+        cascadeNote="Other fields are shown or hidden based on this answer. Deleting it makes them unconditional."
         onCancel={() => setConfirming(null)}
         onConfirm={() => deleteField(confirming)}
       />
@@ -1094,7 +1074,6 @@ function dropForwardConditions(fields) {
  * ------------------------------------------------------------------ */
 
 function FieldTypeRail({ onAdd }) {
-  const { t } = useTheme();
   return (
     <div className="sticky top-0 min-w-0">
       <Card className="p-2">
@@ -1105,10 +1084,6 @@ function FieldTypeRail({ onAdd }) {
           ))}
         </div>
       </Card>
-      <p className={cx('text-[11px] mt-2 px-1 leading-relaxed', t.textMuted)}>
-        Person and Asset fields resolve against the directory and the asset register, so an agent
-        opens the ticket with the record already attached.
-      </p>
     </div>
   );
 }
@@ -1142,10 +1117,10 @@ function Delivery({ subform, queues, policies, policy, directory, onPatch }) {
   const generalName = queueName(queues, Q.GENERAL) || 'General';
 
   return (
-    <Panel icon={Inbox} accent="rose" title="Delivery" subtitle="Where a submission lands, and who has to say yes">
+    <Panel icon={Inbox} accent="rose" title="Delivery">
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
         <div className="grid sm:grid-cols-2 gap-3">
-          <Field label="Destination queue" hint="The team that will pick the ticket up.">
+          <Field label="Destination queue">
             <Select
               accent="rose"
               value={subform.routing?.queueId || ''}
@@ -1154,7 +1129,7 @@ function Delivery({ subform, queues, policies, policy, directory, onPatch }) {
               onChange={(e) => onPatch({ routing: e.target.value ? { ...subform.routing, queueId: e.target.value } : {} })}
             />
           </Field>
-          <Field label="Approval policy" hint="Runs on submission, before anyone works the ticket.">
+          <Field label="Approval policy">
             <Select
               accent="amber"
               value={subform.approvalPolicyId || ''}
@@ -1171,8 +1146,7 @@ function Delivery({ subform, queues, policies, policy, directory, onPatch }) {
           </Banner>
         ) : (
           <Banner accent="amber" icon={AlertTriangle} title="No destination queue is set">
-            Tickets from this form will land in the <strong className={t.text}>{generalName}</strong> queue, where nobody
-            owns them by default. Choose a queue above, or accept the fallback knowingly.
+            Tickets land in the <strong className={t.text}>{generalName}</strong> queue until a queue is chosen.
           </Banner>
         )}
 
@@ -1180,8 +1154,8 @@ function Delivery({ subform, queues, policies, policy, directory, onPatch }) {
           <PolicyExplainer policy={policy} directory={directory} queues={queues} />
         ) : (
           <p className={cx('text-xs', t.textMuted)}>
-            No approval policy. Submissions are created and worked immediately.
-            {policies.length === 0 && ' No policies have been configured under Business Rules yet.'}
+            No approval policy.
+            {policies.length === 0 && ' No policies configured under Business Rules yet.'}
           </p>
         )}
       </div>
@@ -1203,7 +1177,6 @@ function PolicyExplainer({ policy, directory, queues }) {
     <Banner accent="amber" icon={Stamp} title={policy.name}>
       <p>
         Runs when <strong className={t.text}>{when.toLowerCase() === 'always' ? 'every request is submitted' : when}</strong>.
-        {when.toLowerCase() !== 'always' && ' Otherwise the request is created straight away.'}
       </p>
       {policy.description && <p className="mt-1">{policy.description}</p>}
       {stages.length > 0 && (
@@ -1299,7 +1272,7 @@ function FieldCard({ field, index, count, earlier, fields, expanded, onToggle, o
           </div>
 
           <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Placeholder" hint="Ghost text inside the control.">
+            <Field label="Placeholder">
               <Input
                 accent={meta.accent}
                 value={field.placeholder || ''}
@@ -1307,7 +1280,7 @@ function FieldCard({ field, index, count, earlier, fields, expanded, onToggle, o
                 placeholder="e.g. NW-2026-118402"
               />
             </Field>
-            <Field label="Help text" hint="Sits under the control. Use it to prevent the follow-up question.">
+            <Field label="Help text" hint="Sits under the control.">
               <Input
                 accent={meta.accent}
                 value={field.help || ''}
@@ -1382,7 +1355,7 @@ function OptionsEditor({ options, onChange, accent }) {
           </div>
         ))}
         {options.length === 0 && (
-          <p className={cx('text-xs', t.textMuted)}>No options yet — a select with no options renders as an empty menu.</p>
+          <p className={cx('text-xs', t.textMuted)}>No options yet.</p>
         )}
         <div className="flex items-center gap-1.5">
           <Input
@@ -1417,7 +1390,7 @@ function ConditionEditor({ field, earlier, fields, onPatch }) {
         <div className="flex items-center gap-2">
           <GitBranch size={ICON.base} className={t.textMuted} />
           <p className={cx('text-xs', t.textMuted)}>
-            Conditional display needs an earlier answer to react to. Move this field down, or add a question above it.
+            Move this field down, or add a question above it, to make it conditional.
           </p>
         </div>
       </div>
@@ -1536,7 +1509,7 @@ function SubformSettings({ open, subform, onClose, onPatch }) {
       }
     >
       <div className="space-y-4">
-        <Field label="Name" required hint="Shown on the catalog item next to any other intake it offers.">
+        <Field label="Name" required>
           <Input value={subform.name} onChange={(e) => onPatch({ name: e.target.value })} placeholder="e.g. Report a problem" />
         </Field>
         <Field label="Description">
@@ -1547,7 +1520,7 @@ function SubformSettings({ open, subform, onClose, onPatch }) {
             placeholder="One line telling a person whether this is the right intake."
           />
         </Field>
-        <Field label="Audience" hint="External intakes ask for an organisation; internal ones resolve the requester from the directory.">
+        <Field label="Audience">
           <TileGroup value={subform.audience} onChange={(v) => onPatch({ audience: v })} columns={3} options={AUDIENCES} />
         </Field>
         <div className="grid sm:grid-cols-2 gap-3">
@@ -1558,7 +1531,7 @@ function SubformSettings({ open, subform, onClose, onPatch }) {
             <p className={cx('text-2xl font-semibold tabular-nums', t.text)}>{subform.submissions30d ?? 0}</p>
           </Field>
         </div>
-        <Field label="Confirmation message" hint="What the person reads immediately after submitting.">
+        <Field label="Confirmation message">
           <Textarea
             rows={2}
             value={subform.confirmation || ''}
@@ -1737,7 +1710,7 @@ function PreviewField({ field, value, onChange, directory, assets }) {
               options={assets.map(x => ({ value: x.id, label: x.name || x.tag || x.id }))}
               onChange={(e) => onChange(e.target.value)}
             />
-          : <p className={cx('text-xs', t.textMuted)}>The asset register is empty in this demo instance.</p>
+          : <p className={cx('text-xs', t.textMuted)}>The asset register is empty.</p>
       )}
 
       {field.type === 'file' && (

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   Filter, Inbox, Route, Stamp, Timer, Plus, Trash2, Pencil, ChevronUp, ChevronDown,
-  Play, Check, X, AlertCircle, AlertTriangle, CornerDownRight, Users, Clock, Zap,
+  Play, Check, X, AlertTriangle, CornerDownRight, Users, Clock, Zap,
   ArrowRight, Tag, Bell, UserPlus, ListChecks, Workflow, Flag, Layers, FlaskConical,
   Building2, User, Target, Hourglass, Split, ShieldCheck, SkipForward, Ban,
   FileQuestion, Folder, Gauge, Send,
@@ -435,7 +435,6 @@ function QueuesTab({ data, routing, tabs }) {
       label: 'Audience',
       icon: Users,
       options: AUDIENCES.map((o) => ({ ...o, count: byAudience.get(o.value) || 0 })),
-      footer: 'An internal queue never appears in the customer portal.',
     }];
   }, [queues]);
 
@@ -478,16 +477,8 @@ function QueuesTab({ data, routing, tabs }) {
 
       <PageBody>
         <div className="space-y-4">
-          <Banner accent="blue" icon={AlertCircle} title="Queues are destinations, not workflows">
-            A queue owns a body of work and a set of people. Nothing here decides what lands in it — that comes from
-            the request form (see <strong className={t.text}>Routing</strong>) and can then be overridden by a rule.
-            <strong className={t.text}> General</strong> is the default: anything that arrives unrouted lands there, and
-            it cannot be deleted for that reason.
-          </Banner>
-
           {visible.length === 0 ? (
             <EmptyState icon={Inbox} title="No queues match"
-              hint="Search composes with the filters rather than replacing them — clearing one may bring queues back."
               action={<Button variant="soft" accent={ACCENT} icon={Filter} onClick={clearFilters}>Clear filters</Button>} />
           ) : (
             <div className={DENSITY.rowGap}>
@@ -520,7 +511,7 @@ function QueuesTab({ data, routing, tabs }) {
                   >
                     <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
                       <ChipGroup items={members} max={3} accent={q.hue || ENTITIES.queue.hue} icon={User}
-                        empty={<span className={cx('text-xs', t.textMuted)}>No members — work here has no owner</span>} />
+                        empty={<span className={cx('text-xs', t.textMuted)}>No members</span>} />
                       <ChipGroup items={formsByQueue[q.id] || []} max={2} accent={ENTITIES.subform.hue} icon={Route} />
                       <ChipGroup items={rulesByQueue[q.id] || []} max={1} accent={ENTITIES.rule.hue} icon={Filter} />
                       {q.inbox && <span className={cx('text-[11px] font-mono', t.textMuted)}>{q.inbox}</span>}
@@ -596,7 +587,6 @@ function QueueEditorModal({ draft, data, onChange, onClose, onSave }) {
       size="modalLg"
       icon={Inbox}
       title={draft.name || 'New queue'}
-      subtitle="Destination for routed work, and the people who own it"
       footer={
         <>
           <span className={cx('text-sm', t.textMuted)}>
@@ -615,7 +605,7 @@ function QueueEditorModal({ draft, data, onChange, onClose, onSave }) {
       <div className="space-y-4">
         {draft.isDefault && (
           <Banner accent="amber" icon={Target} title="This is the default queue">
-            Unrouted work lands here. It cannot be deleted, and emptying its membership means nothing owns triage.
+            Unrouted work lands here. It cannot be deleted.
           </Banner>
         )}
 
@@ -630,12 +620,12 @@ function QueueEditorModal({ draft, data, onChange, onClose, onSave }) {
           </Field>
         </div>
 
-        <Field label="Description" hint="What belongs in this queue — written for the person deciding where to send something">
+        <Field label="Description" hint="What belongs in this queue">
           <Textarea rows={2} value={draft.description || ''} accent={draft.hue || 'gray'}
             onChange={(e) => set({ description: e.target.value })} />
         </Field>
 
-        <Field label="Audience" hint="Internal queues never appear in the customer portal">
+        <Field label="Audience">
           <TileGroup
             value={draft.audience || 'internal'}
             onChange={(v) => set({ audience: v })}
@@ -648,7 +638,7 @@ function QueueEditorModal({ draft, data, onChange, onClose, onSave }) {
           />
         </Field>
 
-        <Field label="Colour" hint="The queue's hue is used everywhere it appears — routing table, chips, rails">
+        <Field label="Colour">
           <HuePicker value={draft.hue || 'gray'} onChange={(hue) => set({ hue })} />
         </Field>
 
@@ -662,7 +652,7 @@ function QueueEditorModal({ draft, data, onChange, onClose, onSave }) {
 
           {members.length === 0 ? (
             <Banner accent="amber" icon={AlertTriangle} className="mb-2">
-              No members. Work routed here will have no owner and no approver when a stage names this queue.
+              No members. Work routed here will have no owner.
             </Banner>
           ) : (
             <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -765,7 +755,6 @@ function RoutingTab({ data, routing, tabs }) {
       label: 'Destination',
       icon: Inbox,
       options: queues.map((q) => ({ value: q.id, label: q.name, count: byQueue.get(q.id) || 0 })),
-      footer: 'A form with no queue set counts against the default.',
     }];
   }, [queues, routing.rows, generalId]);
 
@@ -794,21 +783,10 @@ function RoutingTab({ data, routing, tabs }) {
 
       <PageBody>
         <div className="space-y-4">
-          <Banner accent="purple" icon={Route} title="Routing is derived, not authored">
-            There is no separate routing table to keep in step with the catalog. A ticket's queue comes from the request
-            form it was submitted through — <code className={t.text}>subform.routing.queueId</code> — so this page is a
-            read-out of what the catalog already says. Change a form's queue in{' '}
-            <button className={cx('underline', t.text)} onClick={() => navigate('forms')}>Forms</button> and this table
-            follows. Anything with no queue set falls to{' '}
-            <strong className={t.text}>{queues.find((q) => q.isDefault)?.name || 'General'}</strong>, which is why that
-            queue exists.
-          </Banner>
-
           {routing.rows.length === 0 ? (
             <EmptyState
               icon={Route}
               title="Nothing to route yet"
-              hint="Routing appears once the catalog has items with request forms attached. Each form contributes one row: product › subcategory › item › form → queue."
               action={<Button variant="soft" accent="amber" icon={Folder} onClick={() => navigate('catalog')}>Open the catalog</Button>}
             />
           ) : (
@@ -816,13 +794,12 @@ function RoutingTab({ data, routing, tabs }) {
               {unrouted > 0 && (
                 <Banner accent="amber" icon={AlertTriangle}>
                   <strong className={t.text}>{unrouted}</strong> request form{unrouted === 1 ? '' : 's'} below have no queue
-                  configured. Their tickets will land in the default queue rather than being lost — but nobody chose that.
+                  configured.
                 </Banner>
               )}
 
               {rows.length === 0 ? (
                 <EmptyState icon={Route} title="No routes match"
-                  hint="Search composes with the destination filter rather than replacing it — clearing one may bring routes back."
                   action={<Button variant="soft" accent={ACCENT} icon={Filter} onClick={clearFilters}>Clear filters</Button>} />
               ) : (
                 <div className={DENSITY.rowGap}>
@@ -838,8 +815,7 @@ function RoutingTab({ data, routing, tabs }) {
               )}
 
               {routing.orphans.length > 0 && (
-                <Section title="Forms not attached to a catalog item"
-                  hint="These exist but no customer can reach them from the portal. They still route if a rule or a deep link submits one.">
+                <Section title="Forms not attached to a catalog item">
                   <div className={DENSITY.rowGap}>
                     {routing.orphans.map((sf) => (
                       <ListRow
@@ -997,12 +973,6 @@ function RulesTab({ data, tabs }) {
 
       <PageBody width="max-w-6xl">
         <div className="space-y-4">
-          <Banner accent="rose" icon={Filter} title="Order matters">
-            Rules run top to bottom on every matching event and a later rule overwrites an earlier one's assignment.
-            That is why the order is editable rather than alphabetical — and why the tester reports which rule set each
-            field, not just the final answer.
-          </Banner>
-
           {testerOpen && (
             <RuleTester
               rules={rules}
@@ -1017,11 +987,9 @@ function RulesTab({ data, tabs }) {
           {visible.length === 0 ? (
             rules.length === 0 ? (
               <EmptyState icon={Filter} title="No rules yet"
-                hint="A rule is a trigger, a condition tree and a list of actions. Start with something narrow — auto-labelling billing questions is the usual first one."
                 action={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newRule())}>New rule</Button>} />
             ) : (
               <EmptyState icon={Filter} title="No rules match"
-                hint="Search composes with the filters rather than replacing them — clearing one may bring rules back."
                 action={<Button variant="soft" accent={ACCENT} icon={Filter} onClick={clearFilters}>Clear filters</Button>} />
             )
           ) : (
@@ -1084,7 +1052,7 @@ function RulesTab({ data, tabs }) {
                         );
                       })}
                       {!(rule.actions || []).length && (
-                        <span className={cx('text-xs', t.textMuted)}>No actions — this rule matches and then does nothing.</span>
+                        <span className={cx('text-xs', t.textMuted)}>No actions</span>
                       )}
                     </div>
                   </ListRow>
@@ -1110,7 +1078,7 @@ function RulesTab({ data, tabs }) {
         open={!!deleting}
         name={deleting?.name || ''}
         kind="rule"
-        cascadeNote="Records already changed by this rule keep their priority, queue and labels — deleting it only stops future runs."
+        cascadeNote="Records already changed by this rule keep their priority, queue and labels."
         onCancel={() => setDeleting(null)}
         onConfirm={() => { removeFrom('rules', deleting.id); setDeleting(null); }}
       />
@@ -1227,15 +1195,15 @@ function RuleEditorModal({ draft, data, onChange, onClose, onSave }) {
 
         {pane === 'setup' && (
           <div className="space-y-3">
-            <Field label="Name" required hint="Written as what it does, not what it checks">
+            <Field label="Name" required>
               <Input accent="rose" value={draft.name} onChange={(e) => set({ name: e.target.value })}
                 placeholder="e.g. Escalate VIP customers on arrival" />
             </Field>
-            <Field label="Why this exists" hint="The next person to read this rule needs the reason, not the mechanics">
+            <Field label="Why this exists">
               <Textarea rows={2} accent="rose" value={draft.description || ''}
                 onChange={(e) => set({ description: e.target.value })} />
             </Field>
-            <Field label="Trigger" hint="When the engine evaluates this rule">
+            <Field label="Trigger">
               <TileGroup
                 value={draft.trigger}
                 onChange={(v) => set({ trigger: v })}
@@ -1244,18 +1212,12 @@ function RuleEditorModal({ draft, data, onChange, onClose, onSave }) {
                 options={TRIGGERS.map((tr) => ({ value: tr.value, label: tr.label, icon: tr.icon, hint: tr.hint, accent: 'sky' }))}
               />
             </Field>
-            {draft.trigger === 'scheduled' && (
-              <Banner accent="sky" icon={Clock}>
-                Scheduled rules run on the hourly tick against every open record — not on submission. Keep the
-                conditions narrow, and make sure an action changes something so the rule does not re-fire every hour.
-              </Banner>
-            )}
           </div>
         )}
 
         {pane === 'conditions' && (
           <div className="space-y-3">
-            <Banner accent="purple" icon={Split} title="Read it out loud">
+            <Banner accent="purple" icon={Split}>
               <span className={t.text}>{readableSummary(draft.conditions, data.options)}</span>
             </Banner>
             <ConditionBuilder
@@ -1367,7 +1329,7 @@ function ConditionGroupEditor({ group, path, depth, accent, options, onUpdate, o
 
       {rows.length === 0 ? (
         <p className={cx('px-3 pb-3 text-xs', t.textMuted)}>
-          No conditions — this matches every record. Add one, or leave it open deliberately.
+          No conditions — this matches every record.
         </p>
       ) : (
         <div className="px-2 pb-2 space-y-1.5">
@@ -1553,13 +1515,8 @@ function ActionsEditor({ actions, onChange, data }) {
 
   return (
     <div className="space-y-3">
-      <Banner accent="amber" icon={Zap} title="Actions run in order, top to bottom">
-        Two actions of the same kind means the last one wins — useful for “set high, then urgent if VIP”, and a
-        bug the rest of the time.
-      </Banner>
-
       {actions.length === 0 && (
-        <EmptyState icon={Zap} title="No actions" hint="A rule with no actions matches records and then does nothing to them." />
+        <EmptyState icon={Zap} title="No actions" />
       )}
 
       <div className="space-y-2">
@@ -1728,7 +1685,7 @@ function ActionConfig({ action, onChange, data }) {
             options={withCurrent(options.automations, action.automationId)} />
           {options.automations.length === 0 && (
             <Banner accent="amber" icon={AlertTriangle}>
-              No automations are defined yet. The id is kept so this action starts working the moment one exists.
+              No automations are defined yet.
             </Banner>
           )}
         </div>
@@ -1928,7 +1885,7 @@ function RuleTester({ rules, data, sample, onSample, event, onEvent, single }) {
           <div className="min-w-0">
             <p className={cx('text-sm font-semibold', t.text)}>Rule tester</p>
             <p className={cx('text-xs', t.textMuted)}>
-              {single ? 'Runs this rule' : `Runs all ${rules.length} rules in order`} against a sample record, using the real engine.
+              {single ? 'Runs this rule' : `Runs all ${rules.length} rules in order`} against a sample record.
             </p>
           </div>
         </div>
@@ -1947,7 +1904,7 @@ function RuleTester({ rules, data, sample, onSample, event, onEvent, single }) {
             onChange={(e) => applyPreset(e.target.value)}
             options={SAMPLE_PRESETS.map((p) => ({ value: p.id, label: p.label }))} />
         </Field>
-        <Field label="Simulate which event" hint="Rules whose trigger differs are not evaluated at all">
+        <Field label="Simulate which event">
           <Select accent="sky" value={event} onChange={(e) => onEvent(e.target.value)}
             options={TRIGGERS.map((tr) => ({ value: tr.value, label: tr.label }))} />
         </Field>
@@ -1957,8 +1914,7 @@ function RuleTester({ rules, data, sample, onSample, event, onEvent, single }) {
 
       {!ran ? (
         <Banner accent="emerald" icon={Play}>
-          Press <strong className={t.text}>Test</strong> to evaluate the sample. Every condition is shown with the value
-          it expected, the value the record actually had, and the verdict — so a rule that does not fire tells you why.
+          Press <strong className={t.text}>Test</strong> to evaluate the sample.
         </Banner>
       ) : (
         <div className="space-y-3">
@@ -2028,7 +1984,7 @@ function SampleEditor({ sample, onChange, data }) {
         ))}
       </div>
       <div className="max-w-xs">
-        <Field label="Requester" hint="Used to resolve manager-based approvers">
+        <Field label="Requester">
           <Select accent="emerald" value={sample.requesterId || ''} placeholder="Nobody"
             onChange={(e) => set('requesterId', e.target.value)} options={options.people} />
         </Field>
@@ -2177,8 +2133,7 @@ function OutcomePanel({ outcome, data, fired }) {
 
       {!outcome.queueId.value && (
         <Banner accent="amber" icon={Target}>
-          No rule assigned a queue. This ticket falls to <strong className={t.text}>{defaultQueue?.name || 'General'}</strong>{' '}
-          — the default, not a decision anybody made.
+          No rule assigned a queue. This ticket falls to <strong className={t.text}>{defaultQueue?.name || 'General'}</strong>.
         </Banner>
       )}
 
@@ -2310,12 +2265,6 @@ function PoliciesTab({ data, tabs }) {
 
       <PageBody width="max-w-6xl">
         <div className="space-y-4">
-          <Banner accent="amber" icon={Stamp} title="A policy is conditions plus ordered stages">
-            <strong className={t.text}>Applies when</strong> uses the same condition builder as the rules — one engine,
-            one editor. Stages run in order, and approvers are resolved when the request starts, so a reorg later cannot
-            silently change who was asked. A stage that resolves to nobody is a configuration fault, never a skip.
-          </Banner>
-
           {visible.length === 0 ? (
             <EmptyState icon={Stamp} title={policies.length === 0 ? 'No approval policies' : 'No policies match'}
               hint={policies.length === 0 ? undefined : 'Clear the search to see every policy.'}
@@ -2390,7 +2339,7 @@ function PoliciesTab({ data, tabs }) {
         open={!!deleting}
         name={deleting?.name || ''}
         kind="approval policy"
-        cascadeNote="Rules and request forms that start this policy will stop requiring approval — silently, unless you edit them too."
+        cascadeNote="Rules and request forms that start this policy will stop requiring approval."
         onCancel={() => setDeleting(null)}
         onConfirm={() => { removeFrom('approvalPolicies', deleting.id); setDeleting(null); }}
       />
@@ -2490,7 +2439,7 @@ function PolicyEditorModal({ draft, data, onChange, onClose, onSave }) {
               <Input accent="amber" value={draft.name} onChange={(e) => set({ name: e.target.value })}
                 placeholder="e.g. Spend over $5,000" />
             </Field>
-            <Field label="Description" hint="What this protects and why the threshold is where it is">
+            <Field label="Description" hint="What this protects">
               <Textarea rows={2} accent="amber" value={draft.description || ''}
                 onChange={(e) => set({ description: e.target.value })} />
             </Field>
@@ -2513,7 +2462,7 @@ function PolicyEditorModal({ draft, data, onChange, onClose, onSave }) {
 
         {pane === 'when' && (
           <div className="space-y-3">
-            <Banner accent="purple" icon={Split} title="Read it out loud">
+            <Banner accent="purple" icon={Split}>
               <span className={t.text}>{readableSummary(draft.appliesWhen, data.options)}</span>
             </Banner>
             <ConditionBuilder
@@ -2592,7 +2541,7 @@ function StageEditor({ stage, index, total, data, onChange, onMove, onRemove }) 
           ))}
           {approvers.length === 0 && (
             <Banner accent="amber" icon={AlertTriangle}>
-              No approvers. This stage will resolve to nobody and block the request rather than pass it.
+              No approvers. This stage will resolve to nobody.
             </Banner>
           )}
           <Button size="xs" variant="soft" accent="violet" icon={Plus}
@@ -2617,7 +2566,7 @@ function StageEditor({ stage, index, total, data, onChange, onMove, onRemove }) 
               onChange={(e) => onChange({ quorum: Number(e.target.value) })} />
           </Field>
         )}
-        <Field label="Due in (hours)" hint="When the escalation clock fires">
+        <Field label="Due in (hours)">
           <Input accent="sky" type="number" min={0} value={stage.dueInHours ?? 24}
             onChange={(e) => onChange({ dueInHours: Number(e.target.value) })} />
         </Field>
@@ -2643,8 +2592,7 @@ function StageEditor({ stage, index, total, data, onChange, onMove, onRemove }) 
 
       {stage.onTimeout === 'auto_approve' && (
         <Banner accent="red" icon={AlertTriangle}>
-          Auto-approve on timeout means silence counts as a yes. Defensible for low-value spend, indefensible for
-          access grants — the audit trail will say the system approved it, not a person.
+          Auto-approve on timeout means silence counts as a yes.
         </Banner>
       )}
     </Card>
@@ -2732,11 +2680,6 @@ function PolicyPreview({ policy, data }) {
 
   return (
     <div className="space-y-3">
-      <Banner accent="emerald" icon={Users} title="Resolved against a real person">
-        This runs the actual approval engine. “Requester's manager” becomes a name here, or it becomes a warning —
-        which is the point: an unresolvable stage is a configuration fault, not a stage that quietly skips.
-      </Banner>
-
       <div className="grid sm:grid-cols-2 gap-3">
         <Field label="Preview as requester">
           <Select accent="emerald" value={requesterId} onChange={(e) => setRequesterId(e.target.value)}
@@ -2756,8 +2699,7 @@ function PolicyPreview({ policy, data }) {
 
       {unresolved.length > 0 && (
         <Banner accent="amber" icon={AlertTriangle} title={`${unresolved.length} stage${unresolved.length === 1 ? '' : 's'} resolve to nobody`}>
-          {unresolved.map((s) => s.name).join(', ')} — with this requester there is no one to ask. The request would
-          stop here rather than pass through. Add a fallback approver or a different escalation.
+          {unresolved.map((s) => s.name).join(', ')} — add a fallback approver or a different escalation.
         </Banner>
       )}
 
@@ -2803,7 +2745,7 @@ function PolicyPreview({ policy, data }) {
         ))}
         {request.stages.length === 0 && (
           <Banner accent="red" icon={AlertTriangle}>
-            No stages. This policy approves instantly, which is almost never what an approval policy is for.
+            No stages. This policy approves instantly.
           </Banner>
         )}
       </div>
@@ -2827,8 +2769,6 @@ function SlaTab({ data, tabs }) {
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [query, setQuery] = useState('');
-
-  const bh = settings.businessHours || {};
 
   const needle = query.trim().toLowerCase();
   const visible = slas.filter((s) => !needle
@@ -2870,17 +2810,9 @@ function SlaTab({ data, tabs }) {
 
       <PageBody>
         <div className="space-y-4">
-          <Banner accent="emerald" icon={Clock} title="Business hours are not a per-policy setting">
-            Policies on the business-hours clock use the one working calendar configured for the instance —{' '}
-            <strong className={t.text}>{bh.start || '09:00'}–{bh.end || '17:00'}, Mon–Fri, {bh.tz || 'America/Chicago'}</strong>.
-            A calendar-clock policy ignores it entirely and counts wall time, weekends included.
-          </Banner>
-
           {visible.length === 0 ? (
             <EmptyState icon={Timer} title={slas.length === 0 ? 'No SLA policies' : 'No SLA policies match'}
-              hint={slas.length === 0
-                ? 'Without one, no ticket has a target and nothing can be at risk.'
-                : 'Clear the search to see every policy.'}
+              hint={slas.length === 0 ? undefined : 'Clear the search to see every policy.'}
               action={slas.length === 0 ? undefined
                 : <Button variant="soft" accent={ACCENT} onClick={() => setQuery('')}>Clear search</Button>} />
           ) : (
@@ -2990,7 +2922,6 @@ function SlaEditorModal({ draft, onChange, onClose, onSave, settings }) {
       size="modalLg"
       icon={Timer}
       title={draft.name || 'New SLA policy'}
-      subtitle="First-response and resolution targets, and the clock they run on"
       footer={
         <>
           <span className={cx('text-sm', t.textMuted)}>
@@ -3011,7 +2942,7 @@ function SlaEditorModal({ draft, onChange, onClose, onSave, settings }) {
           <Input accent="emerald" value={draft.name} onChange={(e) => set({ name: e.target.value })}
             placeholder="e.g. Enterprise — 24×7" />
         </Field>
-        <Field label="Description" hint="What the customer was promised, in the words the contract uses">
+        <Field label="Description" hint="What the customer was promised">
           <Textarea rows={2} accent="emerald" value={draft.description || ''}
             onChange={(e) => set({ description: e.target.value })} />
         </Field>
@@ -3059,13 +2990,6 @@ function SlaEditorModal({ draft, onChange, onClose, onSave, settings }) {
         {!calendar && (
           <Banner accent="sky" icon={Building2}>
             The clock pauses outside <strong className={t.text}>{bh.start || '09:00'}–{bh.end || '17:00'}, Mon–Fri ({bh.tz || 'America/Chicago'})</strong>.
-            A ticket arriving at 16:45 with a 4-hour target is due at 12:45 the next working day, not at 20:45 tonight.
-          </Banner>
-        )}
-        {calendar && (
-          <Banner accent="rose" icon={Clock}>
-            The clock never pauses. Make sure somebody is actually on call overnight and at the weekend, or this
-            target breaches by design.
           </Banner>
         )}
 
@@ -3074,8 +2998,7 @@ function SlaEditorModal({ draft, onChange, onClose, onSave, settings }) {
         <div>
           <GroupLabel>Per-priority targets</GroupLabel>
           <p className={cx('text-xs mt-1 mb-2', t.textSecondary)}>
-            Overrides the headline numbers above. A single target for every priority is what makes urgent tickets
-            look healthy right up until they are not.
+            Overrides the headline numbers above.
           </p>
           <div className="space-y-1.5">
             {Object.keys(PRIORITY).map((p) => (

@@ -69,21 +69,18 @@ const CHANGE_TYPES = {
   standard: {
     key: 'standard', label: 'Standard', hue: 'emerald', icon: ShieldCheck,
     tagline: 'Pre-approved from a template',
-    blurb: 'Authorisation was granted once, when the template was approved. This change skips the CAB entirely and goes straight to a scheduled window.',
     skips: ['authorize'],
     approval: 'none',
   },
   normal: {
     key: 'normal', label: 'Normal', hue: 'orange', icon: GitBranch,
     tagline: 'Full assessment and CAB approval',
-    blurb: 'Assessed for risk and impact, then authorised by the Change Advisory Board before a window is booked.',
     skips: [],
     approval: 'cab',
   },
   emergency: {
     key: 'emergency', label: 'Emergency', hue: 'red', icon: Siren,
     tagline: 'Expedited, reviewed afterwards',
-    blurb: 'Authorised by the on-call change authority so it can be implemented immediately. It bypasses scheduling, and the CAB reviews the record retrospectively at the next meeting.',
     skips: ['scheduled'],
     approval: 'oncall',
   },
@@ -230,11 +227,11 @@ const SCALE_KEYS = ['high', 'moderate', 'low'];
 const RANK = { low: 1, moderate: 2, high: 3 };
 
 const MATRIX_CELLS = {
-  2: { label: 'Routine',  hue: 'emerald', guidance: 'A standard-change candidate. Template it and pre-approve it so it stops consuming CAB time.' },
-  3: { label: 'Low',      hue: 'lime',    guidance: 'Normal change. Delegated authority from the service owner is enough.' },
-  4: { label: 'Moderate', hue: 'amber',   guidance: 'Normal change with a full CAB review at the next sitting.' },
-  5: { label: 'High',     hue: 'orange',  guidance: 'Full CAB plus the service owner. Rehearse the backout before the window opens.' },
-  6: { label: 'Critical', hue: 'red',     guidance: 'Full CAB, an executive sponsor and a standby engineer. Do not proceed without a rehearsed backout.' },
+  2: { label: 'Routine',  hue: 'emerald', guidance: 'Standard-change candidate.' },
+  3: { label: 'Low',      hue: 'lime',    guidance: 'Normal change, delegated authority from the service owner.' },
+  4: { label: 'Moderate', hue: 'amber',   guidance: 'Normal change with a full CAB review.' },
+  5: { label: 'High',     hue: 'orange',  guidance: 'Full CAB plus the service owner.' },
+  6: { label: 'Critical', hue: 'red',     guidance: 'Full CAB, an executive sponsor and a standby engineer.' },
 };
 
 function matrixCell(risk, impact) {
@@ -323,22 +320,22 @@ const FREEZE_WINDOWS = [
   {
     id: 'frz-vireo-golive', name: 'Vireo Health go-live freeze', start: '2026-08-22', end: '2026-08-31', hue: 'red',
     scope: 'All customer-facing services',
-    reason: 'Vireo Health cuts 1,200 clinicians over to Storefront on the Saturday night. Shared services are frozen from the cutover until their hypercare ends on the 31st.',
+    reason: 'Vireo Health cutover and hypercare.',
   },
   {
     id: 'frz-storefront-4', name: 'Storefront 4.0 stabilisation', start: '2026-09-14', end: '2026-09-21', hue: 'amber',
     scope: 'Storefront platform and payments',
-    reason: 'One week of hypercare after the 4.0 release. Only defect fixes raised as emergency change are permitted.',
+    reason: 'Hypercare after the 4.0 release. Emergency defect fixes only.',
   },
   {
     id: 'frz-fy-close', name: 'FY27 financial close', start: '2026-09-28', end: '2026-10-02', hue: 'amber',
     scope: 'Billing, invoicing and finance integrations',
-    reason: 'Finance runs the year-end close. Any change touching billing data is deferred to the following week.',
+    reason: 'Year-end close. Changes touching billing data are deferred.',
   },
   {
     id: 'frz-retail-peak', name: 'Retail peak code freeze', start: '2026-11-20', end: '2026-12-27', hue: 'red',
     scope: 'Storefront, checkout and payments',
-    reason: 'Lumen Retail Group and 60 other retail tenants take roughly 40% of annual revenue in this window. Emergency change only, with the freeze owner on the call.',
+    reason: 'Peak retail trading. Emergency change only, with the freeze owner on the call.',
   },
 ];
 
@@ -773,26 +770,24 @@ function blockersFor(change, { approval, freezes }) {
     if (gaps.length) {
       out.push({
         text: `Planning is incomplete — ${gaps.map(g => g.label.toLowerCase()).join(', ')} ${gaps.length === 1 ? 'is' : 'are'} empty.`,
-        fix: 'A change cannot leave assessment without all four planning documents. Fill them in below.',
+        fix: 'Fill them in below.',
       });
     }
     const scored = assessRisk(change.riskAnswers);
     if (!scored.complete) {
       out.push({
         text: `Risk assessment is incomplete — ${scored.answered} of ${scored.total} questions answered.`,
-        fix: 'Risk is derived from the questionnaire, so an unanswered question means there is no risk value to authorise against.',
       });
     }
   }
 
   if (change.status === 'authorize') {
     if (!approval) {
-      out.push({ text: 'No approval has been raised yet.', fix: 'Submit the change to the board to start the approval run.' });
+      out.push({ text: 'No approval has been raised yet.', fix: 'Submit the change to the board.' });
     } else if (approval.state === 'awaiting') {
       const p = safeProgress(approval);
       out.push({
         text: `Approval is still running — ${p.approvals} of ${p.need} approvals on stage ${p.stageNumber} of ${p.totalStages}.`,
-        fix: 'The window cannot be booked until the board has reached its quorum.',
       });
     } else if (approval.state === 'rejected') {
       out.push({ text: 'The board rejected this change.', fix: 'Revise the plan and raise a new change, or cancel this one.' });
@@ -801,18 +796,18 @@ function blockersFor(change, { approval, freezes }) {
 
   if (next === 'implement') {
     if (!change.plannedStart || !change.plannedEnd) {
-      out.push({ text: 'No implementation window is booked.', fix: 'Set a planned start and end before implementation begins.' });
+      out.push({ text: 'No implementation window is booked.', fix: 'Set a planned start and end.' });
     }
     if (freezes.length && change.changeType !== 'emergency') {
       out.push({
         text: `The window falls inside the ${freezes.map(f => f.name).join(' and ')}.`,
-        fix: 'Move the window outside the freeze, or raise the work as an emergency change with the freeze owner on the call.',
+        fix: 'Move the window, or raise it as an emergency change.',
       });
     }
   }
 
   if (next === 'closed' && !change.outcome) {
-    out.push({ text: 'No post-implementation review has been recorded.', fix: 'Record the outcome and notes below before closing.' });
+    out.push({ text: 'No post-implementation review has been recorded.', fix: 'Record the outcome below.' });
   }
 
   return out;
@@ -966,7 +961,6 @@ export default function Changes({ route }) {
       },
       {
         id: 'risk', label: 'Risk', icon: Gauge,
-        footer: `Risk is derived from the questionnaire — low 0–4, moderate 5–9, high 10+ of ${RISK_MAX} points.`,
         options: RISK_BANDS.slice().reverse().map(b => ({ value: b.key, label: b.label, count: byRisk.get(b.key) || 0 })),
       },
       {
@@ -988,7 +982,6 @@ export default function Changes({ route }) {
             <EmptyState
               icon={GitBranch}
               title="That change is not here"
-              hint="It may have been cancelled and removed, or the link is stale."
               action={<Button variant="soft" accent={HUE} icon={ChevronLeft} onClick={() => navigate('changes', view)}>Back to changes</Button>}
             />
           </PageBody>
@@ -1009,7 +1002,7 @@ export default function Changes({ route }) {
         subtitle={subsetLabel(
           shown.length,
           enriched.length,
-          `${enriched.length} changes · standard, normal and emergency change enablement`,
+          `${enriched.length} changes`,
         )}
         /* The view switcher is centred in row 1, between the module identity and
          * the primary action, so it holds still while the subtitle beneath the
@@ -1076,24 +1069,19 @@ function ListView({ entries, total, onNew, onClear, view, freezeFilter }) {
     <PageBody>
       <div className="space-y-3">
         {freezeFilter && (
-          <Banner accent="red" icon={Snowflake} title="Showing changes booked inside a freeze">
-            Blackout windows are published on the change calendar. Only emergency change is permitted inside one,
-            and only with the freeze owner on the call.
-          </Banner>
+          <Banner accent="red" icon={Snowflake} title="Showing changes booked inside a freeze" />
         )}
 
         {!total && (
           <EmptyState
             icon={GitBranch}
             title="No changes have been raised"
-            hint="A change records what is going to be altered, why it is worth the risk, and how it will be undone if it goes wrong."
             action={<Button variant="grad" module={MODULE} icon={Plus} onClick={onNew}>Raise the first change</Button>}
           />
         )}
 
         {!!total && !entries.length && (
           <EmptyState icon={Route} title="Nothing matches these filters"
-            hint="Search composes with the filters above rather than replacing them — clearing a filter may bring the rest of the register back."
             action={<Button variant="soft" accent={HUE} icon={RotateCcw} onClick={onClear}>Clear filters</Button>} />
         )}
 
@@ -1166,10 +1154,6 @@ function BoardView({ entries, view }) {
   return (
     <PageBody width="max-w-none">
       <div className="space-y-3">
-        <Banner accent={HUE} icon={Info} title="One board, three journeys">
-          A <strong>standard</strong> change never appears in Authorize — it was approved when its template was.
-          An <strong>emergency</strong> change never appears in Scheduled — it goes from authorisation straight to implementation.
-        </Banner>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {columns.map(col => (
             <div key={col.key} className="w-64 flex-shrink-0">
@@ -1307,9 +1291,7 @@ function CalendarView({ entries, view }) {
         </div>
 
         {conflictIndex.size > 0 && (
-          <Banner accent="red" icon={TriangleAlert} title={`${conflictIndex.size} change${conflictIndex.size === 1 ? '' : 's'} on this calendar has a conflict`}>
-            Overlapping windows on the same service or asset. Open either change to see what they share.
-          </Banner>
+          <Banner accent="red" icon={TriangleAlert} title={`${conflictIndex.size} change${conflictIndex.size === 1 ? '' : 's'} on this calendar has a conflict`} />
         )}
 
         <Card className="p-2 overflow-x-auto">
@@ -1332,8 +1314,7 @@ function CalendarView({ entries, view }) {
           </div>
         </Card>
 
-        <Section title="Blackout and freeze windows"
-          hint="Northwind's published freeze calendar. Only emergency change is permitted inside one, and only with the freeze owner on the call.">
+        <Section title="Blackout and freeze windows">
           <div className={DENSITY.rowGap}>
             {FREEZE_WINDOWS.map(f => {
               const visible = monthFreezes.some(x => x.id === f.id);
@@ -1572,8 +1553,6 @@ function ChangeDetail({ change: c, all, view }) {
             </Banner>
           )}
 
-          <TypeBanner change={c} />
-
           <div className="grid gap-3 @3xl:grid-cols-3">
             <div className="@3xl:col-span-2 space-y-3">
               <DescriptionPanel change={c} />
@@ -1604,7 +1583,7 @@ function ChangeDetail({ change: c, all, view }) {
         open={deleting}
         name={c.key}
         kind="change"
-        cascadeNote="The risk assessment, plans, approval link and post-implementation review go with it. Cancelling is almost always the right action instead."
+        cascadeNote="The risk assessment, plans, approval link and post-implementation review go with it."
         onCancel={() => setDeleting(false)}
         onConfirm={() => { removeFrom('changes', c.id); setDeleting(false); navigate('changes', view); }}
       />
@@ -1680,15 +1659,6 @@ function CircleSlashGlyph({ size = 14 }) {
  * Type banner — the behavioural difference, stated
  * ------------------------------------------------------------------ */
 
-function TypeBanner({ change: c }) {
-  const type = typeMeta(c.changeType);
-  return (
-    <Banner accent={type.hue} icon={type.icon} title={`${type.label} change — ${type.tagline}`}>
-      {type.blurb}
-    </Banner>
-  );
-}
-
 /* ------------------------------------------------------------------ *
  * Description
  * ------------------------------------------------------------------ */
@@ -1738,21 +1708,18 @@ function RiskPanel({ change: c }) {
       <div className={cx(DENSITY.cardPad, 'space-y-4')}>
         {risk.source === 'stored' && (
           <Banner accent="amber" icon={CircleAlert} title="This risk value was carried in, not derived">
-            The questionnaire has not been answered on this change, so RelayHQ is showing the stored value
-            <strong> {rm.label}</strong>. Answer the {scored.total} questions and the value becomes derived and auditable.
+            The questionnaire has not been answered — showing the stored value <strong>{rm.label}</strong>.
           </Banner>
         )}
         {risk.source === 'derived' && c.storedRisk && c.storedRisk !== risk.key && (
           <Banner accent="amber" icon={CircleAlert} title="The derived value disagrees with the one on the record">
             The record was raised as <strong>{riskMeta(c.storedRisk).label}</strong>; the answers below score
-            <strong> {rm.label}</strong>. The derivation wins, because it can be checked. If the stored value was
-            right, the answer that is wrong is on this page.
+            <strong> {rm.label}</strong>.
           </Banner>
         )}
         {risk.source === 'partial' && (
           <Banner accent="amber" icon={CircleAlert} title="Provisional score">
-            {scored.answered} of {scored.total} questions answered. The band below can still move — an unanswered
-            question scores zero, which flatters the change.
+            {scored.answered} of {scored.total} questions answered.
           </Banner>
         )}
 
@@ -1832,7 +1799,6 @@ function RiskPanel({ change: c }) {
             </div>
             <p className={cx('text-[11px] mt-1.5', t.textSecondary)}>
               {scored.points} points lands in <strong className={a(scored.band.hue).fg}>{scored.band.label}</strong>.
-              {' '}Risk answers the question “how likely is this to go wrong, and can we get back?” — impact answers “who hurts if it does”.
             </p>
           </div>
         </div>
@@ -1927,8 +1893,7 @@ function PlanningPanel({ change: c }) {
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
         {!!gaps.length && (
           <Banner accent="amber" icon={ShieldAlert} title="These block the change leaving assessment">
-            {gaps.map(g => g.label).join(', ')}. A board cannot authorise work whose steps, backout and test are
-            not written down — and nobody can run it at 22:00 on a Saturday from memory.
+            {gaps.map(g => g.label).join(', ')}.
           </Banner>
         )}
         {PLANS.map(p => (
@@ -1966,8 +1931,7 @@ function CabPanel({ change: c, approval, policy, onSubmit }) {
             {policy?.description}
             {policyIsFallback(policy) && (
               <span className="block mt-1">
-                <strong className={t.text}>Note.</strong> The policy <code>{POL.NORMAL_CHANGE}</code> is not configured in
-                Business Rules yet, so RelayHQ is using its built-in board definition. Configure the policy to change who sits on the board.
+                <code>{POL.NORMAL_CHANGE}</code> is not configured in Business Rules — using the built-in board definition.
               </span>
             )}
           </Banner>
@@ -2004,15 +1968,12 @@ function CabPanel({ change: c, approval, policy, onSubmit }) {
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
         {policyIsFallback(policy) && (
           <Banner accent="blue" icon={Info}>
-            Running against RelayHQ's built-in board definition — <code>{POL.NORMAL_CHANGE}</code> has not been
-            configured in Business Rules.
+            <code>{POL.NORMAL_CHANGE}</code> is not configured in Business Rules — using the built-in board definition.
           </Banner>
         )}
 
         {!stages.length && (
-          <Banner accent="red" icon={ShieldAlert} title="This approval has no stages">
-            The record exists but resolves to nobody. RelayHQ will not read that as “approved”.
-          </Banner>
+          <Banner accent="red" icon={ShieldAlert} title="This approval has no stages" />
         )}
 
         {stages.map((stage, si) => {
@@ -2033,8 +1994,7 @@ function CabPanel({ change: c, approval, policy, onSubmit }) {
               {stage.unresolved && (
                 <div className="p-3">
                   <Banner accent="red" icon={ShieldAlert} title="This stage resolved to nobody">
-                    The approver specification matched no one in the directory. RelayHQ will not treat that as
-                    “nobody needs to approve” — fix the policy in Business Rules.
+                    The approver specification matched no one in the directory. Fix the policy in Business Rules.
                   </Banner>
                 </div>
               )}
@@ -2079,13 +2039,12 @@ function CabPanel({ change: c, approval, policy, onSubmit }) {
 
         {approval.state === 'approved' && (
           <Banner accent="emerald" icon={CircleCheck} title="The board authorised this change">
-            RelayHQ does not book the window for you — press <strong>{transitionLabel(c, 'scheduled')}</strong> when the
-            implementer has confirmed they can take the slot.
+            Press <strong>{transitionLabel(c, 'scheduled')}</strong> to book the window.
           </Banner>
         )}
         {approval.state === 'rejected' && (
           <Banner accent="red" icon={CircleX} title="The board rejected this change">
-            Revise the plan and raise a replacement, or cancel this record. A rejected change cannot be advanced.
+            Revise the plan and raise a replacement, or cancel this record.
           </Banner>
         )}
       </div>
@@ -2140,11 +2099,10 @@ function VoteModal({ open, approval, approverId, onClose }) {
       <div className="space-y-3">
         {onBehalf && (
           <Banner accent="amber" icon={CircleAlert} title="Recording on behalf of a board member">
-            You are signed in as {currentUser?.name || 'this user'}. In the demo you may record any board member's
-            vote so the quorum can be reached; a live deployment restricts this to the approver themselves.
+            You are signed in as {currentUser?.name || 'this user'}.
           </Banner>
         )}
-        <Field label="Comment" hint="Boards remember reasons, not verdicts. One sentence is enough.">
+        <Field label="Comment" hint="One sentence is enough.">
           <Textarea accent="amber" rows={3} value={comment} onChange={(e) => setComment(e.target.value)}
             placeholder="e.g. Backout is rehearsed and the window is outside the retail peak." />
         </Field>
@@ -2174,12 +2132,6 @@ function EmergencyPanel({ change: c, approval, policy, onSubmit }) {
       action={approval ? <StatusPill status={approval.state} /> : <Chip accent="red" icon={Clock}>Not yet requested</Chip>}
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
-        <Banner accent="red" icon={Siren} title="Emergency changes are authorised by one person, not a board">
-          The on-call change authority can approve at any hour so the fix is not held behind the next CAB sitting.
-          The trade is retrospective scrutiny: the board reviews this record, its outcome and its timeline at the
-          next meeting, and an emergency raised to dodge the CAB is where that goes badly.
-        </Banner>
-
         {!approval && (
           <>
             <div className="flex flex-wrap gap-1.5">
@@ -2219,7 +2171,7 @@ function EmergencyPanel({ change: c, approval, policy, onSubmit }) {
 
         {approval?.state === 'approved' && (
           <Banner accent="amber" icon={ClipboardCheck} title="Retrospective CAB review is now owed">
-            Record the outcome honestly at close. The retrospective is the only control an emergency change has.
+            Record the outcome at close.
           </Banner>
         )}
       </div>
@@ -2237,26 +2189,20 @@ function StandardPanel({ change: c }) {
   const { t } = useTheme();
   const template = STANDARD_TEMPLATES.find(x => x.id === c.templateId) || null;
   return (
-    <Panel icon={ShieldCheck} accent="emerald" title="Pre-approved" subtitle="No CAB stage — by design">
+    <Panel icon={ShieldCheck} accent="emerald" title="Pre-approved" subtitle="No CAB stage">
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
-        <Banner accent="emerald" icon={ShieldCheck} title="This change was authorised before it was raised">
-          A standard change runs an approved procedure that the CAB signed off once, as a template. There is no
-          board panel on this record because there is no board decision to make — that is the whole economic
-          argument for standard change: it takes routine work off the board's agenda.
-        </Banner>
         {template && (
           <div className={cx('rounded-lg border px-3 py-2', t.borderLight)}>
             <GroupLabel>Template</GroupLabel>
             <p className={cx('text-sm font-medium mt-0.5', t.text)}>{template.name}</p>
             <p className={cx('text-xs mt-0.5', t.textSecondary)}>
-              Plans below were filled from the approved procedure. Editing them here does not change the template.
+              Editing the plans here does not change the template.
             </p>
           </div>
         )}
         {!template && (
           <p className={cx('text-xs', t.textSecondary)}>
-            No template is recorded on this change. Standard changes should always name the procedure they run,
-            because the procedure is what carries the approval.
+            No template is recorded on this change.
           </p>
         )}
       </div>
@@ -2283,18 +2229,15 @@ function ReviewPanel({ change: c }) {
       title="Post-implementation review"
       subtitle={closed
         ? `Closed ${fmtDateTime(c.actualEnd || c.plannedEnd)}`
-        : 'Recorded at close — the outcome, not the intention'}
+        : 'Recorded at close'}
       action={outcome ? <Chip accent={outcome.hue} icon={outcome.icon}>{outcome.label}</Chip> : null}
     >
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
         {c.changeType === 'emergency' && (
-          <Banner accent="amber" icon={Siren} title="This review goes to the CAB retrospectively">
-            The board reads emergency reviews at its next sitting. An emergency that was really a normal change
-            shows up here, in the gap between the justification and the outcome.
-          </Banner>
+          <Banner accent="amber" icon={Siren} title="This review goes to the CAB retrospectively" />
         )}
 
-        <Field label="Outcome" hint="Four honest options. “Successful with issues” exists because most real changes land there.">
+        <Field label="Outcome">
           <TileGroup
             columns={4}
             value={c.outcome || ''}
@@ -2342,9 +2285,7 @@ function ReviewPanel({ change: c }) {
           </Button>
         )}
         {c.status === 'review' && !c.outcome && (
-          <p className={cx('text-[11px]', t.textMuted)}>
-            Pick an outcome first. A change closed without one is indistinguishable from a change nobody checked.
-          </p>
+          <p className={cx('text-[11px]', t.textMuted)}>Pick an outcome first.</p>
         )}
       </div>
     </Panel>
@@ -2376,16 +2317,9 @@ function SchedulePanel({ change: c, conflicts, freezes, view }) {
             onChange={(e) => patchIn('changes', c.id, { plannedEnd: fromLocalInput(e.target.value) })} />
         </Field>
 
-        {c.changeType === 'emergency' && (
-          <Banner accent="red" icon={Siren}>
-            Emergency changes are not scheduled. The window here is a record of when the work ran, not a booking.
-          </Banner>
-        )}
-
         {c.plannedStart && inWindow === false && c.changeType !== 'emergency' && (
           <Banner accent="amber" icon={Clock} title="Outside the approved maintenance windows">
-            Northwind's windows are {MAINTENANCE_WINDOWS.map(w => w.label).join(' and ')}. Working outside one is
-            allowed, but the board will ask why, and the answer has to be better than “it was convenient”.
+            Approved windows are {MAINTENANCE_WINDOWS.map(w => w.label).join(' and ')}.
           </Banner>
         )}
 
@@ -2437,8 +2371,7 @@ function ConflictLine({ other, products, assets, services, view }) {
       </button>
       <span className="block">
         Its window ({fmtWindow(other)}) overlaps this one, and both touch{' '}
-        <strong className={t.text}>{shared.join(', ')}</strong>. Two teams working the same component at the same
-        time is how a clean backout stops being possible.
+        <strong className={t.text}>{shared.join(', ')}</strong>.
       </span>
     </span>
   );
@@ -2472,7 +2405,7 @@ function AffectedPanel({ change: c }) {
               max={4}
               accent={ENTITIES.item.hue}
               icon={Package}
-              empty={<p className={cx('text-xs', t.textMuted)}>No catalog service recorded — conflict detection cannot see this change.</p>}
+              empty={<p className={cx('text-xs', t.textMuted)}>No catalog service recorded.</p>}
             />
           </div>
         </div>
@@ -2511,10 +2444,6 @@ function AffectedPanel({ change: c }) {
             </div>
           </div>
         )}
-        <Banner accent="blue" icon={Info}>
-          Conflict detection compares these lists. Two changes overlapping in time only conflict when they share
-          a service, a component or an asset — which is why leaving them empty makes a change look safer than it is.
-        </Banner>
       </div>
 
       <AffectedModal open={editing} change={c} onClose={() => setEditing(false)} />
@@ -2547,7 +2476,7 @@ function AffectedModal({ open, change: c, onClose }) {
   return (
     <Modal
       open={open} onClose={onClose} accent={HUE} size="modalMd" icon={Boxes}
-      title="Affected services and assets" subtitle={`${c.key} · drives conflict detection`}
+      title="Affected services and assets" subtitle={c.key}
       footer={<><span className={cx('text-xs', t.textMuted)}>Saved as you toggle</span>
         <Button variant="solid" accent={HUE} icon={Check} onClick={onClose}>Done</Button></>}
     >
@@ -2573,9 +2502,7 @@ function AffectedModal({ open, change: c, onClose }) {
               ))}
             </div>
           ) : (
-            <p className={cx('text-xs mt-2', t.textMuted)}>
-              No catalog services are configured yet. Services can still be recorded on the change by the catalog module's ids.
-            </p>
+            <p className={cx('text-xs mt-2', t.textMuted)}>No catalog services are configured yet.</p>
           )}
         </div>
 
@@ -2585,10 +2512,6 @@ function AffectedModal({ open, change: c, onClose }) {
             <div className="flex flex-wrap gap-1.5 mt-2">
               {c.affectedServices.map(s => <Chip key={s} accent="slate" icon={Server}>{s}</Chip>)}
             </div>
-            <p className={cx('text-[11px] mt-1.5', t.textSecondary)}>
-              Free-text components carried on the record. They are compared for conflicts too, but only an exact
-              name matches — the catalog ids above are the reliable half.
-            </p>
           </div>
         )}
 
@@ -2638,8 +2561,7 @@ function LinksPanel({ change: c }) {
       <div className={cx(DENSITY.cardPad, 'space-y-2')}>
         {!c.links.length && (
           <p className={cx('text-xs', t.textMuted)}>
-            Link the problem that caused this change and the tickets it resolves. The link type is what makes a
-            change record auditable six months later.
+            Link the problem that caused this change and the tickets it resolves.
           </p>
         )}
         {c.links.map((link, i) => {
@@ -2729,9 +2651,7 @@ function AddLinkModal({ open, change: c, onClose }) {
             </button>
           ))}
           {!candidates.length && (
-            <p className={cx('text-xs px-3 py-4 text-center', t.textMuted)}>
-              Nothing to link. Problems and tickets are authored in their own modules.
-            </p>
+            <p className={cx('text-xs px-3 py-4 text-center', t.textMuted)}>Nothing to link.</p>
           )}
         </div>
       </div>
@@ -2748,7 +2668,7 @@ function PeoplePanel({ change: c }) {
   const directory = useStore(s => s.directory || []);
 
   return (
-    <Panel icon={User} accent="blue" title="People" subtitle="Who asked, and who runs it">
+    <Panel icon={User} accent="blue" title="People">
       <div className={cx(DENSITY.cardPad, 'space-y-3')}>
         <div className="flex items-center gap-2">
           <Avatar name={personName(c.requestedById, directory)} size="lg" />
@@ -2771,10 +2691,7 @@ function PeoplePanel({ change: c }) {
           />
         </Field>
         {!c.assigneeId && (
-          <Banner accent="amber" icon={CircleAlert}>
-            Nobody is named as implementer. An unassigned change in a Saturday window is an outage waiting for a
-            volunteer.
-          </Banner>
+          <Banner accent="amber" icon={CircleAlert}>Nobody is named as implementer.</Banner>
         )}
       </div>
     </Panel>
@@ -2793,7 +2710,7 @@ function CancelModal({ open, change: c, onClose }) {
   return (
     <Modal
       open={open} onClose={onClose} accent="red" size="modalSm" icon={Ban}
-      title={`Cancel ${c.key}?`} subtitle="The record stays; the work does not happen"
+      title={`Cancel ${c.key}?`}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>Keep it open</Button>
@@ -2809,8 +2726,7 @@ function CancelModal({ open, change: c, onClose }) {
     >
       <div className="space-y-3">
         <Banner accent="blue" icon={Info}>
-          Cancelling keeps the assessment, the plans and any votes already cast. That history is what stops the
-          same change being re-raised next quarter with the same flaw.
+          Cancelling keeps the assessment, the plans and any votes already cast.
         </Banner>
         <Field label="Why is it being cancelled?" required>
           <Textarea accent="red" rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
@@ -2929,7 +2845,7 @@ function NewChangeModal({ open, onClose, existing }) {
   return (
     <Modal
       open={open} onClose={onClose} accent={HUE} size="modalLg" icon={GitBranch}
-      title="Raise a change" subtitle="The type decides the journey — pick it first"
+      title="Raise a change"
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>{nextChangeKey(existing)} · {meta.label}</span>
@@ -2943,7 +2859,7 @@ function NewChangeModal({ open, onClose, existing }) {
       }
     >
       <div className="space-y-4">
-        <Field label="Change type" hint="Standard skips the board. Emergency skips scheduling. Normal does both stages.">
+        <Field label="Change type">
           <TileGroup
             columns={3} value={type} onChange={setType}
             options={TYPE_KEYS.map(k => ({
@@ -2953,29 +2869,13 @@ function NewChangeModal({ open, onClose, existing }) {
           />
         </Field>
 
-        <Banner accent={meta.hue} icon={meta.icon} title={`What happens when you press create`}>
-          {type === 'standard' && (
-            <>This change is created <strong>already scheduled</strong>. It never enters Authorize, because the
-              template below carries the CAB's approval. The plans are copied from the approved procedure.</>
-          )}
-          {type === 'normal' && (
-            <>This change is created in <strong>New</strong>. It has to be assessed, then submitted to the CAB, and a
-              window can only be booked once the board reaches its quorum.</>
-          )}
-          {type === 'emergency' && (
-            <>This change is created in <strong>Assess</strong> with a window starting now. It skips scheduling
-              entirely: once the on-call authority authorises it, implementation can begin, and the CAB reviews the
-              record retrospectively.</>
-          )}
-        </Banner>
-
         <Field label="Title" required>
           <Input accent={HUE} value={title} onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Fail over the primary billing database to the Elk Grove replica" />
         </Field>
 
         {type === 'standard' && (
-          <Field label="Approved template" required hint="The procedure that carries the pre-approval.">
+          <Field label="Approved template" required>
             <Select accent={HUE} value={templateId} onChange={(e) => setTemplateId(e.target.value)}
               options={STANDARD_TEMPLATES.map(x => ({ value: x.id, label: `${x.name} · ${x.hours}h` }))} />
           </Field>
@@ -2990,8 +2890,8 @@ function NewChangeModal({ open, onClose, existing }) {
           label="Justification"
           required={type === 'emergency'}
           hint={type === 'emergency'
-            ? 'An emergency change needs its justification at the moment it is raised — that is what the retrospective is read against.'
-            : 'Why this is worth the risk. Can be filled in during assessment.'}
+            ? 'Required when the change is raised.'
+            : 'Can be filled in during assessment.'}
         >
           <Textarea accent={HUE} rows={2} value={justification} onChange={(e) => setJustification(e.target.value)}
             placeholder={type === 'emergency'
@@ -3020,7 +2920,7 @@ function NewChangeModal({ open, onClose, existing }) {
             options={directory.map(p => ({ value: p.id, label: `${p.name} · ${p.title}` }))} />
         </Field>
 
-        <Field label="Affected services" hint="Conflict detection compares this list against every other booked change.">
+        <Field label="Affected services">
           {catalog.items.length ? (
             <div className="flex flex-wrap gap-1.5 max-h-40 overflow-auto">
               {catalog.items.map(p => {
@@ -3034,10 +2934,7 @@ function NewChangeModal({ open, onClose, existing }) {
               })}
             </div>
           ) : (
-            <p className={cx('text-xs', t.textMuted)}>
-              No catalog services are configured yet — the Products &amp; Services module owns that list.
-              Conflict detection will fall back to shared assets only.
-            </p>
+            <p className={cx('text-xs', t.textMuted)}>No catalog services are configured yet.</p>
           )}
         </Field>
 

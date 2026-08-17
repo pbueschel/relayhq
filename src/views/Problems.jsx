@@ -95,10 +95,6 @@ const STAGE_ICONS = {
   resolved: ShieldCheck, closed: Archive,
 };
 
-function stageMeta(key) {
-  return LIFECYCLE.find(s => s.key === key) || LIFECYCLE[0];
-}
-
 function stageIcon(key) {
   return STAGE_ICONS[key] || OctagonAlert;
 }
@@ -437,7 +433,6 @@ export default function Problems({ route }) {
       },
       {
         id: 'workaround', label: 'Has workaround', icon: Lightbulb,
-        footer: 'A known error is defined as a problem with a documented workaround.',
         options: WORKAROUND_BUCKETS.map(b => ({ value: b.value, label: b.label, count: byWorkaround.get(b.value) || 0 })),
       },
     ];
@@ -458,7 +453,7 @@ export default function Problems({ route }) {
         subtitle={subsetLabel(
           shown.length,
           problems.length,
-          `${plural(problems.length, 'problem', 'problems')} · the root cause behind repeated incidents, and the change that removes it`,
+          plural(problems.length, 'problem', 'problems'),
         )}
         /* The lens is centred in row 1, between the module identity and the
          * primary action, so it holds still while either of them changes width. */
@@ -531,16 +526,13 @@ function ProblemList({ shown, total, onOpen, onNew, onClear, violations, missing
     <div className="space-y-3">
       {missingId && (
         <Banner accent="red" icon={TriangleAlert} title="That problem is not in this workspace">
-          Nothing here matches <code className={t.text}>{missingId}</code>. It may have been deleted, or the link
-          predates this demo's data.{' '}
+          Nothing here matches <code className={t.text}>{missingId}</code>.{' '}
           <button className={cx('underline', t.text)} onClick={() => navigate('problems')}>Clear the link</button>.
         </Banner>
       )}
 
       {violations.length > 0 && (
         <Banner accent="red" icon={TriangleAlert} title={`${plural(violations.length, 'known error has', 'known errors have')} no workaround`}>
-          A known error is <em>defined</em> as a problem with a documented workaround. These records promise support
-          agents a way to restore service and do not deliver one:{' '}
           <ChipGroup accent="red" items={violations} max={3} render={(p) => p.key} />
         </Banner>
       )}
@@ -550,9 +542,7 @@ function ProblemList({ shown, total, onOpen, onNew, onClear, violations, missing
           <EmptyState
             icon={OctagonAlert}
             title={total ? 'Nothing matches these filters' : 'No problems recorded'}
-            hint={total
-              ? 'Search composes with the filters above rather than replacing them — widening the lens or clearing a filter may bring results back.'
-              : 'A problem is opened when the same failure produces incident after incident. Group them here, prove the cause once, and let one change close the whole set.'}
+            hint={total ? 'Widen the lens or clear a filter.' : null}
             action={total
               ? <Button variant="outline" onClick={onClear}>Clear filters</Button>
               : <Button variant="grad" module={MODULE} icon={Plus} onClick={onNew}>New problem</Button>}
@@ -685,7 +675,7 @@ function ProblemDetail({ problemId, onClose }) {
       size="modalXl"
       icon={stageIcon(problem.status)}
       title={`${problem.key} · ${problem.title}`}
-      subtitle={owner ? `Owned by ${owner.name}` : 'Unassigned — nobody is investigating this'}
+      subtitle={owner ? `Owned by ${owner.name}` : 'Unassigned'}
       footer={
         <>
           <div className="flex items-center gap-2 min-w-0">
@@ -754,7 +744,7 @@ function ProblemDetail({ problemId, onClose }) {
 
         <PermanentFixSection problem={problem} onLink={() => setPicker('change')} />
 
-        <KnowledgeSection problem={problem} impact={impact} onLink={() => setPicker('knowledge')} />
+        <KnowledgeSection problem={problem} onLink={() => setPicker('knowledge')} />
       </div>
 
       <LinkIncidentModal open={picker === 'incident'} problem={problem} people={people} onClose={() => setPicker(null)} />
@@ -765,7 +755,7 @@ function ProblemDetail({ problemId, onClose }) {
         open={confirming}
         name={problem.title}
         kind="problem"
-        cascadeNote={`${plural(problem.linkedTicketIds.length, 'incident', 'incidents')} lose their root-cause link and the workaround stops appearing on them. The incidents themselves are not deleted.`}
+        cascadeNote={`${plural(problem.linkedTicketIds.length, 'incident', 'incidents')} lose their root-cause link; the incidents themselves are not deleted.`}
         onCancel={() => setConfirming(false)}
         onConfirm={() => { removeFrom('problems', problem.id); setConfirming(false); onClose(); }}
       />
@@ -783,6 +773,11 @@ function StateLadder({ problem, blocked, onAttempt }) {
   const currentIndex = LIFECYCLE_KEYS.indexOf(problem.status);
   const ready = hasWorkaround(problem);
   const violation = isKnownErrorViolation(problem);
+  const unready = problem.status === 'investigating' && !ready;
+  const unfixed = ['known_error', 'resolved'].includes(problem.status) && !problem.resolvedByChangeId;
+  /* The notes strip is a container for warnings only, so it must not render as
+     an empty bordered band on a record that has nothing to warn about. */
+  const notes = blocked || violation || unready || unfixed;
 
   return (
     <Card>
@@ -812,48 +807,39 @@ function StateLadder({ problem, blocked, onAttempt }) {
         })}
       </div>
 
-      <div className={cx('border-t', t.borderLight, DENSITY.sectionPad, 'space-y-2')}>
-        <p className={cx('text-xs leading-relaxed', t.textSecondary)}>
-          <span className={cx('font-medium', t.text)}>{stageMeta(problem.status).label}.</span>{' '}
-          {stageMeta(problem.status).hint}
-        </p>
+      {notes && (
+        <div className={cx('border-t', t.borderLight, DENSITY.sectionPad, 'space-y-2')}>
+          {blocked && (
+            <Banner accent="red" icon={TriangleAlert} title="A known error needs a workaround">
+              Fill in the workaround field below.
+            </Banner>
+          )}
 
-        {blocked && (
-          <Banner accent="red" icon={TriangleAlert} title="A known error needs a workaround">
-            RelayHQ will not promote this problem until the workaround field below is filled in. “Known error” is not a
-            severity — it is a promise that a support agent reading a linked ticket can restore service <em>today</em>,
-            before the permanent fix ships. Without the workaround the label is decoration.
-          </Banner>
-        )}
+          {violation && !blocked && (
+            <Banner accent="red" icon={TriangleAlert} title="This known error has no workaround">
+              Write the workaround, or move the problem back to <strong>Investigating</strong>.
+            </Banner>
+          )}
 
-        {violation && !blocked && (
-          <Banner accent="red" icon={TriangleAlert} title="This known error has no workaround">
-            The record is published as a known error but the workaround is empty. Either write the workaround or move
-            the problem back to <strong>Investigating</strong> so agents are not told a fix exists.
-          </Banner>
-        )}
+          {unready && (
+            <Banner accent="amber" icon={Lightbulb}>
+              Publishing as a <strong>known error</strong> is blocked until a workaround is documented.
+            </Banner>
+          )}
 
-        {problem.status === 'investigating' && !ready && (
-          <Banner accent="amber" icon={Lightbulb}>
-            Publishing this as a <strong>known error</strong> is blocked until a workaround is documented — that is the
-            whole difference between “we are looking into it” and “here is what to do in the meantime”.
-          </Banner>
-        )}
+          {problem.status === 'known_error' && !problem.resolvedByChangeId && (
+            <Banner accent="amber" icon={Wrench}>
+              No permanent fix is linked.
+            </Banner>
+          )}
 
-        {problem.status === 'known_error' && !problem.resolvedByChangeId && (
-          <Banner accent="amber" icon={Wrench}>
-            No permanent fix is linked. Every linked incident stays on the workaround until a change is raised and
-            authorised, and the incident count will keep climbing.
-          </Banner>
-        )}
-
-        {problem.status === 'resolved' && !problem.resolvedByChangeId && (
-          <Banner accent="amber" icon={TriangleAlert}>
-            Marked resolved with no change linked. If the fix shipped as part of a change, link it — the audit trail
-            from incident to root cause to release is the reason this module exists.
-          </Banner>
-        )}
-      </div>
+          {problem.status === 'resolved' && !problem.resolvedByChangeId && (
+            <Banner accent="amber" icon={TriangleAlert}>
+              Marked resolved with no change linked.
+            </Banner>
+          )}
+        </div>
+      )}
     </Card>
   );
 }
@@ -925,8 +911,7 @@ function ImpactSummary({ problem, impact }) {
 
         {!impact.tickets.length && (
           <Banner accent="blue" icon={Inbox}>
-            No incidents are linked yet, so this problem has no measured impact. Link the tickets it explains and the
-            counts above become the case for prioritising the permanent fix.
+            No incidents are linked yet.
           </Banner>
         )}
       </div>
@@ -949,9 +934,6 @@ function RcaSection({ problem, blocked, onPatch, onWorkaroundChange }) {
         <IconTile icon={Microscope} accent={HUE} size="sm" />
         <div className="min-w-0">
           <p className={cx('text-sm font-medium', t.text)}>Root cause analysis</p>
-          <p className={cx('text-xs', t.textMuted)}>
-            What people see, why it happens, and what support does about it until the fix lands
-          </p>
         </div>
       </div>
 
@@ -960,7 +942,7 @@ function RcaSection({ problem, blocked, onPatch, onWorkaroundChange }) {
           icon={Stethoscope}
           accent="rose"
           label="Symptom"
-          hint="What the customer or employee actually reports. Write it in their words — this is what a triaging agent matches against."
+          hint="What the customer or employee reports, in their words."
           value={problem.symptom}
           placeholder="e.g. Checkout fails with “payment provider unavailable” on the third attempt, only for stores using saved cards."
           onChange={(v) => onPatch({ symptom: v })}
@@ -970,7 +952,7 @@ function RcaSection({ problem, blocked, onPatch, onWorkaroundChange }) {
           icon={Microscope}
           accent={HUE}
           label="Root cause"
-          hint="The proven mechanism, not the hypothesis. If it is still a guess, say so — an unproven cause dressed as fact ends investigation early."
+          hint="The proven mechanism, not the hypothesis."
           value={problem.rootCause}
           placeholder="e.g. The payment gateway connection pool is sized for 40 concurrent calls; saved-card checkouts open two."
           onChange={(v) => onPatch({ rootCause: v })}
@@ -983,7 +965,7 @@ function RcaSection({ problem, blocked, onPatch, onWorkaroundChange }) {
             label="Workaround"
             required
             error={needsWorkaround ? 'Required before this problem can be a known error.' : null}
-            hint="The steps that restore service now. This is the field that turns a problem into a known error, and the one an agent reads mid-conversation."
+            hint="The steps that restore service now."
             value={problem.workaround}
             placeholder="e.g. Ask the customer to complete the purchase with card entry rather than a saved card; the retry succeeds on the second attempt."
             onChange={onWorkaroundChange}
@@ -1005,12 +987,6 @@ function RcaSection({ problem, blocked, onPatch, onWorkaroundChange }) {
             <ChipGroup accent={HUE} icon={Server} max={4} items={problem.affectedServices} />
           </div>
         )}
-
-        <Banner accent={hasWorkaround(problem) ? 'emerald' : 'blue'} icon={hasWorkaround(problem) ? Check : Lightbulb}>
-          {hasWorkaround(problem)
-            ? 'A workaround is documented, so this problem can be published as a known error. Attach it to a knowledge atom below and every agent working a linked incident sees it in context.'
-            : 'Known error is the state that says “we understand this and here is what to do about it”. It stays out of reach until the workaround is written.'}
-        </Banner>
       </div>
     </Card>
   );
@@ -1103,7 +1079,7 @@ function IncidentsSection({ problem, impact, people, onLink }) {
       accent={TICKET_HUE}
       title={`${plural(impact.tickets.length, 'incident', 'incidents')} linked`}
       subtitle={impact.open
-        ? `${plural(impact.open, 'is', 'are')} still open — the workaround is what they run on`
+        ? `${plural(impact.open, 'is', 'are')} still open`
         : 'Every linked incident is closed'}
       action={<Button variant="soft" accent={TICKET_HUE} size="sm" icon={Link2} onClick={onLink}>Link incident</Button>}
     >
@@ -1125,8 +1101,7 @@ function IncidentsSection({ problem, impact, people, onLink }) {
 
         {!impact.tickets.length && !impact.dangling.length && (
           <div className={cx(DENSITY.sectionPad, 'text-xs', t.textMuted)}>
-            Nothing linked yet. Linking an incident does not close it — it records that this cause explains it, so the
-            workaround shows up for the agent and the incident count becomes evidence for the fix.
+            Nothing linked yet.
           </div>
         )}
       </div>
@@ -1184,7 +1159,6 @@ function PermanentFixSection({ problem, onLink }) {
       icon={GitBranch}
       accent={CHANGE_HUE}
       title="Permanent fix"
-      subtitle="The change that removes the cause, so the workaround can be retired"
       action={change
         ? <Button variant="ghost" accent="red" size="sm" icon={Unlink} onClick={unlink}>Unlink</Button>
         : <Button variant="soft" accent={CHANGE_HUE} size="sm" icon={Link2} onClick={onLink}>Link a change</Button>}
@@ -1207,22 +1181,19 @@ function PermanentFixSection({ problem, onLink }) {
 
         {missing && (
           <Banner accent="red" icon={TriangleAlert} title="Linked change not found">
-            This problem points at <code className={t.text}>{problem.resolvedByChangeId}</code>, which is not in this
-            workspace. Relink it so the chain from incident to fix stays intact.
+            <code className={t.text}>{problem.resolvedByChangeId}</code> is not in this workspace.
           </Banner>
         )}
 
         {!change && !missing && (
           <Banner accent="blue" icon={GitBranch}>
-            Nothing scheduled. A problem is only truly closed by a change — until one is linked and implemented, every
-            new incident with this cause lands back on the workaround.
+            No change linked.
           </Banner>
         )}
 
         {change && ['closed', 'completed'].includes(change.status) && problem.status !== 'resolved' && (
           <Banner accent="emerald" icon={Check}>
-            The change is finished but the problem is still <strong>{statusMeta(problem.status).label}</strong>. If the
-            fix held, move the problem to Resolved so the workaround stops being offered.
+            The change is finished but the problem is still <strong>{statusMeta(problem.status).label}</strong>.
           </Banner>
         )}
       </div>
@@ -1241,7 +1212,7 @@ function AtomGlyph({ atom }) {
   return <Icon size={ICON.base} className={cx('flex-shrink-0', atom ? a(atomHue(atom)).fg : t.textMuted)} />;
 }
 
-function KnowledgeSection({ problem, impact, onLink }) {
+function KnowledgeSection({ problem, onLink }) {
   const { t } = useTheme();
   const knowledge = useStore(s => s.knowledge || []);
   const atoms = (problem.knowledgeIds || []).map(id => ({ id, atom: knowledge.find(k => k.id === id) || null }));
@@ -1260,7 +1231,6 @@ function KnowledgeSection({ problem, impact, onLink }) {
       icon={BookOpen}
       accent={KB_HUE}
       title="Workaround in the agent's hands"
-      subtitle="Knowledge atoms attached here surface on every linked incident — and in the portal, and as a lesson"
       action={<Button variant="soft" accent={KB_HUE} size="sm" icon={Link2} onClick={onLink}>Attach atom</Button>}
     >
       <div className={cx('divide-y', t.borderLight)}>
@@ -1286,22 +1256,12 @@ function KnowledgeSection({ problem, impact, onLink }) {
 
         <div className={cx(DENSITY.sectionPad)}>
           {hasWorkaround(problem) && !atoms.length ? (
-            <Banner accent="amber" icon={TriangleAlert} title="The workaround is trapped in this record">
-              Agents work in the ticket, not in the problem list. Until a knowledge atom carries this workaround, the
-              only people who know about it are the ones who thought to open <strong>{problem.key}</strong>.
-            </Banner>
+            <Banner accent="amber" icon={TriangleAlert} title="No knowledge atom carries this workaround" />
           ) : !atoms.length ? (
-            <p className={cx('text-xs', t.textMuted)}>
-              Nothing attached. One authored atom serves three surfaces here: deflection in the portal, enablement on
-              the linked incidents, and a lesson inside the support-agent course.
-            </p>
+            <p className={cx('text-xs', t.textMuted)}>Nothing attached.</p>
           ) : (
             <Banner accent="emerald" icon={Check}>
-              {plural(atoms.length, 'atom is', 'atoms are')} attached. The workaround now reaches agents on{' '}
-              {impact.tickets.length
-                ? `all ${plural(impact.tickets.length, 'linked incident', 'linked incidents')}`
-                : 'every incident linked from here'}{' '}
-              without anyone retyping it — and the same atom serves the portal and the support-agent course.
+              {plural(atoms.length, 'atom is', 'atoms are')} attached.
             </Banner>
           )}
         </div>
@@ -1354,11 +1314,6 @@ function LinkIncidentModal({ open, problem, people, onClose }) {
       </>}
     >
       <div className="space-y-3">
-        <Banner accent="blue" icon={Inbox}>
-          Linking does not change the ticket's state or its SLA. It records the cause, pulls the ticket into this
-          problem's impact count, and puts the workaround in front of whoever picks it up next.
-        </Banner>
-
         <SearchInput value={q} onChange={setQ} accent={TICKET_HUE} placeholder="Search incidents…" />
 
         <div className={DENSITY.rowGap}>
@@ -1383,7 +1338,7 @@ function LinkIncidentModal({ open, problem, people, onClose }) {
               title={tickets.length ? 'No matching incidents' : 'No incidents in this workspace'}
               hint={tickets.length
                 ? 'Every other ticket is already linked, or the search is too narrow.'
-                : 'Tickets are authored by the service desk. Once they exist they can be attributed to this cause.'}
+                : null}
             />
           )}
         </div>
@@ -1419,18 +1374,13 @@ function LinkChangeModal({ open, problem, onClose }) {
       z={LAYOUT.zNestedModal}
       icon={GitBranch}
       title="Link the permanent fix"
-      subtitle={`The change that removes the cause behind ${problem.key}`}
+      subtitle={`For ${problem.key}`}
       footer={<>
         <span className={cx('text-xs', t.textMuted)}>{plural(candidates.length, 'change', 'changes')} available</span>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
       </>}
     >
       <div className="space-y-3">
-        <Banner accent="amber" icon={Wrench}>
-          One change per problem. If the fix needs several changes, the honest model is several problems or one change
-          with several tasks — a problem with two “permanent” fixes is a problem nobody can tell is finished.
-        </Banner>
-
         <SearchInput value={q} onChange={setQ} accent={CHANGE_HUE} placeholder="Search changes…" />
 
         <div className={DENSITY.rowGap}>
@@ -1451,8 +1401,8 @@ function LinkChangeModal({ open, problem, onClose }) {
               icon={GitBranch}
               title={changes.length ? 'No matching changes' : 'No changes in this workspace'}
               hint={changes.length
-                ? 'Try a different phrase, or raise the change in Change Management first.'
-                : 'Raise the change in Change Management, then come back and link it here.'}
+                ? 'Try a different phrase.'
+                : 'Raise the change in Change Management first.'}
               action={<Button variant="soft" accent={CHANGE_HUE} icon={ExternalLink}
                 onClick={() => navigate('changes', 'list')}>Open Change Management</Button>}
             />
@@ -1493,18 +1443,12 @@ function LinkKnowledgeModal({ open, problem, onClose }) {
       z={LAYOUT.zNestedModal}
       icon={BookOpen}
       title="Attach a knowledge atom"
-      subtitle="The same atom deflects in the portal, enables the agent, and teaches in a course"
       footer={<>
         <span className={cx('text-xs', t.textMuted)}>{plural(candidates.length, 'atom', 'atoms')} available</span>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
       </>}
     >
       <div className="space-y-3">
-        <Banner accent="blue" icon={BookOpen}>
-          Atoms are not copied into this problem. The article stays owned by Knowledge, and attaching it here simply
-          adds one more surface where it appears — which is why editing it once fixes it everywhere.
-        </Banner>
-
         <SearchInput value={q} onChange={setQ} accent={KB_HUE} placeholder="Search knowledge…" />
 
         <div className={DENSITY.rowGap}>
@@ -1633,23 +1577,23 @@ function NewProblemModal({ open, onClose, problems }) {
       {/* @container, not a viewport breakpoint: the modal is its own pane, so
           the two-column row must size off the modal's width. */}
       <div className="space-y-4 @container">
-        <Field label="Title" required error={touched && !title.trim() ? 'A problem needs a title before it can be tracked.' : null}>
+        <Field label="Title" required error={touched && !title.trim() ? 'A title is required.' : null}>
           <Input accent={HUE} value={title} onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Saved-card checkouts fail under load on the storefront" />
         </Field>
 
-        <Field label="Symptom" hint="What the reporters describe. Fill this now and the triage team can match new tickets against it immediately.">
+        <Field label="Symptom" hint="What the reporters describe.">
           <Textarea accent={HUE} rows={2} value={symptom} onChange={(e) => setSymptom(e.target.value)}
             placeholder="e.g. Intermittent “payment provider unavailable” at checkout, worst between 11:00 and 14:00." />
         </Field>
 
-        <Field label="Notes" hint="Context, timeline, who noticed. The root cause and workaround are filled in as the investigation proceeds.">
+        <Field label="Notes" hint="Context, timeline, who noticed.">
           <Textarea accent={HUE} rows={2} value={description} onChange={(e) => setDescription(e.target.value)}
             placeholder="e.g. Three enterprise customers reported this within a week; support has been advising a retry." />
         </Field>
 
         <div className="grid @md:grid-cols-2 gap-3">
-          <Field label="Priority" hint="Driven by how many customers the cause is hurting, not by how loud the last ticket was.">
+          <Field label="Priority">
             <TileGroup value={priority} onChange={setPriority} options={PRIORITY_TILES} columns={4} accent={HUE} />
           </Field>
           <Field label="Owner" hint="Whoever owns the diagnosis.">
@@ -1661,8 +1605,7 @@ function NewProblemModal({ open, onClose, problems }) {
 
         {!assigneeId && (
           <Banner accent="amber" icon={Users}>
-            With no owner this problem stays in <strong>New</strong>. Nothing routes it automatically — problems are
-            claimed by people, not by queues, and an unowned problem is where recurring incidents go to be ignored.
+            With no owner this problem stays in <strong>New</strong>.
           </Banner>
         )}
 
@@ -1693,7 +1636,7 @@ function NewProblemModal({ open, onClose, problems }) {
                 <p className={cx(DENSITY.sectionPad, 'text-xs', t.textMuted)}>
                   {tickets.length
                     ? 'Every remaining incident is already attributed to another problem.'
-                    : 'No incidents in this workspace yet. You can link them later from the problem record.'}
+                    : 'No incidents in this workspace yet.'}
                 </p>
               )}
             </div>

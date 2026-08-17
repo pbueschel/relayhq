@@ -109,6 +109,19 @@ whole thing is live on GitHub Pages with verification gates in CI.
 - [x] W10.8 — `test/width-check.js` added and wired into CI; `engines.js` added to the documented gate list —
   **AC:** the header-shape gate fails (exit 1) when the old wrapping header is reinstated
 
+### E11 — Copy and portal home, from Phil's review of the live site (2026-08-17)  ✅
+- [x] W11.1 — Resolve prompt moved onto the card footer bar — **AC:** "Did this resolve your issue?" shares
+  the bar with Back; `ResolvePrompt` and the demo `cardNote` are deleted
+- [x] W11.2 — Card header stops repeating itself — **AC:** the breadcrumb stops one short of the current
+  level, and only the door screen carries a subtitle
+- [x] W11.3 — Portal home shows the requester's own work in place of the browse grid — **AC:** every
+  approval, open request and closed request, uncapped; `BrowseGrid` and `OpenWork` removed; both doors
+  reach the same drill inside the card
+- [x] W11.4 — Explainer copy removed site-wide — **AC:** 629 removals across 14 views; on-screen copy either
+  reports a real current state or names the next action. `DesignSystem.jsx` and `Landing.jsx` excluded
+- [x] W11.5 — Portal argument panel (`WhyPanel` / `computeFacts`) removed as the largest instance of the
+  category — **AC:** W5.13's argument panel is gone; recorded in `docs/decisions.md`, revertable
+
 ### E9 — Discovered, not yet built
 
 **Investigated 2026-08-17, not started.** The findings below are measured, not estimated — see
@@ -142,6 +155,9 @@ whole thing is live on GitHub Pages with verification gates in CI.
   reviewed it and asked for changes, but has not given go. Do not send the link onward without his
   explicit word. (The app itself was authorised for Pages on 2026-08-16; it is the *pitch* that is
   held, and it sits at the same URL.)
+- **Two open questions for Phil, not blockers:** whether the portal's argument panel should come back
+  (one revert away), and whether the Service Catalog door should regain a view of the requester's work —
+  its hero panel was removed for symmetry with Get Help, so that tab now shows none.
 - **The landing page's hand-drawn screenshots are now out of date** (`Landing.jsx`, the three `<Shot>`
   mockups at ~363 / ~423 / ~538). They are static markup, not real components, so the E10 header rework
   could not move them — and nothing compares them to the app. They now depict a header and a list

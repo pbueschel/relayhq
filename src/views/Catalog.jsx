@@ -497,7 +497,7 @@ export default function Catalog({ route }) {
         subtitle={subsetLabel(
           shownItems,
           allItems.length,
-          `${(catalog || []).length} products · ${allItems.length} items · one catalog serving employees and customers`,
+          `${(catalog || []).length} products · ${allItems.length} items`,
         )}
         primary={<Button variant="grad" module="catalog" icon={Plus} onClick={addProduct}>New product</Button>}
         filterBar={
@@ -566,7 +566,6 @@ export default function Catalog({ route }) {
             <EmptyState
               icon={Package}
               title="The catalog is empty"
-              hint="A product is the top level of the tree — Accounts & Access, Devices, or the product your customers actually buy."
               action={<Button variant="grad" module="catalog" icon={Plus} onClick={addProduct}>New product</Button>}
             />
           )}
@@ -620,14 +619,11 @@ export default function Catalog({ route }) {
 
 function cascadeNote(node) {
   const { subcategories, items } = countTree(node);
-  if (node.type === 'item') {
-    return 'The knowledge atoms and request forms attached to this item are shared and stay where they are — only the link is removed.';
-  }
+  if (node.type === 'item') return '';
   const parts = [];
   if (subcategories) parts.push(`${subcategories} subcategor${subcategories === 1 ? 'y' : 'ies'}`);
   if (items) parts.push(`${items} item${items === 1 ? '' : 's'}`);
-  const cascade = parts.length ? `This also deletes ${parts.join(' and ')} beneath it. ` : '';
-  return `${cascade}Knowledge atoms and request forms are shared across the catalog and are NOT deleted.`;
+  return parts.length ? `This also deletes ${parts.join(' and ')} beneath it.` : '';
 }
 
 /* ==================================================================== *
@@ -643,12 +639,6 @@ function TreePane({
     <aside className={cx('w-80 flex-shrink-0 flex flex-col overflow-hidden border-r', t.border, t.bgSidebar)}>
       {/* No second search box here: the header's scoped field is the one that
           filters this tree, so there is only ever one place to type. */}
-      <div className={cx('p-3 border-b flex-shrink-0', t.border)}>
-        <p className={cx('text-[11px]', t.textMuted)}>
-          Product › Subcategory › Item. Items are leaves and hold the content.
-        </p>
-      </div>
-
       <div className="flex-1 overflow-auto p-2">
         {nodes.length === 0 ? (
           <EmptyState icon={Search} title="Nothing matches" hint="Clear the search, or a filter in the header." className="py-8" />
@@ -932,7 +922,7 @@ function BranchDetail({
           subtitle={
             childType === 'subcategory'
               ? `${(node.children || []).length} under this product`
-              : `${(node.children || []).length} leaves — the only nodes that carry content`
+              : `${(node.children || []).length} under this subcategory`
           }
           action={<Button variant="soft" accent={childType === 'subcategory' ? 'purple' : 'emerald'} size="sm" icon={Plus} onClick={() => onAddChild(node)}>
             Add {childType}
@@ -942,9 +932,6 @@ function BranchDetail({
             <EmptyState
               icon={childType === 'subcategory' ? Layers : Circle}
               title={`No ${childType === 'subcategory' ? 'subcategories' : 'items'} yet`}
-              hint={childType === 'item'
-                ? 'Items are what a person actually requests. Add one, then attach the knowledge and request forms it needs.'
-                : 'Subcategories group items so a product tree stays readable at ten items and at a hundred.'}
               className="py-8"
             />
           ) : (
@@ -962,16 +949,7 @@ function BranchDetail({
           title="Import from elsewhere in the catalog"
           subtitle={`Copy an existing ${childType} into ${node.name}`}
           action={<Button variant="soft" accent="amber" size="sm" icon={Copy} onClick={() => onImportInto(node)}>Import</Button>}
-        >
-          <div className={cx(DENSITY.cardPad)}>
-            <Banner accent="blue" icon={AlertCircle} title="A copy references, it does not duplicate">
-              Real catalogs repeat themselves — “Password reset” belongs under Accounts <em>and</em> under the
-              Storefront. Importing gives the copy fresh ids and a “(Copy)” suffix, but its knowledge atoms and
-              request forms stay the <strong className={t.text}>same records</strong>. Fix a typo in the article once
-              and every copy is fixed.
-            </Banner>
-          </div>
-        </Panel>
+        />
       </div>
     </>
   );
@@ -1078,14 +1056,13 @@ function ItemDetail({
           icon={BookOpen}
           accent="blue"
           title="Knowledge"
-          subtitle={`${atoms.length} atom${atoms.length === 1 ? '' : 's'} attached — referenced, not owned`}
+          subtitle={`${atoms.length} atom${atoms.length === 1 ? '' : 's'} attached`}
           action={<ContentActions kind="knowledge" itemId={node.id} onCreate={onCreate} onAttach={onAttach} />}
         >
           {atoms.length === 0 ? (
             <EmptyState
               icon={BookOpen}
               title="No knowledge attached"
-              hint="Without an article or guide here, every request on this item becomes a ticket. Attach an atom that already exists, or write the missing one now — it is created as a draft and linked here immediately."
               action={<ContentActions kind="knowledge" itemId={node.id} onCreate={onCreate} onAttach={onAttach} />}
               className="py-8"
             />
@@ -1103,17 +1080,18 @@ function ItemDetail({
           icon={FileQuestion}
           accent="purple"
           title="Request forms"
-          subtitle={`${forms.length} intake${forms.length === 1 ? '' : 's'} — “report a problem” and “request access” are different forms on one item`}
+          subtitle={`${forms.length} intake${forms.length === 1 ? '' : 's'} attached`}
           action={<ContentActions kind="subform" itemId={node.id} onCreate={onCreate} onAttach={onAttach} />}
         >
           <div className="space-y-0">
             {unrouted.length > 0 && (
               <div className={cx(DENSITY.cardPad, 'pb-0')}>
-                <Banner accent="amber" icon={AlertCircle} title="Unrouted forms fall to the General queue">
-                  {unrouted.length === 1 ? 'One form on this item has' : `${unrouted.length} forms on this item have`} no
-                  routing rule. Tickets they create land in{' '}
-                  <strong className={t.text}>{labelOf(generalQueue, 'General')}</strong> — nothing is dropped, but nobody
-                  is specifically watching for it either.
+                <Banner
+                  accent="amber"
+                  icon={AlertCircle}
+                  title={unrouted.length === 1 ? 'One form has no routing rule' : `${unrouted.length} forms have no routing rule`}
+                >
+                  Tickets land in <strong className={t.text}>{labelOf(generalQueue, 'General')}</strong>.
                 </Banner>
               </div>
             )}
@@ -1121,7 +1099,6 @@ function ItemDetail({
               <EmptyState
                 icon={FileQuestion}
                 title="No request form on this item"
-                hint="People can read the knowledge here but cannot raise anything. Attach an intake that already exists, or create one here and route it in the builder."
                 action={<ContentActions kind="subform" itemId={node.id} onCreate={onCreate} onAttach={onAttach} />}
                 className="py-8"
               />
@@ -1145,8 +1122,7 @@ function ItemDetail({
           {linkedAssets.length === 0 ? (
             <div className={DENSITY.cardPad}>
               <p className={cx('text-xs', t.textMuted)}>
-                Assets link themselves to catalog items — the link is edited on the asset record, in the Assets module.
-                A laptop model pointing here is what lets “New laptop” pre-fill the model list.
+                Links are edited on the asset record, in the Assets module.
               </p>
             </div>
           ) : (
@@ -1270,29 +1246,21 @@ function AssetRow({ asset }) {
  * ------------------------------------------------------------------ */
 
 function AudiencePanel({ node, onPatch }) {
-  const { t } = useTheme();
   const aud = audienceMeta(node.audience);
   return (
     <Panel
       icon={aud.icon}
       accent={aud.hue}
       title="Audience"
-      subtitle="Who sees this node — the same catalog serves employees and customers"
+      subtitle="Who sees this node"
     >
-      <div className={cx(DENSITY.cardPad, 'space-y-3')}>
+      <div className={DENSITY.cardPad}>
         <TileGroup
           value={node.audience || 'internal'}
           onChange={(value) => onPatch(node.id, { audience: value })}
           options={AUDIENCE_TILES}
           columns={3}
         />
-        <p className={cx('text-xs', t.textMuted)}>
-          {node.audience === 'external'
-            ? 'Customer-facing. This branch appears in the help centre and the customer portal, never in the employee catalog.'
-            : node.audience === 'both'
-              ? 'Shared. Employees and customers both see it — the atom underneath is authored once for both.'
-              : 'Employees only. Nothing here is published to the customer portal.'}
-        </p>
       </div>
     </Panel>
   );
@@ -1352,14 +1320,7 @@ function ImportModal({ catalog, initial, onClose, onConfirm }) {
       }
     >
       <div className="space-y-4">
-        <Banner accent="blue" icon={AlertCircle} title="The copy references the same atoms">
-          Fresh ids, a “(Copy)” suffix and an independent place in the tree — but the knowledge articles and
-          request forms underneath are <strong className={t.text}>the same records</strong>, not duplicates. Edit the
-          article once and every catalog item showing it updates. This exists because re-authoring the same
-          “Password reset” under four products was the most tedious part of setting v1 up.
-        </Banner>
-
-        <Field label="Copy this" required hint="Products cannot be copied — a product is the root of a branch.">
+        <Field label="Copy this" required hint="Products cannot be copied.">
           <Select
             accent="amber"
             value={sourceId}
@@ -1374,7 +1335,7 @@ function ImportModal({ catalog, initial, onClose, onConfirm }) {
           required
           hint={source
             ? (source.type === 'item' ? 'Items live under subcategories.' : 'Subcategories live under products.')
-            : 'The list narrows once you pick a source.'}
+            : 'Pick a source first.'}
         >
           <Select
             accent="amber"
@@ -1440,13 +1401,13 @@ function CreateModal({ kind, item, onClose, onCreate, onSwitchToAttach }) {
       icon={isKnowledge ? meta.icon : FileQuestion}
       size="modalMd"
       title={isKnowledge ? 'Create knowledge here' : 'Create a request form here'}
-      subtitle={`New record, linked to ${item.name} the moment it exists`}
+      subtitle={`Linked to ${item.name}`}
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>
             {isKnowledge
-              ? 'Created as a draft, attached to this item, then opened in the knowledge editor.'
-              : 'Created unrouted, attached to this item, then opened in the form builder.'}
+              ? 'Created as a draft, then opened in the knowledge editor.'
+              : 'Created unrouted, then opened in the form builder.'}
           </span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -1458,32 +1419,13 @@ function CreateModal({ kind, item, onClose, onCreate, onSwitchToAttach }) {
       }
     >
       <div className="space-y-4">
-        {isKnowledge ? (
-          <Banner accent="amber" icon={AlertCircle} title="New knowledge starts as a draft">
-            A draft is served to nobody — not the help centre, not the agent panel, and any course including it
-            skips past it silently. It shows on this item as a draft so the gap stays visible until someone
-            publishes it.
-          </Banner>
-        ) : (
-          <Banner accent="amber" icon={AlertCircle} title="A new form starts unrouted">
-            Until you give it a queue in the builder, tickets it creates fall to the General queue. Nothing is
-            dropped, but nobody is specifically watching for it either.
-          </Banner>
-        )}
-
         {isKnowledge && (
-          <Field label="Format" hint="Guides are the Stories format — a tap-through sequence of screens.">
+          <Field label="Format">
             <TileGroup value={format} onChange={setFormat} options={FORMAT_TILES} columns={2} />
           </Field>
         )}
 
-        <Field
-          label={isKnowledge ? 'Title' : 'Form name'}
-          required
-          hint={isKnowledge
-            ? 'The heading a reader sees in the help centre and a learner sees as a lesson.'
-            : 'What the requester is doing — “Report a sign-in problem”, “Request access”.'}
-        >
+        <Field label={isKnowledge ? 'Title' : 'Form name'} required>
           <Input
             autoFocus
             accent={hue}
@@ -1497,10 +1439,6 @@ function CreateModal({ kind, item, onClose, onCreate, onSwitchToAttach }) {
         <Card className={cx(DENSITY.cardPad, 'flex items-center gap-3 flex-wrap')}>
           <div className="flex-1 min-w-0">
             <GroupLabel>Already written somewhere?</GroupLabel>
-            <p className={cx('text-xs mt-1', t.textSecondary)}>
-              Attach it instead. One record can sit under four catalog items at once — that reuse is why the
-              catalog references content rather than owning it.
-            </p>
           </div>
           <Button
             variant="soft"
@@ -1557,7 +1495,7 @@ function AttachModal({ kind, item, knowledge, subforms, queues, courses, onClose
       footer={
         <>
           <span className={cx('text-xs', t.textMuted)}>
-            Attaching creates a reference. Nothing is copied and nothing is removed from anywhere else.
+            Attaching creates a reference. Nothing is copied.
           </span>
           <div className="flex gap-2">
             <Button variant="soft" accent={isKnowledge ? 'blue' : 'purple'} icon={Plus}
@@ -1570,12 +1508,6 @@ function AttachModal({ kind, item, knowledge, subforms, queues, courses, onClose
       }
     >
       <div className="space-y-3">
-        <Banner accent={isKnowledge ? 'blue' : 'purple'} icon={AlertCircle}>
-          {isKnowledge
-            ? 'Knowledge atoms are top-level records. The same article can deflect on three catalog items, brief an agent inside a ticket, and be a lesson in a course — all at once.'
-            : 'Request forms are top-level records too. One “Report a problem” intake can hang off every item that needs it, and its routing is configured once.'}
-        </Banner>
-
         <SearchInput
           value={query}
           onChange={setQuery}
@@ -1587,9 +1519,7 @@ function AttachModal({ kind, item, knowledge, subforms, queues, courses, onClose
           <EmptyState
             icon={isKnowledge ? BookOpen : FileQuestion}
             title={pool.length ? 'Nothing matches' : `No ${isKnowledge ? 'knowledge atoms' : 'request forms'} exist yet`}
-            hint={pool.length
-              ? 'Try a shorter search, or write the missing one now.'
-              : `Nothing to reference yet — write the first one here and it lands attached to ${item.name}.`}
+            hint={pool.length ? 'Try a shorter search.' : undefined}
             action={
               <Button variant="solid" accent={isKnowledge ? 'blue' : 'purple'} size="sm" icon={Plus}
                 onClick={() => onSwitchToCreate(kind, item.id)}>

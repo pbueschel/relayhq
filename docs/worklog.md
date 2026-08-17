@@ -289,3 +289,72 @@ W9.2 are both moot until that lands — the icon cannot render on a product that
 - **New:** the landing page's three hand-drawn `<Shot>` mockups now depict a header and list alignment
   the product no longer has. Redrawing them is a change to a held outward-facing deliverable — build,
   then stop and show Phil.
+
+---
+
+## 2026-08-17 (third session) — The explainer copy came out, and the portal home became the requester's own
+
+Phil, looking at the live portal: the resolve prompt should ride the footer bar, the card header repeats
+itself, the browse grid should be his own work instead — and, the instruction that governed the rest,
+"remove the explainer fluff from the entire site. it's causing us to not accurately display our boxes at
+their chosen sizes."
+
+### Changed
+
+**The portal card, three fixes** (`src/views/Portal.jsx`).
+- "Did this resolve your issue?" now rides the footer bar beside Back. `ResolvePrompt` deleted, and with
+  it the `cardNote` line ("Nothing here submits until you choose a form.") which was pure demo narration.
+- The card header printed the same two facts three times — eyebrow, title, subtitle, then a trail whose
+  last crumb WAS the title and whose second-to-last WAS the subtitle. The trail now stops one short of
+  where you are, and only the door screen keeps a subtitle, because its question appears nowhere else.
+- The browse grid under the hero is gone, replaced by `MyWork`: every approval waiting on the requester,
+  every open request, every closed one. `myApprovals` lost its `.slice(0, 3)` and `openTickets` its
+  `.slice(0, 4)` — a teaser above a full list is the same rows twice, so the hero's `OpenWork` panel came
+  out of BOTH doors and `BrowseGrid` went with it. Discovery is unharmed: both front doors already open
+  the same product drill inside the card, so the grid was a third route to a two-route place.
+
+**629 pieces of on-screen copy removed across 14 views** — 1,958 lines deleted against 658 added, by one
+subagent per file working to a fixed keep/remove test: copy that reports a real current state or tells you
+what to do next stays and gets trimmed to the fact; copy that teaches the model, justifies a design
+decision or references the demo goes. Biggest cuts: Changes 75, Portal 72, BusinessRules 59, Assets 51.
+
+**The portal's argument panel is gone** — `WhyPanel` and `computeFacts`, roughly 900 lines. It was a panel
+whose whole job was to argue for the category→subcategory→item model, which is the definition of the thing
+being removed. It is a named deliverable (W5.13), so it is called out here rather than left to be noticed.
+
+### Deliberately kept
+
+The living styleguide (`DesignSystem.jsx`) and the landing page (`Landing.jsx`) were excluded from the
+sweep. The styleguide's explanatory text IS its content, and the landing page's prose is the pitch, not
+fluff — and it is HELD.
+
+### Bugs found and fixed
+
+- **Self-inflicted, worth recording.** The script that removed `OpenWork` and `BrowseGrid` matched the
+  first `{` after the function name — which is the opening brace of the DESTRUCTURED PARAMETER LIST, not
+  the body. It cut both signatures and orphaned both bodies, producing `Unexpected )`. Caught by a
+  Bun.Transpiler parse sweep over every view, repaired, and `PortalHero`'s doc comment (taken by the
+  repair) rewritten. Brace-match a function body from the brace AFTER the parameter list closes.
+- `RequestRow` was being handed a `blocked` prop it did not accept, silently losing the "waiting on an
+  approval" signal that `OpenWork` used to show. Wired through.
+
+### Verification
+
+smoke **503 passed** · engines **99 passed** · `bun run build` clean · `bun test/render-check.js`
+**15/15 routes** · `bun test/width-check.js` **4 routes at 97px / 2 control rows across 1024–1728px**.
+Portal bundle 108.7 kB → 84.4 kB.
+
+### Next
+
+Two judgement calls are waiting on Phil rather than on code:
+1. Whether the portal's **argument panel** should come back. It is one `git revert` of this commit's
+   Portal hunk away; nothing else depends on it.
+2. Whether the **Service Catalog** door should regain a view of the requester's work. Its hero panel was
+   removed for symmetry with Get Help, so that tab now shows none — My requests is one click away.
+
+Then E9, starting at **W9.0** (wire `cat-p-applications` to a form), not W9.1.
+
+### Held/blocked
+
+- The landing page is still HELD for sharing, and its three hand-drawn `<Shot>` mockups are now further
+  out of date: they depict the old header, the old alignment AND the old portal home.
