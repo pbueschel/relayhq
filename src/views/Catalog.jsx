@@ -5,14 +5,14 @@ import {
   GraduationCap, Building2, Globe, Users, Check, X, Star, Clock, Search,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, ENTITIES, entityHue,
+  useTheme, cx, ICON, DENSITY, ENTITIES, entityHue, tint,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag, Avatar,
   EmptyState, Card, Panel, GroupLabel, Stat, Banner, Divider,
   Field, Input, Select, SearchInput, TileGroup,
   Modal, ConfirmDelete,
   SubTabs, PageHeader, Toolbar, PageBody, Breadcrumbs,
 } from '@/ds';
-import { useStore, setCollection, uid } from '@/store/store.js';
+import { useStore, setCollection, addTo, uid, nowISO } from '@/store/store.js';
 import { useRoute, navigate } from '@/lib/router.js';
 import { Q } from '@/store/seed/ids.js';
 
@@ -29,6 +29,14 @@ import { Q } from '@/store/seed/ids.js';
  * Two rename states, deliberately: `editingNode` (tree row) and
  * `editingNodeInPane` (detail header). v1 shared one and the two inputs fought
  * over the value whenever both were mounted.
+ *
+ * CREATE BESIDE ATTACH (restored from v1). An admin building the catalog finds
+ * content gaps while building it, so both verbs live on the item's Knowledge and
+ * Request forms panels, side by side and equally visible:
+ *   CREATE  authors a NEW record (a draft), links it to this item, and opens it
+ *           in its own editor — no round trip through another module.
+ *   ATTACH  references a record that already exists. This is the verb that makes
+ *           the catalog reusable, so it is never demoted to a branch of Create.
  */
 
 /* ==================================================================== *
@@ -57,6 +65,21 @@ const AUDIENCE_FILTERS = [
 
 function audienceMeta(value) {
   return AUDIENCE[value] || AUDIENCE.internal;
+}
+
+/* The two knowledge formats, spelled the same way the Knowledge module spells
+ * them so an atom created here is indistinguishable from one created there. */
+const FORMAT = {
+  article: { value: 'article', label: 'Article', icon: BookOpen,   hue: entityHue('article'), hint: 'Rich text' },
+  guide:   { value: 'guide',   label: 'Guide',   icon: LayoutGrid, hue: entityHue('guide'),   hint: 'Slides' },
+};
+
+const FORMAT_TILES = [FORMAT.article, FORMAT.guide].map(f => ({
+  value: f.value, label: f.label, icon: f.icon, hint: f.hint, accent: f.hue,
+}));
+
+function formatMeta(value) {
+  return FORMAT[value] || FORMAT.article;
 }
 
 /* ==================================================================== *
@@ -208,6 +231,9 @@ export default function Catalog({ route }) {
   const assets = useStore(s => s.assets);
   const queues = useStore(s => s.queues);
   const directory = useStore(s => s.directory);
+  // The author owns what they create here. Read it from state rather than
+  // spelling a person id into a view — those live in seed/ids.js.
+  const currentUser = useStore(s => s.currentUser);
 
   const [query, setQuery] = useState('');
   const [audience, setAudience] = useState('all');
@@ -220,7 +246,8 @@ export default function Catalog({ route }) {
 
   const [confirming, setConfirming] = useState(null);          // node pending delete
   const [importing, setImporting] = useState(null);            // { sourceId, targetId }
-  const [attaching, setAttaching] = useState(null);            // { kind, itemId }
+  const [attaching, setAttaching] = useState(null);            // { kind, itemId } — reference something that exists
+  const [creating, setCreating] = useState(null);              // { kind, itemId } — author something new, here
 
   const selected = useMemo(() => {
     const hit = findNode(catalog, r.id);
@@ -262,6 +289,77 @@ export default function Catalog({ route }) {
   const patchNode = useCallback((id, patch) => {
     setCollection('catalog', list => updateNode(list, id, patch));
   }, []);
+
+  /**
+   * CREATE, then LINK — the v1 capability the rebuild dropped.
+   *
+   * The record is authored as a TOP-LEVEL draft in `knowledge` / `subforms`,
+   * in exactly the shape the Knowledge and Forms modules produce, and the item
+   * gets a reference to it. Nothing is nested and nothing is copied, so an atom
+   * created here can be attached to four other items and taught as a lesson
+   * tomorrow. Then hand the author to the editor: a draft with no body deflects
+   * nothing, and the link is already saved either way.
+   */
+  const createAndLink = useCallback(({ kind, itemId, title, format }) => {
+    const item = findNode(catalog, itemId);
+    const name = (title || '').trim();
+    if (!item || !name) return;
+
+    if (kind === 'knowledge') {
+      const id = uid('kb');
+      const isGuide = format === 'guide';
+      const base = {
+        id,
+        title: name,
+        summary: 'No summary yet.',
+        format: isGuide ? 'guide' : 'article',
+        status: 'draft',
+        audience: item.audience || 'internal',
+        tags: [],
+        ownerId: currentUser?.id || null,
+        updatedAt: nowISO(),
+        views: 0,
+        helpfulYes: 0,
+        helpfulNo: 0,
+        objective: '',
+        minutes: isGuide ? 4 : 5,
+        prerequisiteIds: [],
+        check: [],
+      };
+      addTo('knowledge', isGuide
+        ? {
+          ...base,
+          slides: [{
+            id: uid('sl'), type: 'text', heading: 'First screen', seconds: 5,
+            caption: 'Say what the reader will be able to do by the end.',
+          }],
+        }
+        : { ...base, body: '<p></p>' });
+      patchNode(itemId, (n) => ({ knowledgeIds: [...(n.knowledgeIds || []), id] }));
+      setCreating(null);
+      navigate('knowledge', 'drafts', id);
+      return;
+    }
+
+    const id = uid('sf');
+    addTo('subforms', {
+      id,
+      name,
+      description: '',
+      audience: item.audience || 'internal',
+      routing: {},
+      fields: [],
+      submitLabel: 'Submit request',
+      confirmation: '',
+      ownerId: currentUser?.id || null,
+      updatedAt: nowISO(),
+      submissions30d: 0,
+      enabled: true,
+    });
+    patchNode(itemId, (n) => ({ subformIds: [...(n.subformIds || []), id] }));
+    setCreating(null);
+    navigate('forms', 'requests', id);
+  }, [catalog, currentUser, patchNode]);
 
   const addChild = useCallback((parent) => {
     const type = CHILD_TYPE[parent.type];
@@ -327,10 +425,10 @@ export default function Catalog({ route }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={Package}
-        accent="amber"
+        module="catalog"
         title="Products & Services"
         subtitle={`${(catalog || []).length} products · ${totals.items} items · one catalog serving employees and customers`}
-        actions={<Button variant="solid" accent="amber" icon={Plus} onClick={addProduct}>New product</Button>}
+        actions={<Button variant="grad" module="catalog" icon={Plus} onClick={addProduct}>New product</Button>}
       >
         <Toolbar>
           <SubTabs items={AUDIENCE_FILTERS} value={audience} onChange={setAudience} />
@@ -383,13 +481,14 @@ export default function Catalog({ route }) {
               onImportInto={(node) => setImporting({ sourceId: '', targetId: node.id })}
               onDelete={setConfirming}
               onAttach={(kind, itemId) => setAttaching({ kind, itemId })}
+              onCreate={(kind, itemId) => setCreating({ kind, itemId })}
             />
           ) : (
             <EmptyState
               icon={Package}
               title="The catalog is empty"
               hint="A product is the top level of the tree — Accounts & Access, Devices, or the product your customers actually buy."
-              action={<Button variant="solid" accent="amber" icon={Plus} onClick={addProduct}>New product</Button>}
+              action={<Button variant="grad" module="catalog" icon={Plus} onClick={addProduct}>New product</Button>}
             />
           )}
         </PageBody>
@@ -423,6 +522,17 @@ export default function Catalog({ route }) {
           courses={courses}
           onClose={() => setAttaching(null)}
           onPatch={patchNode}
+          onSwitchToCreate={(kind, itemId) => { setAttaching(null); setCreating({ kind, itemId }); }}
+        />
+      )}
+
+      {creating && (
+        <CreateModal
+          kind={creating.kind}
+          item={findNode(catalog, creating.itemId)}
+          onClose={() => setCreating(null)}
+          onCreate={createAndLink}
+          onSwitchToAttach={(kind, itemId) => { setCreating(null); setAttaching({ kind, itemId }); }}
         />
       )}
     </div>
@@ -492,7 +602,7 @@ function TreeNode({
   node, depth, expanded, forceOpen, selectedId, onToggle, onSelect,
   onAddChild, onCopy, onImportInto, onDelete, editing, setEditing, onRename,
 }) {
-  const { t, e } = useTheme();
+  const { t, e, dark } = useTheme();
   const c = e(node.type);
   const Icon = NODE_ICON[node.type] || Circle;
   const hasChildren = !!(node.children && node.children.length);
@@ -508,13 +618,16 @@ function TreeNode({
 
   return (
     <div>
+      {/* The selected node is the signature of this screen: v1 tinted it
+          purple→amber with a purple border rather than washing it in the entity
+          hue. The entity colour still speaks through the icon, so nothing is lost. */}
       <div
         onClick={() => onSelect(node.id)}
         role="button"
         tabIndex={0}
         onKeyDown={(ev) => { if (ev.key === 'Enter') onSelect(node.id); }}
         className={cx('group/row flex items-center gap-1 rounded-lg pr-1 py-1 cursor-pointer border transition-colors',
-          selected ? cx(c.soft, c.borderStrong) : cx('border-transparent', t.bgHover))}
+          selected ? cx(tint('catalog', dark), t.text) : cx('border-transparent', t.bgHover))}
       >
         <button
           onClick={(ev) => { ev.stopPropagation(); if (hasChildren) onToggle(node.id); }}
@@ -830,9 +943,31 @@ function ChildRow({ node, knowledge, subforms, onSelect }) {
  * Item — the only node type with content
  * ------------------------------------------------------------------ */
 
+/**
+ * The two verbs of the content panels, always both, always labelled.
+ *
+ * CREATE is the primary: the admin is looking at the gap right now and should
+ * be able to fill it without leaving. ATTACH sits next to it at full weight —
+ * demote it and the catalog quietly stops being reusable, because every author
+ * takes the path of least resistance and re-writes “Password reset” per item.
+ */
+function ContentActions({ kind, itemId, onCreate, onAttach }) {
+  const hue = entityHue(kind === 'knowledge' ? 'article' : 'subform');
+  return (
+    <div className="flex items-center gap-2 flex-shrink-0">
+      <Button variant="soft" accent={hue} size="sm" icon={Link2} onClick={() => onAttach(kind, itemId)}>
+        Attach existing
+      </Button>
+      <Button variant="solid" accent={hue} size="sm" icon={Plus} onClick={() => onCreate(kind, itemId)}>
+        Create new
+      </Button>
+    </div>
+  );
+}
+
 function ItemDetail({
   node, trail, knowledge, subforms, courses, assets, queues, onSelect, onCopy,
-  onDelete, onAttach, editingInPane, setEditingInPane, onRename, onPatch,
+  onDelete, onAttach, onCreate, editingInPane, setEditingInPane, onRename, onPatch,
 }) {
   const { t } = useTheme();
 
@@ -864,16 +999,14 @@ function ItemDetail({
           accent="blue"
           title="Knowledge"
           subtitle={`${atoms.length} atom${atoms.length === 1 ? '' : 's'} attached — referenced, not owned`}
-          action={<Button variant="soft" accent="blue" size="sm" icon={Link2} onClick={() => onAttach('knowledge', node.id)}>
-            Attach existing
-          </Button>}
+          action={<ContentActions kind="knowledge" itemId={node.id} onCreate={onCreate} onAttach={onAttach} />}
         >
           {atoms.length === 0 ? (
             <EmptyState
               icon={BookOpen}
               title="No knowledge attached"
-              hint="Without an article or guide here, every request on this item becomes a ticket. Attaching an existing atom is the cheapest deflection in the product."
-              action={<Button variant="soft" accent="blue" size="sm" icon={Link2} onClick={() => onAttach('knowledge', node.id)}>Attach existing</Button>}
+              hint="Without an article or guide here, every request on this item becomes a ticket. Attach an atom that already exists, or write the missing one now — it is created as a draft and linked here immediately."
+              action={<ContentActions kind="knowledge" itemId={node.id} onCreate={onCreate} onAttach={onAttach} />}
               className="py-8"
             />
           ) : (
@@ -891,9 +1024,7 @@ function ItemDetail({
           accent="purple"
           title="Request forms"
           subtitle={`${forms.length} intake${forms.length === 1 ? '' : 's'} — “report a problem” and “request access” are different forms on one item`}
-          action={<Button variant="soft" accent="purple" size="sm" icon={Link2} onClick={() => onAttach('subform', node.id)}>
-            Attach existing
-          </Button>}
+          action={<ContentActions kind="subform" itemId={node.id} onCreate={onCreate} onAttach={onAttach} />}
         >
           <div className="space-y-0">
             {unrouted.length > 0 && (
@@ -910,8 +1041,8 @@ function ItemDetail({
               <EmptyState
                 icon={FileQuestion}
                 title="No request form on this item"
-                hint="People can read the knowledge here but cannot raise anything. Attach an intake if this item should be actionable."
-                action={<Button variant="soft" accent="purple" size="sm" icon={Link2} onClick={() => onAttach('subform', node.id)}>Attach existing</Button>}
+                hint="People can read the knowledge here but cannot raise anything. Attach an intake that already exists, or create one here and route it in the builder."
+                action={<ContentActions kind="subform" itemId={node.id} onCreate={onCreate} onAttach={onAttach} />}
                 className="py-8"
               />
             ) : (
@@ -1179,10 +1310,122 @@ function ImportModal({ catalog, initial, onClose, onConfirm }) {
 }
 
 /* ==================================================================== *
+ * Create new knowledge / request form — in place, without leaving
+ *
+ * The counterpart to AttachModal, and deliberately small: a title (plus a
+ * format, for knowledge) is enough to make the record real and link it. The
+ * body, the fields and the routing are authored in the editor this hands you
+ * to. Everything created here is a TOP-LEVEL record — the item only gets a
+ * reference — so it can be attached elsewhere and taught as a lesson later.
+ * ==================================================================== */
+
+function CreateModal({ kind, item, onClose, onCreate, onSwitchToAttach }) {
+  const { t } = useTheme();
+  const isKnowledge = kind === 'knowledge';
+  const [title, setTitle] = useState('');
+  const [format, setFormat] = useState('article');
+
+  const meta = formatMeta(format);
+  const hue = isKnowledge ? meta.hue : entityHue('subform');
+  const ready = title.trim().length > 0;
+
+  const submit = () => {
+    if (!ready || !item) return;
+    onCreate({ kind, itemId: item.id, title, format });
+  };
+
+  if (!item) return null;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      accent={hue}
+      icon={isKnowledge ? meta.icon : FileQuestion}
+      size="modalMd"
+      title={isKnowledge ? 'Create knowledge here' : 'Create a request form here'}
+      subtitle={`New record, linked to ${item.name} the moment it exists`}
+      footer={
+        <>
+          <span className={cx('text-xs', t.textMuted)}>
+            {isKnowledge
+              ? 'Created as a draft, attached to this item, then opened in the knowledge editor.'
+              : 'Created unrouted, attached to this item, then opened in the form builder.'}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button variant="solid" accent={hue} icon={Plus} disabled={!ready} onClick={submit}>
+              {isKnowledge ? `Create ${meta.label.toLowerCase()}` : 'Create form'}
+            </Button>
+          </div>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {isKnowledge ? (
+          <Banner accent="amber" icon={AlertCircle} title="New knowledge starts as a draft">
+            A draft is served to nobody — not the help centre, not the agent panel, and any course including it
+            skips past it silently. It shows on this item as a draft so the gap stays visible until someone
+            publishes it.
+          </Banner>
+        ) : (
+          <Banner accent="amber" icon={AlertCircle} title="A new form starts unrouted">
+            Until you give it a queue in the builder, tickets it creates fall to the General queue. Nothing is
+            dropped, but nobody is specifically watching for it either.
+          </Banner>
+        )}
+
+        {isKnowledge && (
+          <Field label="Format" hint="Guides are the Stories format — a tap-through sequence of screens.">
+            <TileGroup value={format} onChange={setFormat} options={FORMAT_TILES} columns={2} />
+          </Field>
+        )}
+
+        <Field
+          label={isKnowledge ? 'Title' : 'Form name'}
+          required
+          hint={isKnowledge
+            ? 'The heading a reader sees in the help centre and a learner sees as a lesson.'
+            : 'What the requester is doing — “Report a sign-in problem”, “Request access”.'}
+        >
+          <Input
+            autoFocus
+            accent={hue}
+            value={title}
+            placeholder={isKnowledge ? `e.g. How to use ${item.name}` : `e.g. Report a problem with ${item.name}`}
+            onChange={(ev) => setTitle(ev.target.value)}
+            onKeyDown={(ev) => { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } }}
+          />
+        </Field>
+
+        <Card className={cx(DENSITY.cardPad, 'flex items-center gap-3 flex-wrap')}>
+          <div className="flex-1 min-w-0">
+            <GroupLabel>Already written somewhere?</GroupLabel>
+            <p className={cx('text-xs mt-1', t.textSecondary)}>
+              Attach it instead. One record can sit under four catalog items at once — that reuse is why the
+              catalog references content rather than owning it.
+            </p>
+          </div>
+          <Button
+            variant="soft"
+            accent={hue}
+            size="sm"
+            icon={Link2}
+            onClick={() => onSwitchToAttach(kind, item.id)}
+          >
+            Attach existing
+          </Button>
+        </Card>
+      </div>
+    </Modal>
+  );
+}
+
+/* ==================================================================== *
  * Attach existing knowledge / request form
  * ==================================================================== */
 
-function AttachModal({ kind, item, knowledge, subforms, queues, courses, onClose, onPatch }) {
+function AttachModal({ kind, item, knowledge, subforms, queues, courses, onClose, onPatch, onSwitchToCreate }) {
   const { t } = useTheme();
   const [query, setQuery] = useState('');
   const isKnowledge = kind === 'knowledge';
@@ -1220,7 +1463,13 @@ function AttachModal({ kind, item, knowledge, subforms, queues, courses, onClose
           <span className={cx('text-xs', t.textMuted)}>
             Attaching creates a reference. Nothing is copied and nothing is removed from anywhere else.
           </span>
-          <Button variant="solid" accent={isKnowledge ? 'blue' : 'purple'} icon={Check} onClick={onClose}>Done</Button>
+          <div className="flex gap-2">
+            <Button variant="soft" accent={isKnowledge ? 'blue' : 'purple'} icon={Plus}
+              onClick={() => onSwitchToCreate(kind, item.id)}>
+              Create new instead
+            </Button>
+            <Button variant="solid" accent={isKnowledge ? 'blue' : 'purple'} icon={Check} onClick={onClose}>Done</Button>
+          </div>
         </>
       }
     >
@@ -1243,8 +1492,14 @@ function AttachModal({ kind, item, knowledge, subforms, queues, courses, onClose
             icon={isKnowledge ? BookOpen : FileQuestion}
             title={pool.length ? 'Nothing matches' : `No ${isKnowledge ? 'knowledge atoms' : 'request forms'} exist yet`}
             hint={pool.length
-              ? 'Try a shorter search.'
-              : `Author one in the ${isKnowledge ? 'Knowledge' : 'Forms'} module, then attach it here.`}
+              ? 'Try a shorter search, or write the missing one now.'
+              : `Nothing to reference yet — write the first one here and it lands attached to ${item.name}.`}
+            action={
+              <Button variant="solid" accent={isKnowledge ? 'blue' : 'purple'} size="sm" icon={Plus}
+                onClick={() => onSwitchToCreate(kind, item.id)}>
+                Create new
+              </Button>
+            }
             className="py-8"
           />
         ) : (

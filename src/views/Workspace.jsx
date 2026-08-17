@@ -8,7 +8,7 @@ import {
   MonitorSmartphone, Star, Pause, Trash2, X, Hash, Target,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, GRADIENT, PRIORITY, STATUS,
+  useTheme, cx, ICON, DENSITY, PRIORITY, STATUS,
   SLA_STATE, statusMeta, priorityMeta,
   Button, IconButton, Chip, ChipGroup, StatusPill, PriorityFlag,
   EntityTag, Avatar, EmptyState, Card, Panel, Section, GroupLabel,
@@ -46,6 +46,13 @@ import { LOC } from '@/store/seed/ids.js';
 /* ==================================================================== *
  * Constants
  * ==================================================================== */
+
+/**
+ * The module key this view owns. It resolves the signature gradient for the
+ * header tile and for every primary (create / commit) action, so the workspace
+ * teal→cyan pair is spelled in exactly one place.
+ */
+const MODULE = 'workspace';
 
 const KIND_META = {
   ticket:      { entity: 'ticket',      accent: 'rose',   icon: Inbox,         label: 'Ticket',       plural: 'Tickets' },
@@ -728,7 +735,7 @@ export default function Workspace({ route }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={LayoutGrid}
-        gradient={GRADIENT.workspace}
+        module={MODULE}
         title="My Workspace"
         subtitle={joinDots([
           data.currentUser?.name,
@@ -957,7 +964,7 @@ function NewMenu({ onCreate }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
-      <Button variant="solid" accent="teal" icon={Plus} iconRight={ChevronDown} onClick={() => setOpen(o => !o)}>
+      <Button variant="grad" module={MODULE} icon={Plus} iconRight={ChevronDown} onClick={() => setOpen(o => !o)}>
         New
       </Button>
       <Menu open={open} onClose={() => setOpen(false)} align="right" width="w-56">
@@ -1553,7 +1560,7 @@ function TicketModal({ ticket, data, meId, now, onClose }) {
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Close</Button>
             {!DONE_GROUPS.includes(statusMeta(ticket.status).group) && (
-              <Button variant="solid" accent="emerald" icon={Check} onClick={() => patch({ status: 'resolved' })}>
+              <Button variant="grad" module={MODULE} icon={Check} onClick={() => patch({ status: 'resolved' })}>
                 Resolve ticket
               </Button>
             )}
@@ -2075,8 +2082,8 @@ function TaskModal({ task, data, meId, now, onClose }) {
             <Button variant="outline" onClick={onClose}>Close</Button>
             {!doneGroup && (
               <Button
-                variant="solid"
-                accent="emerald"
+                variant="grad"
+                module={MODULE}
                 icon={Check}
                 onClick={() => patch({ status: completeStatus, completedAt: now.toISOString() })}
               >
@@ -2263,7 +2270,7 @@ function NewRecordModal({ kind, data, meId, onClose, onCreated }) {
           </span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="solid" accent={accent} icon={Plus} disabled={!title.trim()} onClick={create}>
+            <Button variant="grad" module={MODULE} icon={Plus} disabled={!title.trim()} onClick={create}>
               Create {isTicket ? 'ticket' : 'task'}
             </Button>
           </div>

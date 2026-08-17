@@ -8,7 +8,7 @@ import {
   CircleDollarSign, LogOut, LogIn, Users, Boxes,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, LAYOUT, GRADIENT,
+  useTheme, cx, ICON, DENSITY, LAYOUT,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag, Avatar,
   EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat, Banner, Divider,
   Field, Input, Select, Textarea, TileGroup, SearchInput,
@@ -283,7 +283,7 @@ export default function Assets({ route }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={Server}
-        gradient={GRADIENT.hardware}
+        module="assets"
         title="Assets"
         subtitle={subtitle}
         actions={
@@ -743,7 +743,7 @@ function AssetDetail({ asset, models, locations, contracts, directory, currentUs
                 <Button variant="outline" icon={LogIn} onClick={() => setMoving('checkin')}>Check in</Button>
               )}
               {movable && (
-                <Button variant="solid" accent="cyan" icon={LogOut} onClick={() => setMoving('checkout')}>
+                <Button variant="grad" module="assets" icon={LogOut} onClick={() => setMoving('checkout')}>
                   {asset.assignmentType ? 'Move / reassign' : 'Check out'}
                 </Button>
               )}
@@ -1001,7 +1001,7 @@ function MoveModal({ asset, mode, locations, directory, currentUser, onClose }) 
           </span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="solid" accent="cyan" icon={ArrowRightLeft} disabled={!ready} onClick={commit}>
+            <Button variant="grad" module="assets" icon={ArrowRightLeft} disabled={!ready} onClick={commit}>
               Confirm move
             </Button>
           </div>
@@ -1394,6 +1394,9 @@ function AllocationEditor({ license, position, locations, directory }) {
             <Field label="Note">
               <Input accent="pink" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Support floor" />
             </Field>
+            {/* A row-level control inside an editor, not the module's primary
+                action — the signature gradient stays on the header tile and the
+                commit buttons. */}
             <Button variant="solid" accent="pink" icon={Plus} disabled={!who} onClick={add}>Add</Button>
           </div>
         </div>

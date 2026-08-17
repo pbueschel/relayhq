@@ -326,10 +326,11 @@ function Library({ atoms, reuseIndex, people, tab, notFound }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={BookOpen}
-        accent="blue"
+        module="knowledge"
+        accent={ENTITIES.article.hue}
         title="Knowledge"
         subtitle={`${atoms.length} atoms · ${counts.reused} reused across the catalog and courses · one record, three surfaces`}
-        actions={<Button variant="solid" accent="blue" icon={Plus} onClick={() => setCreating(true)}>New atom</Button>}
+        actions={<Button variant="grad" module="knowledge" icon={Plus} onClick={() => setCreating(true)}>New atom</Button>}
       >
         <Toolbar className="mb-2">
           <SubTabs items={tabItems} value={tab} onChange={v => navigate('knowledge', v)} />
@@ -390,7 +391,7 @@ function Library({ atoms, reuseIndex, people, tab, notFound }) {
               hint={anyFilter
                 ? 'Clear a filter, or widen the search. Drafts are excluded from every tab except Drafts.'
                 : 'An atom is authored once and reused by the help centre, the agent panel and any course that needs it.'}
-              action={<Button variant="solid" accent="blue" icon={Plus} onClick={() => setCreating(true)}>New atom</Button>}
+              action={<Button variant="grad" module="knowledge" icon={Plus} onClick={() => setCreating(true)}>New atom</Button>}
             />
           ) : (
             <div className="space-y-5">
@@ -603,6 +604,7 @@ function AtomDetail({ atom, atoms, reuse, people, directory, tab }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={f.icon}
+        module="knowledge"
         accent={f.hue}
         title={atom.title}
         subtitle={atom.summary}
@@ -1218,13 +1220,37 @@ function SlideCard({ slide, index, total, open, onToggle, onPatch, onMove, onRem
 
 /* ==================================================================== *
  * Stories player
+ *
+ * The same accessibility contract the portal viewer carries, because this is
+ * the same guide: a visible pause/play control (WCAG 2.2.2), alt text on every
+ * image slide, arrow-key and space support with a visible focus state, and
+ * prefers-reduced-motion suppressing auto-advance outright rather than only
+ * stopping the progress animation.
  * ==================================================================== */
+
+/** Live `prefers-reduced-motion` state. Read, not assumed — it can change mid-session. */
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(() => {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+  });
+  useEffect(() => {
+    let mq;
+    try { mq = window.matchMedia('(prefers-reduced-motion: reduce)'); } catch { return undefined; }
+    const on = () => setReduced(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return reduced;
+}
 
 function StoriesPlayer({ slides = [], startAt = 0, large = false }) {
   const { t, a } = useTheme();
   const c = a('purple');
+  const reduced = usePrefersReducedMotion();
   const [index, setIndex] = useState(Math.min(startAt, Math.max(0, slides.length - 1)));
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(!reduced);
+
+  useEffect(() => { if (reduced) setPlaying(false); }, [reduced]);
 
   // The editor deletes slides underneath a running player. If the player had
   // already advanced past the slide that is now last, `slides[index]` is
@@ -1234,14 +1260,19 @@ function StoriesPlayer({ slides = [], startAt = 0, large = false }) {
   const at = Math.min(index, last);
   const slide = slides[at];
 
+  // Reduced motion disarms auto-advance entirely — the CSS only stops the
+  // progress animation, which on its own would leave slides jumping with no
+  // visible timer. Nothing moves unless the reader moves it.
+  const armed = !reduced && !!slide?.seconds;
+
   useEffect(() => {
-    if (!playing || !slide || !slide.seconds) return undefined;
+    if (!playing || !armed) return undefined;
     const id = setTimeout(() => {
       if (at + 1 < slides.length) setIndex(at + 1);
       else setPlaying(false);            // stop at the end rather than looping
     }, slide.seconds * 1000);
     return () => clearTimeout(id);
-  }, [at, playing, slide, slides.length]);
+  }, [at, playing, armed, slide, slides.length]);
 
   if (!slides.length) {
     return (
@@ -1254,72 +1285,100 @@ function StoriesPlayer({ slides = [], startAt = 0, large = false }) {
 
   const back = () => { setPlaying(false); setIndex(Math.max(0, at - 1)); };
   const fwd = () => { setPlaying(false); setIndex(Math.min(last, at + 1)); };
+  const onKeyDown = (e) => {
+    if (e.key === 'ArrowRight') { e.preventDefault(); fwd(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
+    else if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); setPlaying(p => !p); }
+  };
 
   return (
-    <div className={cx('relative rounded-2xl overflow-hidden border select-none', t.borderLight, c.softStrong)}
-      style={{ aspectRatio: '9 / 16' }}>
-      {/* Media */}
-      {slide.type === 'image' && slide.url && (
-        <img src={slide.url} alt={slide.alt || ''} className="absolute inset-0 w-full h-full object-cover" />
-      )}
-      {slide.type === 'video' && (
-        <div className={cx('absolute inset-0 flex flex-col items-center justify-center gap-2', c.softStrong)}>
-          <IconTile icon={Video} accent="purple" size="lg" />
-          <p className={cx('text-[10px] px-4 text-center break-all', t.textMuted)}>{slide.url}</p>
+    <div className="space-y-1.5">
+      <div
+        role="group"
+        aria-roledescription="Story guide"
+        aria-label={`Guide preview — slide ${at + 1} of ${slides.length}`}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        className={cx('relative rounded-2xl overflow-hidden border select-none outline-none',
+          t.borderLight, c.ring, c.softStrong)}
+        style={{ aspectRatio: '9 / 16' }}>
+        {/* Media */}
+        {slide.type === 'image' && slide.url && (
+          <img src={slide.url} alt={slide.alt || ''} className="absolute inset-0 w-full h-full object-cover" />
+        )}
+        {slide.type === 'video' && (
+          <div className={cx('absolute inset-0 flex flex-col items-center justify-center gap-2', c.softStrong)}>
+            <IconTile icon={Video} accent="purple" size="lg" />
+            <p className={cx('text-[10px] px-4 text-center break-all', t.textMuted)}>{slide.url}</p>
+          </div>
+        )}
+        {slide.type === 'text' && <div className={cx('absolute inset-0', c.softStrong)} />}
+
+        {/* Scrim so white type stays legible over any photograph */}
+        {slide.type === 'image' && <div className="absolute inset-0 bg-black/45" />}
+
+        {/* Progress segments */}
+        <div className="absolute top-0 left-0 right-0 flex gap-1 p-2 z-20">
+          {slides.map((s, i) => (
+            <span key={s.id} className="flex-1 h-0.5 rounded-full bg-white/30 overflow-hidden">
+              <span
+                className={cx('block h-full bg-white',
+                  i < at ? 'w-full'
+                    : i === at && playing && armed ? 'rhq-story-fill'
+                    : i === at ? 'w-full' : 'w-0')}
+                style={i === at && playing && armed ? { animationDuration: `${s.seconds}s` } : undefined}
+              />
+            </span>
+          ))}
         </div>
-      )}
-      {slide.type === 'text' && <div className={cx('absolute inset-0', c.softStrong)} />}
 
-      {/* Scrim so white type stays legible over any photograph */}
-      {slide.type === 'image' && <div className="absolute inset-0 bg-black/45" />}
+        {/* Tap zones. Focus is visible: an invisible control a keyboard reaches
+            and cannot see is not keyboard support. */}
+        <button onClick={back} aria-label="Previous slide"
+          className="absolute inset-y-0 left-0 w-1/3 z-10 focus:outline-none focus-visible:bg-white/20" />
+        <button onClick={fwd} aria-label="Next slide"
+          className="absolute inset-y-0 right-0 w-1/3 z-10 focus:outline-none focus-visible:bg-white/20" />
 
-      {/* Progress segments */}
-      <div className="absolute top-0 left-0 right-0 flex gap-1 p-2 z-20">
-        {slides.map((s, i) => (
-          <span key={s.id} className="flex-1 h-0.5 rounded-full bg-white/30 overflow-hidden">
-            <span
-              className={cx('block h-full bg-white',
-                i < at ? 'w-full'
-                  : i === at && playing && s.seconds ? 'rhq-story-fill'
-                  : i === at ? 'w-full' : 'w-0')}
-              style={i === at && playing && s.seconds ? { animationDuration: `${s.seconds}s` } : undefined}
+        {/* Copy */}
+        <div className={cx('absolute inset-x-0 bottom-0 p-3 z-20',
+          slide.type === 'image' ? 'text-white' : t.text)}>
+          {slide.heading && (
+            <p className={cx('font-semibold leading-tight', large ? 'text-lg' : 'text-sm')}>{slide.heading}</p>
+          )}
+          {slide.caption && (
+            <div
+              className={cx('rhq-prose mt-1 leading-snug', large ? 'text-sm' : 'text-[11px]',
+                slide.type === 'image' ? 'text-white/90' : t.textSecondary)}
+              dangerouslySetInnerHTML={{ __html: slide.caption }}
             />
+          )}
+        </div>
+
+        {/* Controls */}
+        <div className="absolute top-4 right-2 z-30 flex items-center gap-1">
+          <button
+            onClick={() => setPlaying(p => !p)}
+            aria-label={playing ? 'Pause the guide' : 'Play the guide'}
+            aria-pressed={!playing}
+            className="p-1 rounded-full bg-black/40 text-white focus:outline-none focus-visible:bg-black/80"
+          >
+            {playing ? <Pause size={ICON.sm} /> : <Play size={ICON.sm} />}
+          </button>
+          <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-white text-[10px] tabular-nums">
+            {at + 1}/{slides.length}
           </span>
-        ))}
-      </div>
+        </div>
 
-      {/* Tap zones */}
-      <button onClick={back} aria-label="Previous slide" className="absolute inset-y-0 left-0 w-1/3 z-10" />
-      <button onClick={fwd} aria-label="Next slide" className="absolute inset-y-0 right-0 w-1/3 z-10" />
-
-      {/* Copy */}
-      <div className={cx('absolute inset-x-0 bottom-0 p-3 z-20',
-        slide.type === 'image' ? 'text-white' : t.text)}>
-        {slide.heading && (
-          <p className={cx('font-semibold leading-tight', large ? 'text-lg' : 'text-sm')}>{slide.heading}</p>
-        )}
-        {slide.caption && (
-          <div
-            className={cx('rhq-prose mt-1 leading-snug', large ? 'text-sm' : 'text-[11px]',
-              slide.type === 'image' ? 'text-white/90' : t.textSecondary)}
-            dangerouslySetInnerHTML={{ __html: slide.caption }}
-          />
-        )}
-      </div>
-
-      {/* Controls */}
-      <div className="absolute top-4 right-2 z-30 flex items-center gap-1">
-        <button
-          onClick={() => setPlaying(p => !p)}
-          aria-label={playing ? 'Pause' : 'Play'}
-          className="p-1 rounded-full bg-black/40 text-white"
-        >
-          {playing ? <Pause size={ICON.sm} /> : <Play size={ICON.sm} />}
-        </button>
-        <span className="px-1.5 py-0.5 rounded-full bg-black/40 text-white text-[10px] tabular-nums">
-          {at + 1}/{slides.length}
+        <span className="sr-only" aria-live="polite">
+          Slide {at + 1} of {slides.length}. {slide.heading || ''} {slide.type === 'image' ? slide.alt || '' : ''}
         </span>
       </div>
+
+      <p className={cx('text-[11px] text-center', t.textMuted)}>
+        {reduced
+          ? 'Auto-advance is off because your system asks for reduced motion. Use the arrows or arrow keys.'
+          : 'Arrow keys move · space pauses'}
+      </p>
     </div>
   );
 }
@@ -1658,7 +1717,7 @@ function NewAtomModal({ open, onClose, tab }) {
           <span className={cx('text-xs', t.textMuted)}>Starts as a draft</span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="solid" accent={FORMATS[format].hue} icon={Check} disabled={!title.trim()} onClick={create}>
+            <Button variant="grad" module="knowledge" icon={Check} disabled={!title.trim()} onClick={create}>
               Create atom
             </Button>
           </div>

@@ -4,30 +4,37 @@ import {
   Folder, Circle, Inbox, FileQuestion, CircleCheck, CircleAlert, Play, Pause, AlignLeft,
   Sparkles, GraduationCap, BookMarked, Clock, Stamp, Send, ThumbsUp, ThumbsDown, Info,
   Moon, Sun, LogOut, Building2, Users, User, Route, Eye, Award, Paperclip, Check,
-  LayoutGrid, ListOrdered, MessageSquare, ShieldCheck, Video,
+  LayoutGrid, ListOrdered, MessageSquare, ShieldCheck, Video, Search, X,
+  KeyRound, Mail, Laptop, AppWindow, Store, LifeBuoy,
 } from 'lucide-react';
 import {
-  useTheme, cx, useDismiss, ICON, DENSITY, GRADIENT, entityHue,
+  useTheme, cx, useDismiss, ICON, DENSITY, GRADIENT, entityHue, moduleGradient, tint,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, PriorityFlag, EntityTag,
-  Avatar, EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat, Banner, Divider,
-  Field, Input, Textarea, Select, Checkbox, SearchInput,
+  Avatar, EmptyState, Card, Panel, GroupLabel, Stat, Banner, Divider,
+  Field, Input, Textarea, Select, Checkbox,
   Modal, Menu, MenuItem, MenuLabel, MenuDivider,
-  SubTabs, PageHeader, Toolbar, PageBody, Breadcrumbs,
+  SubTabs, Breadcrumbs,
 } from '@/ds';
 import { useStore, getState, addTo, uid, NOW } from '@/store/store.js';
 import { evaluate } from '@/lib/conditions.js';
 import { startApproval, matchingPolicies, progress } from '@/lib/approvals.js';
 import { useRoute, navigate } from '@/lib/router.js';
-import { Q, USR, CON } from '@/store/seed/ids.js';
+import { Q, USR, CON, CAT } from '@/store/seed/ids.js';
 
 /**
  * The customer portal — the end-user surface, and the screen that has to argue
  * for RelayHQ's model rather than merely implement it.
  *
+ * SHAPE (rebuilt): a hero-led help centre, not an admin screen wearing softer
+ * colours. The page opens with one gradient moment — a brand wash behind a large
+ * headline and THE SEARCH — then popular shortcuts, then a wide balanced browse
+ * grid. Everything else (the argument panel, the sign-in note) moved to the
+ * footer, because the first thing a customer should meet is help, not chrome.
+ *
  * WHY IT LOOKS DIFFERENT FROM THE ADMIN APP
- * It runs on the portal surface tokens (t.portalBg / t.portalCard / t.portalInput),
- * which are deliberately softer, and App.jsx renders it with no admin chrome.
- * A viewer should believe they are looking at what a customer sees.
+ * It runs on the portal surface tokens (t.portalCard / t.bgInput) over the plain
+ * page ground, and App.jsx renders it with no admin chrome. A viewer should
+ * believe they are looking at what a customer sees.
  *
  * THE THREE THINGS IT PROVES
  *  1. DRILL-DOWN — Product › Subcategory › Item, not a flat list of every form.
@@ -44,13 +51,50 @@ import { Q, USR, CON } from '@/store/seed/ids.js';
  */
 
 /* ==================================================================== *
+ * Measures
+ *
+ * Two widths, deliberately. The grid gets the full viewport it deserves; prose
+ * stays near 70 characters because that is what a person can actually read.
+ * ==================================================================== */
+
+const WIDE = 'max-w-6xl mx-auto px-6';
+const MID = 'max-w-4xl mx-auto px-6';
+const READ = 'max-w-3xl mx-auto px-6';
+const PROSE = 'max-w-[70ch]';
+
+/* The hero wash. One gradient moment on the page, tuned per mode rather than
+ * inverted: light gets a whisper, dark gets a glow that lifts the page off
+ * near-black. Values are literal strings so Tailwind compiles them. */
+const WASH = {
+  sheet: { light: 'opacity-[0.10]', dark: 'opacity-[0.16]' },
+  glow: { light: 'opacity-20', dark: 'opacity-30' },
+};
+
+/* ==================================================================== *
  * Catalog helpers
  * ==================================================================== */
 
 /* Icons are components, so they cannot live in tokens.js — but the HUE must.
  * A second colour map here would be a second source of truth and would drift
- * away from ENTITIES the first time a hue changes. Ask the registry instead. */
+ * away from ENTITIES the first time a hue changes. Ask the registry instead.
+ * Only the GLYPH varies per product, and those keys come from the canonical
+ * id module so nothing here is a loose string. */
 const NODE_ICON = { product: Folder, subcategory: Layers, item: Circle };
+
+const PRODUCT_ICON = {
+  [CAT.P_ACCOUNTS]: KeyRound,
+  [CAT.P_EMAIL]: Mail,
+  [CAT.P_DEVICES]: Laptop,
+  [CAT.P_SOFTWARE]: AppWindow,
+  [CAT.P_WORKPLACE]: Building2,
+  [CAT.P_STOREFRONT]: Store,
+};
+
+function nodeIcon(node) {
+  if (!node) return Circle;
+  if (node.type === 'product') return PRODUCT_ICON[node.id] || Folder;
+  return NODE_ICON[node.type] || Circle;
+}
 
 function walkCatalog(nodes, trail = [], out = []) {
   for (const n of nodes || []) {
@@ -68,6 +112,18 @@ function pathIdsTo(nodes, id, acc = []) {
     if (found) return found;
   }
   return null;
+}
+
+/** Counts for a card footer line, resolved for whatever level the node sits at. */
+function nodeStats(node) {
+  const kids = node.children || [];
+  const deep = walkCatalog(kids);
+  return {
+    children: kids.length,
+    items: deep.filter(x => x.node.type === 'item').length,
+    help: (node.knowledgeIds || []).length,
+    intakes: (node.subformIds || []).length,
+  };
 }
 
 /** A record is visible on a form when their audiences are compatible. */
@@ -96,6 +152,12 @@ function courseMinutes(course, byId) {
   return lessonIdsOf(course).reduce((n, id) => n + (byId.get(id)?.minutes || 0), 0);
 }
 
+function popularItems(products) {
+  return walkCatalog(products)
+    .filter(x => x.node.type === 'item' && x.node.popular)
+    .slice(0, 6);
+}
+
 /* ==================================================================== *
  * Formatting
  * ==================================================================== */
@@ -119,6 +181,10 @@ function fmtMinutes(n) {
   const h = Math.floor(n / 60);
   const m = n % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+function plural(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 function isEmptyAnswer(v) {
@@ -234,6 +300,12 @@ const STORE_SLICE = (s) => ({
   currentUser: s.currentUser, settings: s.settings,
 });
 
+const LEVEL_COPY = [
+  { label: 'Step 1 of 3', hint: 'Pick the product or service area.' },
+  { label: 'Step 2 of 3', hint: 'Narrow it down.' },
+  { label: 'Step 3 of 3', hint: 'Choose the thing you need.' },
+];
+
 export default function Portal({ route }) {
   const { t, dark, toggle } = useTheme();
   const liveRoute = useRoute();
@@ -263,9 +335,10 @@ export default function Portal({ route }) {
   const [emphasise, setEmphasise] = useState(false);
   const [courseId, setCourseId] = useState(null);
   const [whyOpen, setWhyOpen] = useState(false);
-  const [whyHint, setWhyHint] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [detailId, setDetailId] = useState(null);
+
+  const scroller = useRef(null);
 
   const external = form?.audience === 'external';
 
@@ -377,16 +450,13 @@ export default function Portal({ route }) {
 
   const course = courseId ? byCourse.get(courseId) || null : null;
 
-  /* The suggestion popover is a real popover, so it dismisses on Escape and on a
-   * click outside — the DS hook, not a bespoke listener. The ref goes on the
-   * wrapper rather than the panel so clicking back into the input is "inside". */
-  const searchRef = useDismiss(!!results, () => setQuery(''));
-
   /* Where an atom shows up elsewhere — the reuse, surfaced to the reader. */
   const alsoTaughtIn = useMemo(() => {
     if (!atom) return [];
     return (s.courses || []).filter(c => lessonIdsOf(c).includes(atom.id));
   }, [atom, s.courses]);
+
+  const popular = useMemo(() => popularItems(products), [products]);
 
   /* ---------------- navigation ---------------- */
 
@@ -403,6 +473,12 @@ export default function Portal({ route }) {
   };
   const openAtom = (id, from) => { setReading({ id, from: from || 'item' }); setQuery(''); };
   const openIntake = (id) => { setIntakeId(id); setAnswers({}); setTouched(false); setReading(null); };
+
+  /* Every step of the journey starts at the top of the page, the way a real
+   * navigation would. Without this a drill-down lands you halfway down a grid. */
+  useEffect(() => {
+    if (scroller.current) scroller.current.scrollTop = 0;
+  }, [tab, path.length, reading?.id, intakeId, resolvedId, courseId, receipt?.key]);
 
   /* "No, I need help" promises to land you on the request forms for this service.
    * When the article was opened from search we are not standing on an item yet,
@@ -530,113 +606,143 @@ export default function Portal({ route }) {
 
   const facts = useMemo(() => computeFacts(s, defaultQueue), [s, defaultQueue]);
 
+  const orgName = s.settings?.orgName || 'Northwind Systems';
+
   if (!form) {
     return (
-      <div className={cx('h-screen flex flex-col overflow-hidden', t.portalBg, t.text)}>
-        <PageHeader icon={LayoutGrid} gradient={GRADIENT.brand} title="Portal"
-          subtitle="No published portal form yet" />
-        <PageBody>
-          <EmptyState icon={FileQuestion} title="Nothing published"
-            hint="A portal needs at least one published form. Publish one in the Forms module and it appears here."
-            action={<Button variant="solid" accent="purple" onClick={() => navigate('forms')}>Open Forms</Button>} />
-        </PageBody>
+      <div className={cx('h-screen flex flex-col overflow-hidden', t.bg, t.text)}>
+        <div className="flex-1 overflow-auto">
+          <section className="relative">
+            <HeroBackdrop />
+            <div className={cx('relative text-center', WIDE, 'pt-20 pb-16')}>
+              <h1 className={cx('text-4xl sm:text-5xl font-semibold tracking-tight text-balance', t.text)}>
+                Nothing published yet
+              </h1>
+              <p className={cx('mt-4 text-base sm:text-lg max-w-xl mx-auto leading-relaxed', t.textSecondary)}>
+                A RelayHQ portal needs at least one published form. Publish one in the Forms module and the help
+                centre appears here.
+              </p>
+              <div className="mt-8 flex justify-center">
+                <Button variant="grad" module="portal" size="lg" icon={ArrowRight} onClick={() => navigate('forms')}>
+                  Open Forms
+                </Button>
+              </div>
+            </div>
+          </section>
+          <div className={cx(MID, 'pb-16')}>
+            <EmptyState icon={FileQuestion} title="No published portal form"
+              hint="Forms scope a portal to an audience and a set of products. Without one there is nothing for a customer to land on." />
+          </div>
+        </div>
       </div>
     );
   }
 
   const brandIcon = external ? Building2 : Users;
   const tabs = [
-    { value: 'help', label: 'Help centre', icon: BookOpen, accent: 'blue' },
+    { value: 'help', label: 'Help centre', icon: LifeBuoy, accent: 'purple' },
     { value: 'requests', label: 'My requests', icon: Inbox, accent: 'rose', count: myTickets.length },
   ];
   if (academyCourses.length) {
     tabs.push({ value: 'academy', label: 'Academy', icon: GraduationCap, accent: 'indigo', count: academyCourses.length });
   }
 
-  const crumbs = [{ id: 'root', name: form.name }, ...trail.map(n => ({ id: n.id, name: n.name }))];
+  const searchPlaceholder = form.showKnowledge === false
+    ? 'Search the service catalog…'
+    : 'Search articles, guides and services…';
+
+  const atHome = tab === 'help' && !trail.length && !reading && !intake && !receipt && !resolvedAtom;
+
+  const crumbs = [{ id: 'root', name: 'Help centre' }, ...trail.map(n => ({ id: n.id, name: n.name }))];
+  const trailCrumbs = reading || intake
+    ? [...crumbs, { id: 'leaf', name: reading ? (atom?.title || 'Article') : intake.name }]
+    : crumbs;
 
   return (
-    <div className={cx('h-screen flex flex-col overflow-hidden', t.portalBg, t.text)}>
-      <PageHeader
-        icon={brandIcon}
-        gradient={GRADIENT.brand}
-        title={form.headline || form.name}
-        subtitle={form.subhead || form.description}
-        actions={
-          <>
-            {published.length > 1 && (
-              <BrandPicker
-                forms={published} form={form} open={pickerOpen}
-                onOpen={() => setPickerOpen(v => !v)}
-                onClose={() => setPickerOpen(false)}
-                onPick={(f) => {
-                  setPickerOpen(false);
-                  setFormId(f.id);
-                  navigate('portal', f.slug || f.id);
-                }}
-              />
-            )}
-            <Button variant="soft" accent="purple" size="sm" icon={Sparkles} onClick={() => setWhyOpen(true)}>
-              Why this works
-            </Button>
-            <IconButton icon={dark ? Moon : Sun} label={dark ? 'Switch to light mode' : 'Switch to dark mode'} onClick={toggle} />
-            <IconButton icon={LogOut} label="Back to the RelayHQ workspace" onClick={() => navigate('workspace')} />
-          </>
-        }
-      >
-        <div className="space-y-2">
-          <Toolbar>
-            <div ref={searchRef} className="relative w-full max-w-xl">
-              <SearchInput
-                value={query}
-                onChange={setQuery}
-                accent="blue"
-                placeholder={`Search ${form.showKnowledge === false ? 'the catalog' : 'articles, guides and services'}…`}
-              />
-              {results && (
-                <SearchSuggestions
-                  results={results}
-                  onAtom={(id) => openAtom(id, 'search')}
-                  onItem={openItemById}
-                  onDismiss={() => setQuery('')}
-                />
-              )}
-            </div>
-          </Toolbar>
-          <Toolbar>
-            <SubTabs items={tabs} value={tab} onChange={(v) => { setTab(v); setCourseId(null); setReading(null); }} />
-            {requester && (
-              <span className={cx('flex items-center gap-1.5 text-xs', t.textMuted)}>
-                <Avatar name={requester.name} size="sm" />
-                {requester.name}
-                {org && <span className={t.textSecondary}>· {org.name}</span>}
-              </span>
-            )}
-          </Toolbar>
-        </div>
-      </PageHeader>
+    <div className={cx('h-screen flex flex-col overflow-hidden', t.bg, t.text)}>
+      <PortalBar
+        form={form}
+        forms={published}
+        brandIcon={brandIcon}
+        orgName={orgName}
+        tabs={tabs}
+        tab={tab}
+        requester={requester}
+        org={org}
+        dark={dark}
+        pickerOpen={pickerOpen}
+        onHome={() => { setTab('help'); goHome(); }}
+        /* "Help centre" is the home of this portal, not just a filter: choosing it
+         * from anywhere returns to the hero. Without this it is a dead click for
+         * anyone standing inside an article or a request form. */
+        onTab={(v) => {
+          setTab(v); setCourseId(null); setReading(null);
+          if (v === 'help') goHome();
+        }}
+        onPickerOpen={() => setPickerOpen(v => !v)}
+        onPickerClose={() => setPickerOpen(false)}
+        /* Switching portal switches audience, catalog scope and requester, so it
+         * lands on the new portal's front door. Staying on the previous one's
+         * "My requests" would show one brand's chrome over another's records. */
+        onPick={(f) => {
+          setPickerOpen(false);
+          setFormId(f.id);
+          setTab('help');
+          navigate('portal', f.slug || f.id);
+        }}
+        onToggleTheme={toggle}
+      />
 
-      <PageBody>
-        {tab === 'help' && (
-          <div className="space-y-4">
-            {(trail.length > 0 || reading || intake || receipt || resolvedAtom) && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" icon={ArrowLeft}
-                  onClick={() => {
-                    if (receipt) { setReceipt(null); return; }
-                    if (resolvedAtom) { setResolvedId(null); return; }
-                    goUp();
-                  }}>
-                  Back
-                </Button>
-                <Breadcrumbs
-                  items={reading || intake
-                    ? [...crumbs, { id: 'leaf', name: reading ? (atom?.title || 'Article') : intake.name }]
-                    : crumbs}
-                  onNavigate={(crumb, i) => { setReading(null); setIntakeId(null); setReceipt(null); setResolvedId(null); setPath(path.slice(0, i)); }}
-                />
-              </div>
-            )}
+      <div ref={scroller} className="flex-1 overflow-auto">
+        {tab === 'help' && (atHome ? (
+          <>
+            <PortalHero
+              form={form}
+              external={external}
+              orgName={orgName}
+              query={query}
+              onQuery={setQuery}
+              results={results}
+              placeholder={searchPlaceholder}
+              onAtom={(id) => openAtom(id, 'search')}
+              onItem={openItemById}
+              popular={popular}
+            />
+
+            <section className={cx(WIDE, 'pb-16')}>
+              <SectionHead
+                eyebrow="Browse"
+                title="Where do you need help?"
+                hint="Pick the area your question belongs to. Every path ends in a service with the answers attached — and a request form only if you still need one."
+              />
+              {children.length === 0 ? (
+                <EmptyState icon={Folder} title="Nothing published here"
+                  hint="This portal has no products scoped to your audience yet." />
+              ) : (
+                <BrowseGrid nodes={children} onPick={drill} />
+              )}
+            </section>
+          </>
+        ) : (
+          <>
+            <TrailBar
+              crumbs={trailCrumbs}
+              onNavigate={(crumb, i) => {
+                setReading(null); setIntakeId(null); setReceipt(null); setResolvedId(null);
+                setPath(path.slice(0, i));
+              }}
+              onBack={() => {
+                if (receipt) { setReceipt(null); return; }
+                if (resolvedAtom) { setResolvedId(null); return; }
+                goUp();
+              }}
+              query={query}
+              onQuery={setQuery}
+              results={results}
+              placeholder={searchPlaceholder}
+              onAtom={(id) => openAtom(id, 'search')}
+              onItem={openItemById}
+            />
 
             {receipt ? (
               <ReceiptScreen
@@ -691,20 +797,10 @@ export default function Portal({ route }) {
                 onIntake={openIntake}
               />
             ) : (
-              <BrowseScreen
-                form={form}
-                nodes={children}
-                level={trail.length}
-                popular={trail.length === 0 ? popularItems(products) : []}
-                whyHint={whyHint && trail.length === 0}
-                onWhy={() => setWhyOpen(true)}
-                onDismissWhy={() => setWhyHint(false)}
-                onPick={drill}
-                onItem={openItemById}
-              />
+              <LevelScreen node={current} nodes={children} level={trail.length} onPick={drill} />
             )}
-          </div>
-        )}
+          </>
+        ))}
 
         {tab === 'requests' && (
           <RequestsScreen
@@ -714,18 +810,18 @@ export default function Portal({ route }) {
             queues={byQueue}
             requester={requester}
             onOpen={setDetailId}
-            onBrowse={() => setTab('help')}
+            onBrowse={() => { setTab('help'); goHome(); }}
           />
         )}
 
         {tab === 'academy' && (
           reading && atom ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" icon={ArrowLeft} onClick={() => setReading(null)}>Back to the course</Button>
-                <Breadcrumbs items={[{ id: 'a', name: 'Academy' }, { id: 'c', name: course?.title || 'Course' }, { id: 'l', name: atom.title }]}
-                  onNavigate={(crumb, i) => { setReading(null); if (i === 0) setCourseId(null); }} />
-              </div>
+            <>
+              <TrailBar
+                crumbs={[{ id: 'a', name: 'Academy' }, { id: 'c', name: course?.title || 'Course' }, { id: 'l', name: atom.title }]}
+                onNavigate={(crumb, i) => { setReading(null); if (i === 0) setCourseId(null); }}
+                onBack={() => setReading(null)}
+              />
               <ReadingScreen
                 atom={atom}
                 alsoIn={alsoTaughtIn}
@@ -734,17 +830,24 @@ export default function Portal({ route }) {
                 onYes={() => { setReading(null); }}
                 onNo={() => { setReading(null); }}
               />
-            </div>
+            </>
           ) : course ? (
-            <CourseScreen
-              course={course}
-              byKb={byKb}
-              catalog={s.catalog || []}
-              onBack={() => setCourseId(null)}
-              onLesson={(id) => openAtom(id, 'course')}
-            />
+            <>
+              <TrailBar
+                crumbs={[{ id: 'a', name: 'Academy' }, { id: 'c', name: course.title }]}
+                onNavigate={() => setCourseId(null)}
+                onBack={() => setCourseId(null)}
+              />
+              <CourseScreen
+                course={course}
+                byKb={byKb}
+                catalog={s.catalog || []}
+                onLesson={(id) => openAtom(id, 'course')}
+              />
+            </>
           ) : (
             <AcademyScreen
+              orgName={orgName}
               curricula={academyCurricula}
               courses={academyCourses}
               byKb={byKb}
@@ -753,24 +856,23 @@ export default function Portal({ route }) {
             />
           )
         )}
-      </PageBody>
 
-      <footer className={cx('flex-shrink-0 border-t px-6 py-2 flex items-center justify-between gap-3 flex-wrap text-[11px]',
-        t.border, t.textMuted)}>
-        <span>{s.settings?.orgName || 'Northwind Systems'} · {form.name}</span>
-        <span className="flex items-center gap-1.5">
-          Powered by
-          <span className={cx('inline-flex items-center gap-1 font-medium', t.textSecondary)}>
-            <span className={cx('w-3.5 h-3.5 rounded-[4px] flex-shrink-0', GRADIENT.brand)} />
-            RelayHQ
-          </span>
-          · service, support and training on one substrate
-        </span>
-      </footer>
+        <PortalFooter
+          form={form}
+          orgName={orgName}
+          external={external}
+          requester={requester}
+          hasAcademy={academyCourses.length > 0}
+          onHelp={() => { setTab('help'); goHome(); }}
+          onRequests={() => setTab('requests')}
+          onAcademy={() => setTab('academy')}
+          onWhy={() => setWhyOpen(true)}
+        />
+      </div>
 
       <WhyPanel
         open={whyOpen}
-        onClose={() => { setWhyOpen(false); setWhyHint(false); }}
+        onClose={() => setWhyOpen(false)}
         facts={facts}
         subforms={s.subforms || []}
         queues={byQueue}
@@ -788,14 +890,62 @@ export default function Portal({ route }) {
 }
 
 /* ==================================================================== *
- * Brand / form picker
+ * Chrome — one slim bar, so the page can open with help rather than UI.
  * ==================================================================== */
+
+function PortalBar({
+  form, forms, brandIcon, orgName, tabs, tab, requester, org, dark, pickerOpen,
+  onHome, onTab, onPickerOpen, onPickerClose, onPick, onToggleTheme,
+}) {
+  const { t } = useTheme();
+  const Brand = brandIcon;
+  return (
+    <header className={cx('flex-shrink-0 border-b relative z-30', t.border, t.bgSidebar)}>
+      <div className={cx(WIDE, 'h-16 flex items-center gap-3')}>
+        <button onClick={onHome} className="flex items-center gap-3 min-w-0 flex-shrink-0" aria-label="Back to the help centre">
+          <span className={cx('w-9 h-9 rounded-xl flex items-center justify-center shadow-md flex-shrink-0',
+            moduleGradient('portal', 'tile'))}>
+            <Brand size={ICON.lg} className="text-white" />
+          </span>
+          {/* The mark alone carries the brand until there is room for the words —
+              below this the centred tabs would run straight into them. */}
+          <span className="min-w-0 text-left hidden lg:block">
+            <span className={cx('block text-sm font-semibold leading-tight truncate', t.text)}>{orgName}</span>
+            <span className={cx('block text-[11px] leading-tight truncate', t.textMuted)}>{form.name}</span>
+          </span>
+        </button>
+
+        <div className="flex-1 flex justify-center min-w-0">
+          <SubTabs items={tabs} value={tab} onChange={onTab} />
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {forms.length > 1 && (
+            <BrandPicker forms={forms} form={form} open={pickerOpen}
+              onOpen={onPickerOpen} onClose={onPickerClose} onPick={onPick} />
+          )}
+          <IconButton icon={dark ? Moon : Sun} label={dark ? 'Switch to light mode' : 'Switch to dark mode'} onClick={onToggleTheme} />
+          <IconButton icon={LogOut} label="Back to the RelayHQ workspace" onClick={() => navigate('workspace')} />
+          {requester && (
+            <span className="hidden lg:flex items-center gap-2 pl-2 min-w-0">
+              <Avatar name={requester.name} size="lg" />
+              <span className="min-w-0">
+                <span className={cx('block text-xs font-medium leading-tight truncate', t.text)}>{requester.name}</span>
+                {org && <span className={cx('block text-[11px] leading-tight truncate', t.textMuted)}>{org.name}</span>}
+              </span>
+            </span>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
 
 function BrandPicker({ forms, form, open, onOpen, onClose, onPick }) {
   const { t } = useTheme();
   return (
-    <div className="relative">
-      <Button variant="outline" size="sm" onClick={onOpen} aria-expanded={open} className="max-w-[14rem]">
+    <div className="relative hidden md:block">
+      <Button variant="outline" size="sm" onClick={onOpen} aria-expanded={open} className="max-w-[13rem]">
         <span className="truncate">{form.name}</span>
         <ChevronDown size={ICON.base}
           className={cx('flex-shrink-0 transition-transform', t.textMuted, open && 'rotate-180')} />
@@ -823,39 +973,223 @@ function BrandPicker({ forms, form, open, onOpen, onClose, onPick }) {
 }
 
 /* ==================================================================== *
- * Search suggestions
+ * The hero
+ *
+ * One gradient moment: a brand sheet that fades downward into the page and a
+ * blurred brand glow behind the headline. Everything below this band is flat on
+ * purpose — restraint is what makes the one gradient read as deliberate.
  * ==================================================================== */
+
+/**
+ * The wash clips ITSELF rather than being clipped by the section.
+ *
+ * The glow is wider than a narrow viewport, so it has to be clipped or the page
+ * scrolls sideways — but putting `overflow-hidden` on the section also truncates
+ * the search suggestions that hang below the input. So the backdrop carries its
+ * own clipping box and the section stays open.
+ */
+function HeroBackdrop({ compact }) {
+  const { dark } = useTheme();
+  return (
+    <span aria-hidden className="absolute inset-0 overflow-hidden pointer-events-none">
+      <span
+        className={cx('absolute inset-0', GRADIENT.brandBar,
+          dark ? WASH.sheet.dark : WASH.sheet.light,
+          '[mask-image:linear-gradient(to_bottom,rgba(0,0,0,1),rgba(0,0,0,0))]')}
+      />
+      <span
+        className={cx('absolute left-1/2 -translate-x-1/2 rounded-full blur-3xl',
+          GRADIENT.brand,
+          compact ? '-top-40 w-[54rem] h-[24rem]' : '-top-48 w-[72rem] h-[38rem]',
+          dark ? WASH.glow.dark : WASH.glow.light)}
+      />
+    </span>
+  );
+}
+
+function PortalHero({ form, external, orgName, query, onQuery, results, placeholder, onAtom, onItem, popular }) {
+  const { t, dark } = useTheme();
+  const Brand = external ? Building2 : Users;
+  return (
+    <section className="relative">
+      <HeroBackdrop />
+      <div className={cx('relative text-center', WIDE, 'pt-16 pb-12 sm:pt-20 sm:pb-14')}>
+        <span className={cx('inline-flex items-center gap-2 px-3 py-1 rounded-full border text-[11px] font-semibold uppercase tracking-[0.14em]',
+          tint('catalog', dark), t.text)}>
+          <Brand size={ICON.sm} />
+          {external ? `${orgName} support` : `${orgName} help centre`}
+        </span>
+
+        <h1 className={cx('mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-balance', t.text)}>
+          {form.headline || form.name}
+        </h1>
+
+        {(form.subhead || form.description) && (
+          <p className={cx('mt-5 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto text-pretty', t.textSecondary)}>
+            {form.subhead || form.description}
+          </p>
+        )}
+
+        <div className="mt-9 max-w-2xl mx-auto">
+          <PortalSearch
+            size="lg"
+            value={query}
+            onChange={onQuery}
+            results={results}
+            placeholder={placeholder}
+            onAtom={onAtom}
+            onItem={onItem}
+          />
+        </div>
+
+        {popular.length > 0 && (
+          <div className="mt-8">
+            <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em] mb-3.5', t.textMuted)}>
+              Most requested
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              {popular.map(({ node, trail }) => (
+                <PopularPill key={node.id} node={node} trail={trail} onOpen={onItem} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** The compact hero every deeper screen opens with, so the language holds. */
+function PageBand({ icon: Glyph, hue = 'purple', eyebrow, title, sub, meta, actions }) {
+  const { t } = useTheme();
+  return (
+    <section className="relative">
+      <HeroBackdrop compact />
+      <div className={cx('relative', WIDE, 'pt-10 pb-9')}>
+        <div className="flex items-start gap-4">
+          {Glyph && <IconTile icon={Glyph} accent={hue} size="lg" className="mt-1" />}
+          <div className="min-w-0 flex-1">
+            {eyebrow && (
+              <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em] mb-2', t.textMuted)}>{eyebrow}</p>
+            )}
+            <h1 className={cx('text-3xl sm:text-4xl font-semibold tracking-tight leading-tight text-balance', t.text)}>
+              {title}
+            </h1>
+            {sub && (
+              <p className={cx('mt-3 text-base leading-relaxed max-w-2xl text-pretty', t.textSecondary)}>{sub}</p>
+            )}
+            {meta && <div className="mt-4 flex items-center gap-2 flex-wrap">{meta}</div>}
+          </div>
+          {actions && <div className="flex-shrink-0 flex items-center gap-2">{actions}</div>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SectionHead({ eyebrow, title, hint, action, className }) {
+  const { t } = useTheme();
+  return (
+    <div className={cx('flex items-end justify-between gap-4 flex-wrap mb-6', className)}>
+      <div className="min-w-0">
+        {eyebrow && (
+          <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em] mb-2', t.textMuted)}>{eyebrow}</p>
+        )}
+        <h2 className={cx('text-2xl font-semibold tracking-tight', t.text)}>{title}</h2>
+        {hint && <p className={cx('mt-2 text-sm leading-relaxed max-w-2xl', t.textSecondary)}>{hint}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/* ==================================================================== *
+ * Search — the primary action on a help centre, sized like it.
+ * ==================================================================== */
+
+const SEARCH_SIZE = {
+  lg: { box: 'rounded-2xl px-5 py-4 gap-3 shadow-xl', input: 'text-base sm:text-lg', icon: ICON.xl },
+  sm: { box: 'rounded-xl px-3.5 py-2 gap-2.5 shadow-sm', input: 'text-sm', icon: ICON.md },
+};
+
+function PortalSearch({ size = 'lg', value, onChange, results, placeholder, onAtom, onItem }) {
+  const { t, a } = useTheme();
+  const c = a('purple');
+  const [focused, setFocused] = useState(false);
+  const dims = SEARCH_SIZE[size] || SEARCH_SIZE.lg;
+
+  /* The suggestion popover is a real popover, so it dismisses on Escape and on a
+   * click outside — the DS hook, not a bespoke listener. The ref goes on the
+   * wrapper rather than the panel so clicking back into the input is "inside". */
+  const wrap = useDismiss(!!results, () => onChange(''));
+  const live = focused || !!value;
+
+  return (
+    <div ref={wrap} className="relative">
+      <div className={cx('flex items-center border transition-colors', dims.box, t.bgInput,
+        live ? c.borderStrong : t.borderLight)}>
+        <Search size={dims.icon} className={cx('flex-shrink-0', live ? c.fg : t.textMuted)} />
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          className={cx('flex-1 min-w-0 bg-transparent outline-none', dims.input, t.text)}
+        />
+        {value && (
+          <button onClick={() => onChange('')} aria-label="Clear search"
+            className={cx('p-1 rounded-full flex-shrink-0', t.textMuted, t.bgHover)}>
+            <X size={ICON.md} />
+          </button>
+        )}
+      </div>
+      {results && (
+        <SearchSuggestions
+          results={results}
+          onAtom={onAtom}
+          onItem={onItem}
+          onDismiss={() => onChange('')}
+        />
+      )}
+    </div>
+  );
+}
 
 function SearchSuggestions({ results, onAtom, onItem, onDismiss }) {
   const { t, a } = useTheme();
-  const blue = a('blue');
-  const emerald = a('emerald');
+  /* Ask the registry, don't name the hue: an article is whatever colour knowledge
+   * is, and a catalog item is whatever colour an item is. */
+  const atomTone = a(entityHue('article'));
+  const itemTone = a(entityHue('item'));
   const empty = !results.atoms.length && !results.nodes.length;
 
   return (
-    <div className={cx('absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl border shadow-2xl overflow-hidden',
+    <div className={cx('absolute left-0 right-0 top-full mt-2 z-40 rounded-2xl border shadow-2xl overflow-hidden text-left',
       t.modal, t.borderLight)}>
       {empty ? (
-        <div className={cx('px-3 py-4 text-sm text-center', t.textMuted)}>
-          Nothing matched. Try a product name, or browse the categories below.
+        <div className={cx('px-4 py-5 text-sm text-center', t.textMuted)}>
+          Nothing matched. Try a product name, or browse the areas below.
         </div>
       ) : (
-        <div className="max-h-[22rem] overflow-auto py-1">
+        <div className="max-h-[24rem] overflow-auto py-1">
           {results.atoms.length > 0 && (
             <>
-              <div className={cx('px-3 py-1.5 flex items-center justify-between border-b', t.borderLight)}>
+              <div className={cx('px-4 py-2 flex items-center justify-between border-b', t.borderLight)}>
                 <GroupLabel>Suggested answers</GroupLabel>
                 <span className={cx('text-[10px]', t.textMuted)}>{results.atoms.length} shown</span>
               </div>
               {results.atoms.map(k => (
                 <button key={k.id} onClick={() => onAtom(k.id)}
-                  className={cx('w-full text-left flex items-start gap-2.5 px-3 py-2', t.bgHover)}>
-                  <BookOpen size={ICON.md} className={cx('flex-shrink-0 mt-0.5', blue.fg)} />
+                  className={cx('w-full text-left flex items-start gap-3 px-4 py-3', t.bgHover)}>
+                  <BookOpen size={ICON.md} className={cx('flex-shrink-0 mt-0.5', atomTone.fg)} />
                   <span className="min-w-0 flex-1">
                     <span className={cx('block text-sm font-medium truncate', t.text)}>{k.title}</span>
-                    <span className={cx('block text-xs truncate', t.textMuted)}>{k.summary}</span>
+                    <span className={cx('block text-xs truncate mt-0.5', t.textMuted)}>{k.summary}</span>
                   </span>
-                  <span className="flex items-center gap-1 flex-shrink-0">
+                  <span className="flex items-center gap-1.5 flex-shrink-0">
                     <EntityTag kind={k.format === 'guide' ? 'guide' : 'article'} />
                     {k.minutes ? <span className={cx('text-[10px] tabular-nums', t.textMuted)}>{k.minutes}m</span> : null}
                   </span>
@@ -865,17 +1199,18 @@ function SearchSuggestions({ results, onAtom, onItem, onDismiss }) {
           )}
           {results.nodes.length > 0 && (
             <>
-              <div className={cx('px-3 py-1.5 border-b border-t', t.borderLight)}>
+              <div className={cx('px-4 py-2 border-b border-t', t.borderLight)}>
                 <GroupLabel>Services</GroupLabel>
               </div>
               {results.nodes.map(({ node, trail }) => (
                 <button key={node.id} onClick={() => onItem(node.id)}
-                  className={cx('w-full text-left flex items-center gap-2.5 px-3 py-2', t.bgHover)}>
-                  <Circle size={ICON.md} className={cx('flex-shrink-0', emerald.fg)} />
+                  className={cx('w-full text-left flex items-center gap-3 px-4 py-3', t.bgHover)}>
+                  <Circle size={ICON.md} className={cx('flex-shrink-0', itemTone.fg)} />
                   <span className="min-w-0 flex-1">
                     <span className={cx('block text-sm font-medium truncate', t.text)}>{node.name}</span>
-                    <span className={cx('block text-xs truncate', t.textMuted)}>{trail.map(n => n.name).join(' › ')}</span>
+                    <span className={cx('block text-xs truncate mt-0.5', t.textMuted)}>{trail.map(n => n.name).join(' › ')}</span>
                   </span>
+                  <ChevronRight size={ICON.base} className={cx('flex-shrink-0', t.textMuted)} />
                 </button>
               ))}
             </>
@@ -883,86 +1218,76 @@ function SearchSuggestions({ results, onAtom, onItem, onDismiss }) {
         </div>
       )}
       <button onClick={onDismiss}
-        className={cx('w-full px-3 py-1.5 text-[11px] border-t', t.borderLight, t.textMuted, t.bgHover)}>
+        className={cx('w-full px-4 py-2 text-[11px] border-t', t.borderLight, t.textMuted, t.bgHover)}>
         Clear search
       </button>
     </div>
   );
 }
 
-/* ==================================================================== *
- * Browse — the drill-down
- * ==================================================================== */
-
-function popularItems(products) {
-  return walkCatalog(products)
-    .filter(x => x.node.type === 'item' && x.node.popular)
-    .slice(0, 6);
+function PopularPill({ node, trail, onOpen }) {
+  const { t, a } = useTheme();
+  const c = a(entityHue('item'));
+  return (
+    <button
+      onClick={() => onOpen(node.id)}
+      title={trail.map(n => n.name).join(' › ')}
+      className={cx('group inline-flex items-center gap-3 rounded-full border pl-2 pr-5 py-2 shadow-sm',
+        'transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg', t.portalCard)}
+    >
+      <span className={cx('w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0', c.softStrong)}>
+        <Circle size={ICON.base} className={c.fg} />
+      </span>
+      <span className={cx('text-sm font-medium', t.text)}>{node.name}</span>
+      <ArrowRight size={ICON.base}
+        className={cx('-ml-2 opacity-0 group-hover:opacity-100 group-hover:ml-0 transition-all', c.fg)} />
+    </button>
+  );
 }
 
-const LEVEL_COPY = [
-  { label: 'Step 1 of 3', hint: 'Pick the product or service area.' },
-  { label: 'Step 2 of 3', hint: 'Narrow it down.' },
-  { label: 'Step 3 of 3', hint: 'Choose the thing you need.' },
-];
+/* ==================================================================== *
+ * The trail — back, breadcrumbs and a search that stays within reach.
+ * ==================================================================== */
 
-function BrowseScreen({ form, nodes, level, popular, whyHint, onWhy, onDismissWhy, onPick, onItem }) {
-  const copy = LEVEL_COPY[Math.min(level, 2)];
-
+function TrailBar({ crumbs, onNavigate, onBack, query, onQuery, results, placeholder, onAtom, onItem }) {
+  const { t } = useTheme();
   return (
-    <div className="space-y-4">
-      {whyHint && (
-        <Banner accent="purple" icon={Sparkles} title="This is a drill-down, not a list of every form">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <span>Three steps, and help is always shown before a request form. Here is the comparison, with numbers from this instance.</span>
-            <span className="flex items-center gap-1.5 flex-shrink-0">
-              <Button variant="soft" accent="purple" size="xs" onClick={onWhy}>Show me</Button>
-              <Button variant="ghost" size="xs" onClick={onDismissWhy}>Dismiss</Button>
-            </span>
-          </div>
-        </Banner>
-      )}
-
-      {popular.length > 0 && (
-        <Section title="Most requested" hint="What people at this stage usually pick.">
-          <div className="flex flex-wrap gap-1.5">
-            {popular.map(({ node, trail }) => (
-              <Button
-                key={node.id}
-                variant="outline"
-                size="xs"
-                icon={Circle}
-                className="rounded-full px-3 py-1.5"
-                onClick={() => onItem(node.id)}
-                title={trail.map(n => n.name).join(' › ')}
-              >
-                {node.name}
-              </Button>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      <Section
-        title={level === 0 ? 'Browse' : nodes.length ? 'Choose one' : 'Nothing here yet'}
-        hint={`${copy.label} · ${copy.hint}`}
-      >
-        {nodes.length === 0 ? (
-          <EmptyState icon={Folder} title="Nothing published here"
-            hint="This branch of the catalog has no published children for your audience." />
-        ) : (
-          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(15rem, 1fr))' }}>
-            {nodes.map(node => <NodeCard key={node.id} node={node} onPick={onPick} />)}
+    <div className={cx('sticky top-0 z-20 border-b backdrop-blur-xl', t.border, t.bgSidebar)}>
+      <div className={cx(WIDE, 'py-2.5 flex items-center gap-3')}>
+        <Button variant="outline" size="sm" icon={ArrowLeft} onClick={onBack} className="flex-shrink-0">Back</Button>
+        <div className="min-w-0 flex-1">
+          <Breadcrumbs items={crumbs} onNavigate={onNavigate} />
+        </div>
+        {onQuery && (
+          <div className="hidden md:block w-72 flex-shrink-0">
+            <PortalSearch
+              size="sm"
+              value={query}
+              onChange={onQuery}
+              results={results}
+              placeholder={placeholder}
+              onAtom={onAtom}
+              onItem={onItem}
+            />
           </div>
         )}
-      </Section>
+      </div>
+    </div>
+  );
+}
 
-      {form.requireSignIn && level === 0 && (
-        <Banner accent="blue" icon={Info}>
-          This portal requires a Northwind sign-in, so requests arrive already attached to the person who raised them —
-          no "what is your email address" round trip.
-        </Banner>
-      )}
+/* ==================================================================== *
+ * Browse
+ *
+ * A flex grid rather than fixed columns: cards share the row width, so the
+ * last row fills instead of stranding one card on its own, and every card in
+ * a row is the same height without a measuring pass.
+ * ==================================================================== */
+
+function BrowseGrid({ nodes, onPick }) {
+  return (
+    <div className="flex flex-wrap gap-4 items-stretch">
+      {nodes.map(node => <NodeCard key={node.id} node={node} onPick={onPick} />)}
     </div>
   );
 }
@@ -971,108 +1296,176 @@ function NodeCard({ node, onPick }) {
   const { t, a } = useTheme();
   const hue = entityHue(node.type);
   const c = a(hue);
-  const Icon = NODE_ICON[node.type] || Circle;
-  const count = (node.children || []).length;
-  const help = (node.knowledgeIds || []).length;
-  const intakes = (node.subformIds || []).length;
+  const Glyph = nodeIcon(node);
+  const stats = nodeStats(node);
 
   return (
     <button
       onClick={() => onPick(node)}
-      className={cx('text-left rounded-xl border p-3 flex gap-3 transition-colors group', t.portalCard)}
+      className={cx('group relative text-left rounded-2xl border overflow-hidden p-5 flex flex-col',
+        'flex-1 basis-[18rem] min-w-[16rem] shadow-sm',
+        'transition-transform duration-200 hover:-translate-y-1 hover:shadow-xl', t.portalCard)}
     >
-      <span className={cx('w-1 self-stretch rounded-full flex-shrink-0', c.rail)} />
-      <IconTile icon={Icon} accent={hue} size="sm" />
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 mb-0.5">
-          <EntityTag kind={node.type} />
-          {node.popular && <Chip accent="amber">Popular</Chip>}
-        </span>
-        <span className={cx('block text-sm font-medium leading-tight', t.text)}>{node.name}</span>
-        {node.description && (
-          <span className={cx('block text-xs mt-0.5 leading-snug line-clamp-2', t.textMuted)}>{node.description}</span>
-        )}
-        <span className={cx('flex items-center gap-2 mt-1.5 text-[11px]', t.textMuted)}>
-          {count > 0 && <span>{count} {node.type === 'product' ? 'categories' : 'options'}</span>}
-          {help > 0 && <span className="flex items-center gap-1"><BookOpen size={ICON.xs} />{help}</span>}
-          {intakes > 0 && <span className="flex items-center gap-1"><FileQuestion size={ICON.xs} />{intakes}</span>}
-          {node.fulfillment && <span className="flex items-center gap-1"><Clock size={ICON.xs} />{node.fulfillment}</span>}
-        </span>
+      {/* Colour lives in the tile and in a hairline that only appears on hover —
+          never a heavy rail down the side of every card. */}
+      <span aria-hidden className={cx('absolute inset-x-0 top-0 h-1 opacity-0 group-hover:opacity-100 transition-opacity', c.rail)} />
+      <span aria-hidden className={cx('absolute inset-0 rounded-2xl border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity', c.borderStrong)} />
+
+      <span className="flex items-start justify-between gap-3">
+        <IconTile icon={Glyph} accent={hue} size="lg" />
+        <ChevronRight size={ICON.lg}
+          className={cx('mt-2 flex-shrink-0 -translate-x-1 opacity-0 group-hover:opacity-100 group-hover:translate-x-0 transition-all', c.fg)} />
       </span>
-      <ChevronRight size={ICON.md} className={cx('flex-shrink-0 self-center', t.textMuted)} />
+
+      <span className={cx('mt-4 flex items-center gap-2 flex-wrap')}>
+        <span className={cx('block text-base font-semibold leading-snug text-balance', t.text)}>{node.name}</span>
+        {node.popular && <Chip accent="amber">Popular</Chip>}
+      </span>
+
+      <span className={cx('mt-2 block text-sm leading-relaxed line-clamp-2 min-h-[2.75rem]', t.textSecondary)}>
+        {node.description}
+      </span>
+
+      <span className={cx('mt-auto pt-4 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs border-t', t.textMuted, t.border)}>
+        {node.type === 'product' && stats.children > 0 && (
+          <span className="flex items-center gap-1.5">
+            <Layers size={ICON.xs} />{plural(stats.children, 'category', 'categories')}
+          </span>
+        )}
+        {node.type === 'product' && stats.items > 0 && (
+          <span className="flex items-center gap-1.5">
+            <Circle size={ICON.xs} />{plural(stats.items, 'service', 'services')}
+          </span>
+        )}
+        {node.type === 'subcategory' && stats.children > 0 && (
+          <span className="flex items-center gap-1.5">
+            <Circle size={ICON.xs} />{plural(stats.children, 'service', 'services')}
+          </span>
+        )}
+        {stats.help > 0 && (
+          <span className="flex items-center gap-1.5">
+            <BookOpen size={ICON.xs} />{plural(stats.help, 'answer', 'answers')}
+          </span>
+        )}
+        {stats.intakes > 0 && (
+          <span className="flex items-center gap-1.5">
+            <FileQuestion size={ICON.xs} />{plural(stats.intakes, 'form', 'forms')}
+          </span>
+        )}
+        {node.fulfillment && (
+          <span className="flex items-center gap-1.5"><Clock size={ICON.xs} />{node.fulfillment}</span>
+        )}
+      </span>
     </button>
   );
 }
 
+function LevelScreen({ node, nodes, level, onPick }) {
+  const copy = LEVEL_COPY[Math.min(level, 2)];
+  return (
+    <>
+      <PageBand
+        icon={nodeIcon(node)}
+        hue={entityHue(node?.type || 'product')}
+        eyebrow={copy.label}
+        title={node?.name || 'Browse'}
+        sub={node?.description}
+      />
+      <section className={cx(WIDE, 'pb-16')}>
+        <SectionHead
+          title={nodes.length ? 'Choose one' : 'Nothing here yet'}
+          hint={nodes.length ? copy.hint : undefined}
+        />
+        {nodes.length === 0 ? (
+          <EmptyState icon={Folder} title="Nothing published here"
+            hint="This branch of the catalog has no published children for your audience." />
+        ) : (
+          <BrowseGrid nodes={nodes} onPick={onPick} />
+        )}
+      </section>
+    </>
+  );
+}
+
 /* ==================================================================== *
- * Item — help above forms, always
+ * Item — help above forms, always.
  * ==================================================================== */
 
 function ItemScreen({ item, atoms, forms, queues, policies, emphasise, onAtom, onIntake }) {
-  const { t, a } = useTheme();
-  const emerald = a('emerald');
+  const { t } = useTheme();
 
   return (
-    <div className="space-y-4">
-      <Card className={cx(DENSITY.cardPad, 'flex items-start gap-3')}>
-        <span className={cx('w-1 self-stretch rounded-full flex-shrink-0', emerald.rail)} />
-        <IconTile icon={Circle} accent="emerald" size="lg" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-            <EntityTag kind="item" />
-            {item.popular && <Chip accent="amber">Most requested</Chip>}
-            {item.fulfillment && <Chip accent="slate" icon={Clock}>{item.fulfillment}</Chip>}
-          </div>
-          <h3 className={cx('text-lg font-semibold leading-tight', t.text)}>{item.name}</h3>
-          {item.description && <p className={cx('text-sm mt-1 leading-relaxed', t.textSecondary)}>{item.description}</p>}
-        </div>
-      </Card>
+    <>
+      <PageBand
+        icon={Circle}
+        hue={entityHue('item')}
+        eyebrow="Service"
+        title={item.name}
+        sub={item.description}
+        /* Chips name the answers and the intakes rather than counting them —
+           "2 request forms" tells a reader nothing they can act on, and the
+           overflow badge already handles a long list. */
+        meta={<>
+          {item.popular && <Chip accent="amber" icon={Sparkles}>Most requested</Chip>}
+          {item.fulfillment && <Chip accent="slate" icon={Clock}>{item.fulfillment}</Chip>}
+          <ChipGroup accent={entityHue('article')} icon={BookOpen} max={2} items={atoms} render={(k) => k.title} />
+          <ChipGroup accent={entityHue('subform')} icon={FileQuestion} max={2} items={forms} render={(f) => f.name} />
+        </>}
+      />
 
-      {atoms.length > 0 && (
-        <Section
-          title="Answers first"
-          hint={`${atoms.length} ${atoms.length === 1 ? 'article' : 'articles'} covering the usual version of this. Read before you raise anything.`}
-        >
-          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(17rem, 1fr))' }}>
-            {atoms.map(k => <AtomCard key={k.id} atom={k} onOpen={() => onAtom(k.id)} />)}
-          </div>
-        </Section>
-      )}
+      <div className={cx(WIDE, 'pb-16 space-y-12')}>
+        {/* HELP FIRST. This ordering is the deflection mechanic: the answers are
+            rendered above the intakes on every item, every time, and nothing in
+            the portal can reorder it. Do not move the forms block above this. */}
+        {atoms.length > 0 && (
+          <section>
+            <SectionHead
+              eyebrow="Answers first"
+              title="Try these before you raise anything"
+              hint={`${plural(atoms.length, 'article covers', 'articles cover')} the usual version of this. Most people stop here.`}
+            />
+            <div className="flex flex-wrap gap-4 items-stretch">
+              {atoms.map(k => <AtomCard key={k.id} atom={k} onOpen={() => onAtom(k.id)} />)}
+            </div>
+          </section>
+        )}
 
-      {atoms.length > 0 && forms.length > 0 && <Divider />}
-
-      {forms.length > 0 ? (
-        <Section
-          title={forms.length > 1 ? 'Or tell us what you need' : 'Or raise a request'}
-          hint={forms.length > 1
-            ? `${forms.length} different intakes hang off this one service. They ask different questions and go to different teams.`
-            : 'If none of the above answered it.'}
-        >
-          {emphasise && (
-            <Banner accent="rose" icon={MessageSquare} title="No problem — let's get a person on it" className="mb-2">
-              Pick the intake that fits. Everything you have already read is attached to the request, so nobody asks you to try it again.
-            </Banner>
-          )}
-          <div className={cx('grid gap-2', emphasise && 'rounded-xl')} style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(19rem, 1fr))' }}>
-            {forms.map(f => (
-              <IntakeCard
-                key={f.id}
-                subform={f}
-                queue={f.routing?.queueId ? queues.get(f.routing.queueId) : null}
-                policy={policies.find(p => p.id === f.approvalPolicyId) || null}
-                emphasise={emphasise}
-                onStart={() => onIntake(f.id)}
-              />
-            ))}
-          </div>
-        </Section>
-      ) : (
-        <Banner accent="blue" icon={Info} title="Reference only">
-          This service has no request form attached — it exists to explain something rather than to be ordered.
-          If you still need help, go back and pick a service with an intake on it.
-        </Banner>
-      )}
-    </div>
+        {forms.length > 0 ? (
+          <section>
+            <SectionHead
+              eyebrow="Still stuck?"
+              title={forms.length > 1 ? 'Tell us what you need' : 'Raise a request'}
+              hint={forms.length > 1
+                ? `${plural(forms.length, 'intake hangs', 'intakes hang')} off this one service. They ask different questions and go to different teams.`
+                : 'If none of the above answered it, this goes straight to the team that owns it.'}
+            />
+            {emphasise && (
+              <Banner accent="rose" icon={MessageSquare} title="No problem — let's get a person on it" className="mb-4">
+                Pick the intake that fits. Everything you have already read is attached to the request, so nobody asks
+                you to try it again.
+              </Banner>
+            )}
+            <div className="flex flex-wrap gap-4 items-stretch">
+              {forms.map(f => (
+                <IntakeCard
+                  key={f.id}
+                  subform={f}
+                  queue={f.routing?.queueId ? queues.get(f.routing.queueId) : null}
+                  policy={policies.find(p => p.id === f.approvalPolicyId) || null}
+                  emphasise={emphasise}
+                  onStart={() => onIntake(f.id)}
+                />
+              ))}
+            </div>
+          </section>
+        ) : (
+          <Banner accent="blue" icon={Info} title="Reference only">
+            This service has no request form attached — it exists to explain something rather than to be ordered.
+            If you still need help, go back and pick a service with an intake on it.
+          </Banner>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -1082,22 +1475,40 @@ function AtomCard({ atom, onOpen }) {
   const hue = entityHue(guide ? 'guide' : 'article');
   const c = a(hue);
   const slides = (atom.slides || []).length;
+  const Glyph = guide ? LayoutGrid : BookOpen;
 
   return (
-    <button onClick={onOpen} className={cx('text-left rounded-xl border p-3 flex gap-3 transition-colors', t.portalCard)}>
-      <span className={cx('w-1 self-stretch rounded-full flex-shrink-0', c.rail)} />
-      <IconTile icon={guide ? LayoutGrid : BookOpen} accent={hue} size="sm" />
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+    <button
+      onClick={onOpen}
+      className={cx('group relative text-left rounded-2xl border overflow-hidden p-5 flex flex-col',
+        'flex-1 basis-[20rem] min-w-[17rem] shadow-sm',
+        'transition-transform duration-200 hover:-translate-y-1 hover:shadow-xl', t.portalCard)}
+    >
+      <span aria-hidden className={cx('absolute inset-x-0 top-0 h-1 opacity-0 group-hover:opacity-100 transition-opacity', c.rail)} />
+      <span aria-hidden className={cx('absolute inset-0 rounded-2xl border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity', c.borderStrong)} />
+
+      <span className="flex items-start justify-between gap-3">
+        <IconTile icon={Glyph} accent={hue} size="lg" />
+        <span className="flex items-center gap-1.5 flex-shrink-0 mt-1">
           <EntityTag kind={guide ? 'guide' : 'article'} />
-          {guide && slides > 0 && <span className={cx('text-[10px]', t.textMuted)}>{slides} screens</span>}
-          {atom.minutes ? <span className={cx('text-[10px] flex items-center gap-0.5', t.textMuted)}><Clock size={ICON.xs} />{atom.minutes} min</span> : null}
         </span>
-        <span className={cx('block text-sm font-medium leading-tight', t.text)}>{atom.title}</span>
-        <span className={cx('block text-xs mt-0.5 leading-snug line-clamp-2', t.textMuted)}>{atom.summary}</span>
+      </span>
+
+      <span className={cx('mt-4 block text-base font-semibold leading-snug text-balance', t.text)}>{atom.title}</span>
+      <span className={cx('mt-2 block text-sm leading-relaxed line-clamp-2 min-h-[2.75rem]', t.textSecondary)}>
+        {atom.summary}
+      </span>
+
+      <span className={cx('mt-auto pt-4 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs border-t', t.textMuted, t.border)}>
+        {guide && slides > 0 && (
+          <span className="flex items-center gap-1.5"><LayoutGrid size={ICON.xs} />{plural(slides, 'screen', 'screens')}</span>
+        )}
+        {atom.minutes ? (
+          <span className="flex items-center gap-1.5"><Clock size={ICON.xs} />{atom.minutes} min</span>
+        ) : null}
         {atom.helpfulYes ? (
-          <span className={cx('flex items-center gap-1 mt-1.5 text-[11px]', c.fg)}>
-            <ThumbsUp size={ICON.xs} />{atom.helpfulYes} people marked this helpful
+          <span className={cx('flex items-center gap-1.5', c.fg)}>
+            <ThumbsUp size={ICON.xs} />{atom.helpfulYes.toLocaleString()} found this helpful
           </span>
         ) : null}
       </span>
@@ -1112,28 +1523,37 @@ function IntakeCard({ subform, queue, policy, emphasise, onStart }) {
   const conditional = (subform.fields || []).filter(f => f.showIf).length;
 
   return (
-    <div className={cx('rounded-xl border p-3 flex flex-col gap-2', t.portalCard, emphasise && c.borderStrong)}>
-      <div className="flex items-start gap-2.5">
-        <IconTile icon={FileQuestion} accent="purple" size="sm" />
+    <div className={cx('relative rounded-2xl border overflow-hidden p-5 flex flex-col shadow-sm',
+      'flex-1 basis-[22rem] min-w-[18rem]', t.portalCard, emphasise && c.borderStrong)}>
+      <div className="flex items-start gap-3">
+        <IconTile icon={FileQuestion} accent="purple" size="lg" />
         <div className="min-w-0 flex-1">
-          <p className={cx('text-sm font-medium leading-tight', t.text)}>{subform.name}</p>
+          <p className={cx('text-base font-semibold leading-snug text-balance', t.text)}>{subform.name}</p>
           {subform.description && (
-            <p className={cx('text-xs mt-0.5 leading-snug', t.textMuted)}>{subform.description}</p>
+            <p className={cx('text-sm mt-1.5 leading-relaxed', t.textSecondary)}>{subform.description}</p>
           )}
         </div>
       </div>
-      <div className="flex items-center gap-1.5 flex-wrap">
+
+      <div className="mt-4 flex items-center gap-2 flex-wrap">
         {queue
           ? <Chip accent={queue.hue || entityHue('queue')} icon={Inbox} title={queue.description}>{queue.name}</Chip>
           : <Chip accent="amber" icon={Route}>Unrouted → General</Chip>}
         {policy && <Chip accent="amber" icon={Stamp} title={policy.description}>{policy.name}</Chip>}
-        <span className={cx('text-[11px]', t.textMuted)}>
-          {fields} questions{conditional ? ` · ${conditional} conditional` : ''}
+        <span className={cx('text-xs', t.textMuted)}>
+          {plural(fields, 'question', 'questions')}{conditional ? ` · ${conditional} conditional` : ''}
         </span>
       </div>
-      <Button variant="solid" accent="purple" size="sm" icon={ArrowRight} onClick={onStart} className="self-start">
-        {subform.submitLabel || 'Start'}
-      </Button>
+
+      {/* SOLID, not the signature gradient. An item can carry several intakes, and
+          a gradient on every card in the grid turns the brand moment into wallpaper.
+          The gradient belongs to the module tile and to the ONE primary action on a
+          screen — here that is Submit on the intake itself, not Start on each card. */}
+      <div className="mt-auto pt-5">
+        <Button variant="solid" accent={entityHue('subform')} size="md" iconRight={ArrowRight} onClick={onStart}>
+          {subform.submitLabel || 'Start'}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1147,56 +1567,60 @@ function ReadingScreen({ atom, alsoIn, fromCourse, onCourseBack, onYes, onNo }) 
   const guide = atom.format === 'guide';
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-            <EntityTag kind={guide ? 'guide' : 'article'} />
-            {atom.minutes ? <Chip accent="slate" icon={Clock}>{atom.minutes} min</Chip> : null}
-            {atom.views ? <Chip accent="slate" icon={Eye}>{atom.views.toLocaleString()} views</Chip> : null}
-            {atom.updatedAt && <span className={cx('text-[11px]', t.textMuted)}>Updated {fmtWhen(atom.updatedAt)}</span>}
+    <>
+      <PageBand
+        icon={guide ? LayoutGrid : BookOpen}
+        hue={entityHue(guide ? 'guide' : 'article')}
+        eyebrow={guide ? 'Guide' : 'Article'}
+        title={atom.title}
+        sub={atom.summary}
+        meta={<>
+          {atom.minutes ? <Chip accent="slate" icon={Clock}>{atom.minutes} min</Chip> : null}
+          {atom.views ? <Chip accent="slate" icon={Eye}>{atom.views.toLocaleString()} views</Chip> : null}
+          {atom.updatedAt && <span className={cx('text-xs', t.textMuted)}>Updated {fmtWhen(atom.updatedAt)}</span>}
+        </>}
+      />
+
+      <div className={cx(guide ? WIDE : READ, 'pb-16 space-y-6')}>
+        {atom.objective && (
+          <Banner accent="blue" icon={Check} title="What you will be able to do">
+            {atom.objective}
+          </Banner>
+        )}
+
+        {guide ? <GuideBody atom={atom} /> : <ArticleBody atom={atom} />}
+
+        {alsoIn.length > 0 && (
+          <div className={cx('rounded-2xl border p-4 flex items-center gap-3 flex-wrap', t.portalCard)}>
+            <span className="flex items-center gap-2.5">
+              <IconTile icon={GraduationCap} accent="indigo" size="sm" />
+              <span className={cx('text-sm', t.textSecondary)}>This same article is a lesson in</span>
+            </span>
+            <ChipGroup accent="indigo" icon={BookMarked} max={3} items={alsoIn} render={(c) => c.title} />
           </div>
-          <h2 className={cx('text-xl font-semibold leading-tight', t.text)}>{atom.title}</h2>
-          <p className={cx('text-sm mt-1', t.textSecondary)}>{atom.summary}</p>
-        </div>
+        )}
+
+        {fromCourse ? (
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className={cx('text-sm', t.textMuted)}>
+              Lesson from <strong className={t.text}>{fromCourse.title}</strong>
+            </span>
+            <Button variant="soft" accent="indigo" icon={ArrowLeft} onClick={onCourseBack}>Back to the course</Button>
+          </div>
+        ) : (
+          <ResolvePrompt onYes={onYes} onNo={onNo} />
+        )}
       </div>
-
-      {atom.objective && (
-        <Banner accent="blue" icon={Check} title="What you will be able to do">
-          {atom.objective}
-        </Banner>
-      )}
-
-      {guide ? <GuideBody atom={atom} /> : <ArticleBody atom={atom} />}
-
-      {alsoIn.length > 0 && (
-        <div className={cx('rounded-xl border p-3 flex items-center gap-3 flex-wrap', t.portalCard)}>
-          <span className="flex items-center gap-2">
-            <IconTile icon={GraduationCap} accent="indigo" size="sm" />
-            <span className={cx('text-xs', t.textSecondary)}>This same article is a lesson in</span>
-          </span>
-          <ChipGroup accent="indigo" icon={BookMarked} max={3} items={alsoIn} render={(c) => c.title} />
-        </div>
-      )}
-
-      {fromCourse ? (
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <span className={cx('text-xs', t.textMuted)}>Lesson from <strong className={t.text}>{fromCourse.title}</strong></span>
-          <Button variant="soft" accent="indigo" icon={ArrowLeft} onClick={onCourseBack}>Back to the course</Button>
-        </div>
-      ) : (
-        <ResolvePrompt onYes={onYes} onNo={onNo} />
-      )}
-    </div>
+    </>
   );
 }
 
 function ArticleBody({ atom }) {
   const { t } = useTheme();
   return (
-    <div className={cx('rounded-xl border p-5', t.portalCard)}>
+    <div className={cx('rounded-2xl border p-6 sm:p-8', t.portalCard)}>
       <article
-        className={cx('rhq-prose text-sm leading-relaxed space-y-3 max-w-2xl', t.text)}
+        className={cx('rhq-prose text-[15px] leading-7 space-y-4', PROSE, t.text)}
         dangerouslySetInnerHTML={{ __html: atom.body || '<p>This article has no body yet.</p>' }}
       />
     </div>
@@ -1221,10 +1645,10 @@ function GuideBody({ atom }) {
   const slides = atom.slides || [];
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className={cx('text-xs', t.textMuted)}>
-          {slides.length} screens · tap the right side to advance, hold to pause
+        <span className={cx('text-sm', t.textMuted)}>
+          {plural(slides.length, 'screen', 'screens')} · tap the right side to advance, hold to pause
         </span>
         <Button
           variant={asText ? 'solid' : 'soft'}
@@ -1240,8 +1664,8 @@ function GuideBody({ atom }) {
       {asText
         ? <GuideAsText atom={atom} />
         : (
-          <div className="grid gap-4 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(17rem, 1fr))' }}>
-            <div className="max-w-[19rem] w-full mx-auto">
+          <div className="grid gap-6 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(18rem, 1fr))' }}>
+            <div className="max-w-[20rem] w-full mx-auto">
               <StoryPlayer atom={atom} />
             </div>
             <GuideOutline atom={atom} />
@@ -1255,22 +1679,22 @@ function GuideOutline({ atom }) {
   const { t, a } = useTheme();
   const c = a('purple');
   return (
-    <div className={cx('rounded-xl border p-3', t.portalCard)}>
+    <div className={cx('rounded-2xl border p-5', t.portalCard)}>
       <GroupLabel>What the guide covers</GroupLabel>
-      <ol className="mt-2 space-y-1.5">
+      <ol className="mt-3 space-y-2.5">
         {(atom.slides || []).map((sl, i) => (
-          <li key={sl.id} className="flex items-start gap-2">
-            <span className={cx('w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-semibold flex-shrink-0',
+          <li key={sl.id} className="flex items-start gap-2.5">
+            <span className={cx('w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-semibold flex-shrink-0',
               c.softStrong, c.fg)}>{i + 1}</span>
             <span className="min-w-0">
-              <span className={cx('block text-sm leading-tight', t.text)}>{sl.heading || `Screen ${i + 1}`}</span>
-              {sl.seconds ? <span className={cx('text-[10px]', t.textMuted)}>{sl.seconds}s</span> : <span className={cx('text-[10px]', t.textMuted)}>manual</span>}
+              <span className={cx('block text-sm leading-snug', t.text)}>{sl.heading || `Screen ${i + 1}`}</span>
+              <span className={cx('text-[11px]', t.textMuted)}>{sl.seconds ? `${sl.seconds}s` : 'manual'}</span>
             </span>
           </li>
         ))}
       </ol>
       {atom.tags?.length ? (
-        <div className="mt-3">
+        <div className="mt-4">
           <ChipGroup accent="slate" max={4} items={atom.tags} />
         </div>
       ) : null}
@@ -1281,30 +1705,30 @@ function GuideOutline({ atom }) {
 function GuideAsText({ atom }) {
   const { t } = useTheme();
   return (
-    <div className={cx('rounded-xl border p-4', t.portalCard)}>
-      <Banner accent="blue" icon={Info} className="mb-3">
+    <div className={cx('rounded-2xl border p-6', t.portalCard)}>
+      <Banner accent="blue" icon={Info} className="mb-5">
         The same guide as a static sequence. Nothing moves on its own, and every image's description is written out.
       </Banner>
-      <ol className="space-y-4 max-w-2xl">
+      <ol className={cx('space-y-5', PROSE)}>
         {(atom.slides || []).map((sl, i) => (
           <li key={sl.id} className="flex gap-3">
-            <span className={cx('text-xs font-semibold tabular-nums pt-0.5 flex-shrink-0', t.textMuted)}>{i + 1}.</span>
+            <span className={cx('text-sm font-semibold tabular-nums pt-0.5 flex-shrink-0', t.textMuted)}>{i + 1}.</span>
             <div className="min-w-0 flex-1">
               {sl.heading && <p className={cx('text-sm font-semibold', t.text)}>{sl.heading}</p>}
               {sl.type === 'image' && sl.url && (
                 <img src={sl.url} alt={sl.alt || ''} loading="lazy"
-                  className={cx('mt-1.5 rounded-lg border w-40 object-cover', t.borderLight)} />
+                  className={cx('mt-2 rounded-xl border w-44 object-cover', t.borderLight)} />
               )}
               {sl.type === 'image' && sl.alt && (
-                <p className={cx('text-[11px] mt-1 italic', t.textMuted)}>Image: {sl.alt}</p>
+                <p className={cx('text-[11px] mt-1.5 italic', t.textMuted)}>Image: {sl.alt}</p>
               )}
               {sl.type === 'video' && (
-                <p className={cx('text-[11px] mt-1 flex items-center gap-1', t.textMuted)}>
+                <p className={cx('text-[11px] mt-1.5 flex items-center gap-1', t.textMuted)}>
                   <Video size={ICON.xs} /> Video screen
                 </p>
               )}
               {sl.caption && (
-                <div className={cx('rhq-prose text-sm mt-1 leading-relaxed', t.textSecondary)}
+                <div className={cx('rhq-prose text-sm mt-1.5 leading-relaxed', t.textSecondary)}
                   dangerouslySetInnerHTML={{ __html: sl.caption }} />
               )}
             </div>
@@ -1342,8 +1766,8 @@ function StoryPlayer({ atom }) {
 
   if (!slides.length) {
     return (
-      <div className={cx('rounded-2xl border flex items-center justify-center text-xs text-center p-4',
-        t.portalInput, t.textMuted)} style={{ aspectRatio: '9 / 16' }}>
+      <div className={cx('rounded-3xl border flex items-center justify-center text-xs text-center p-4',
+        t.bgInput, t.borderLight, t.textMuted)} style={{ aspectRatio: '9 / 16' }}>
         This guide has no screens yet.
       </div>
     );
@@ -1369,7 +1793,7 @@ function StoryPlayer({ atom }) {
   const onImage = slide.type === 'image';
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <div
         role="group"
         aria-roledescription="Story guide"
@@ -1380,7 +1804,7 @@ function StoryPlayer({ atom }) {
         onPointerUp={() => setHeld(false)}
         onPointerLeave={() => setHeld(false)}
         onPointerCancel={() => setHeld(false)}
-        className={cx('relative rounded-2xl overflow-hidden border-2 select-none outline-none',
+        className={cx('relative rounded-3xl overflow-hidden border-2 select-none outline-none shadow-xl',
           t.borderLight, c.ring, c.softStrong)}
         style={{ aspectRatio: '9 / 16' }}
       >
@@ -1443,7 +1867,7 @@ function StoryPlayer({ atom }) {
           </span>
         </div>
 
-        <div className={cx('absolute inset-x-0 bottom-0 p-3 z-20 pointer-events-none', onImage ? 'text-white' : t.text)}>
+        <div className={cx('absolute inset-x-0 bottom-0 p-4 z-20 pointer-events-none', onImage ? 'text-white' : t.text)}>
           {slide.heading && <p className="font-semibold leading-tight text-base">{slide.heading}</p>}
           {slide.caption && (
             <div
@@ -1474,10 +1898,10 @@ function StoryPlayer({ atom }) {
 function ResolvePrompt({ onYes, onNo }) {
   const { t } = useTheme();
   return (
-    <Card className={cx(DENSITY.cardPad, 'flex items-center justify-between gap-3 flex-wrap')}>
+    <div className={cx('rounded-2xl border p-6 flex items-center justify-between gap-4 flex-wrap', t.portalCard)}>
       <div className="min-w-0">
-        <p className={cx('text-sm font-medium', t.text)}>Did this resolve your issue?</p>
-        <p className={cx('text-xs mt-0.5', t.textSecondary)}>
+        <p className={cx('text-lg font-semibold', t.text)}>Did this resolve your issue?</p>
+        <p className={cx('text-sm mt-1', t.textSecondary)}>
           If not, we will take you straight to the request forms for this service.
         </p>
       </div>
@@ -1485,7 +1909,7 @@ function ResolvePrompt({ onYes, onNo }) {
         <Button variant="solid" accent="emerald" icon={ThumbsUp} onClick={onYes}>Yes, all done</Button>
         <Button variant="soft" accent="rose" icon={ThumbsDown} onClick={onNo}>No, I need help</Button>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -1493,24 +1917,24 @@ function ResolvedScreen({ atom, itemName, onBrowse, onBackToItem }) {
   const { t, a } = useTheme();
   const c = a('emerald');
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
-      <div className={cx('rounded-2xl border p-6 text-center', t.portalCard)}>
-        <span className={cx('inline-flex w-14 h-14 rounded-full items-center justify-center mb-3', c.softStrong)}>
-          <CircleCheck size={28} className={c.fg} />
+    <div className={cx(READ, 'py-14')}>
+      <div className={cx('rounded-3xl border p-10 text-center shadow-sm', t.portalCard)}>
+        <span className={cx('inline-flex w-16 h-16 rounded-full items-center justify-center mb-5', c.softStrong)}>
+          <CircleCheck size={32} className={c.fg} />
         </span>
-        <h3 className={cx('text-lg font-semibold', t.text)}>Glad that sorted it.</h3>
-        <p className={cx('text-sm mt-1', t.textSecondary)}>
+        <h2 className={cx('text-3xl font-semibold tracking-tight', t.text)}>Glad that sorted it.</h2>
+        <p className={cx('text-base mt-3 leading-relaxed max-w-xl mx-auto', t.textSecondary)}>
           You did not need to raise a request, and nobody had to answer one. That is the whole point of putting
           <strong className={t.text}> {atom.title}</strong> in front of the form instead of behind it.
         </p>
         {atom.helpfulYes ? (
-          <p className={cx('text-xs mt-3', t.textMuted)}>
+          <p className={cx('text-sm mt-4', t.textMuted)}>
             {atom.helpfulYes.toLocaleString()} other people have marked this article helpful.
           </p>
         ) : null}
-        <div className="flex items-center justify-center gap-2 mt-4 flex-wrap">
-          {itemName && <Button variant="outline" onClick={onBackToItem}>Back to {itemName}</Button>}
-          <Button variant="solid" accent="emerald" onClick={onBrowse}>Back to the help centre</Button>
+        <div className="flex items-center justify-center gap-2 mt-8 flex-wrap">
+          {itemName && <Button variant="outline" size="lg" onClick={onBackToItem}>Back to {itemName}</Button>}
+          <Button variant="grad" module="portal" size="lg" onClick={onBrowse}>Back to the help centre</Button>
         </div>
       </div>
     </div>
@@ -1531,67 +1955,66 @@ function IntakeScreen({
   const missing = shown.filter(f => f.required && isEmptyAnswer(answers[f.id]));
 
   return (
-    <div className="space-y-4 max-w-3xl">
-      <Card className={cx(DENSITY.cardPad, 'flex items-start gap-3')}>
-        <IconTile icon={FileQuestion} accent="purple" size="lg" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-            <EntityTag kind="subform" />
-            {item && <Chip accent="emerald" icon={Circle}>{item.name}</Chip>}
-          </div>
-          <h3 className={cx('text-lg font-semibold leading-tight', t.text)}>{subform.name}</h3>
-          {subform.description && <p className={cx('text-sm mt-1', t.textSecondary)}>{subform.description}</p>}
-        </div>
-      </Card>
+    <>
+      <PageBand
+        icon={FileQuestion}
+        hue={entityHue('subform')}
+        eyebrow="Request"
+        title={subform.name}
+        sub={subform.description}
+        meta={item ? <Chip accent={entityHue('item')} icon={Circle}>{item.name}</Chip> : null}
+      />
 
-      {queue ? (
-        <Banner accent="blue" icon={Route} title={`This goes to ${queue.name}`}>
-          {queue.description || 'Routed by the request form, not by keyword guessing.'}
-          {policy && <> Because this intake carries the <strong className={t.text}>{policy.name}</strong> policy, an approval may start the moment you submit.</>}
-        </Banner>
-      ) : (
-        <Banner accent="amber" icon={CircleAlert} title="No routing configured on this form">
-          Requests from here land in the <strong className={t.text}>{defaultQueue?.name || 'General'}</strong> queue and are
-          triaged from there. Nothing is ever silently parked.
-        </Banner>
-      )}
-
-      <div className={cx('rounded-xl border p-4 space-y-4', t.portalCard)}>
-        {shown.map(f => (
-          <IntakeField
-            key={f.id}
-            field={f}
-            value={answers[f.id]}
-            error={touched && f.required && isEmptyAnswer(answers[f.id]) ? 'This one is required.' : undefined}
-            people={people}
-            assets={assets}
-            requesterId={requesterId}
-            onChange={(v) => onChange(f.id, v)}
-          />
-        ))}
-
-        {hidden > 0 && (
-          <p className={cx('text-[11px] flex items-center gap-1.5', t.textMuted)}>
-            <Info size={ICON.xs} />
-            {hidden} further {hidden === 1 ? 'question is' : 'questions are'} hidden until your answers call for {hidden === 1 ? 'it' : 'them'}.
-          </p>
+      <div className={cx(MID, 'pb-16 space-y-5')}>
+        {queue ? (
+          <Banner accent="blue" icon={Route} title={`This goes to ${queue.name}`}>
+            {queue.description || 'Routed by the request form, not by keyword guessing.'}
+            {policy && <> Because this intake carries the <strong className={t.text}>{policy.name}</strong> policy, an approval may start the moment you submit.</>}
+          </Banner>
+        ) : (
+          <Banner accent="amber" icon={CircleAlert} title="No routing configured on this form">
+            Requests from here land in the <strong className={t.text}>{defaultQueue?.name || 'General'}</strong> queue and are
+            triaged from there. Nothing is ever silently parked.
+          </Banner>
         )}
-      </div>
 
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className={cx('text-xs', t.textMuted)}>
-          {touched && missing.length
-            ? `Still needed: ${missing.map(f => f.label).join(', ')}`
-            : `${shown.length} questions · ${shown.filter(f => f.required).length} required`}
-        </span>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button variant="solid" accent="purple" icon={Send} onClick={onSubmit}>
-            {subform.submitLabel || 'Submit request'}
-          </Button>
+        <div className={cx('rounded-2xl border p-6 sm:p-7 space-y-5 shadow-sm', t.portalCard)}>
+          {shown.map(f => (
+            <IntakeField
+              key={f.id}
+              field={f}
+              value={answers[f.id]}
+              error={touched && f.required && isEmptyAnswer(answers[f.id]) ? 'This one is required.' : undefined}
+              people={people}
+              assets={assets}
+              requesterId={requesterId}
+              onChange={(v) => onChange(f.id, v)}
+            />
+          ))}
+
+          {hidden > 0 && (
+            <p className={cx('text-xs flex items-center gap-1.5', t.textMuted)}>
+              <Info size={ICON.xs} />
+              {hidden} further {hidden === 1 ? 'question is' : 'questions are'} hidden until your answers call for {hidden === 1 ? 'it' : 'them'}.
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <span className={cx('text-xs', t.textMuted)}>
+            {touched && missing.length
+              ? `Still needed: ${missing.map(f => f.label).join(', ')}`
+              : `${plural(shown.length, 'question', 'questions')} · ${shown.filter(f => f.required).length} required`}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="lg" onClick={onCancel}>Cancel</Button>
+            <Button variant="grad" module="portal" size="lg" icon={Send} onClick={onSubmit}>
+              {subform.submitLabel || 'Submit request'}
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1615,7 +2038,7 @@ function IntakeField({ field, value, error, people, assets, requesterId, onChang
   if (field.type === 'file') {
     return (
       <Field label={field.label} hint={field.help} required={field.required} error={error}>
-        <div className={cx('rounded-lg border border-dashed px-3 py-3 flex items-center gap-2 text-xs', t.portalInput, t.textMuted)}>
+        <div className={cx('rounded-lg border border-dashed px-3 py-3 flex items-center gap-2 text-xs', t.bgInput, t.borderLight, t.textMuted)}>
           <Paperclip size={ICON.base} />
           Attachments are collected here in the real product. This prototype records the request without file storage.
         </div>
@@ -1627,7 +2050,7 @@ function IntakeField({ field, value, error, people, assets, requesterId, onChang
     const picked = Array.isArray(value) ? value : [];
     return (
       <Field label={field.label} hint={field.help} required={field.required} error={error}>
-        <div className={cx('rounded-lg border p-2 flex flex-wrap gap-1.5', t.portalInput)}>
+        <div className={cx('rounded-lg border p-2 flex flex-wrap gap-1.5', t.bgInput, t.borderLight)}>
           {(field.options || []).map(o => (
             <MultiOption
               key={o}
@@ -1726,17 +2149,17 @@ function ReceiptScreen({ receipt, queue, approval, directory, onDone, onRequests
     .filter(Boolean);
 
   return (
-    <div className="max-w-2xl mx-auto space-y-3">
-      <div className={cx('rounded-2xl border p-6 text-center', t.portalCard)}>
-        <span className={cx('inline-flex w-14 h-14 rounded-full items-center justify-center mb-3', c.softStrong)}>
-          <CircleCheck size={28} className={c.fg} />
+    <div className={cx(READ, 'py-14 space-y-4')}>
+      <div className={cx('rounded-3xl border p-10 text-center shadow-sm', t.portalCard)}>
+        <span className={cx('inline-flex w-16 h-16 rounded-full items-center justify-center mb-5', c.softStrong)}>
+          <CircleCheck size={32} className={c.fg} />
         </span>
-        <h3 className={cx('text-lg font-semibold', t.text)}>We have it.</h3>
-        <p className={cx('text-sm mt-1', t.textSecondary)}>
+        <h2 className={cx('text-3xl font-semibold tracking-tight', t.text)}>We have it.</h2>
+        <p className={cx('text-base mt-3 leading-relaxed max-w-xl mx-auto', t.textSecondary)}>
           {receipt.confirmation || 'Your request has been logged and is on its way to the right team.'}
         </p>
-        <p className={cx('mt-3 text-2xl font-semibold tabular-nums', t.text)}>{receipt.key}</p>
-        <p className={cx('text-xs mt-0.5', t.textMuted)}>{receipt.title}</p>
+        <p className={cx('mt-6 text-4xl font-semibold tracking-tight tabular-nums', t.text)}>{receipt.key}</p>
+        <p className={cx('text-sm mt-1.5', t.textMuted)}>{receipt.title}</p>
       </div>
 
       {receipt.fellBack ? (
@@ -1771,14 +2194,14 @@ function ReceiptScreen({ receipt, queue, approval, directory, onDone, onRequests
         </Banner>
       )}
 
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+      <div className="flex items-center justify-between gap-2 flex-wrap pt-2">
         <Button variant="ghost" icon={Inbox} onClick={onRequests}>See my requests</Button>
         <div className="flex items-center gap-2">
           <Button variant="soft" accent="teal" icon={ArrowRight}
             onClick={() => navigate('workspace', 'tickets', receipt.ticketId)}>
             Open it in the agent workspace
           </Button>
-          <Button variant="solid" accent="purple" onClick={onDone}>Done</Button>
+          <Button variant="grad" module="portal" onClick={onDone}>Done</Button>
         </div>
       </div>
     </div>
@@ -1793,54 +2216,73 @@ function RequestsScreen({ tickets, orgTickets, org, queues, requester, onOpen, o
   const { t } = useTheme();
 
   return (
-    <div className="space-y-4">
-      <Section
-        title="My requests"
-        hint={requester ? `Everything ${requester.name} has raised through this portal.` : undefined}
-      >
-        {tickets.length === 0 ? (
-          <EmptyState icon={Inbox} title="Nothing open"
-            hint="Requests you submit show up here with their status, the team working them and the replies."
-            action={<Button variant="solid" accent="purple" onClick={onBrowse}>Browse the help centre</Button>} />
-        ) : (
-          <div className={DENSITY.rowGap}>
-            {tickets.map(tk => (
-              <ListRow
-                key={tk.id}
-                accent="rose"
-                icon={Inbox}
-                title={tk.title}
-                subtitle={`${tk.key} · ${queues.get(tk.queueId)?.name || 'Unrouted'} · raised ${fmtWhen(tk.createdAt)}`}
-                meta={<>
-                  <PriorityFlag priority={tk.priority} withLabel={false} />
-                  <StatusPill status={tk.status} />
-                </>}
-                onClick={() => onOpen(tk.id)}
-              />
-            ))}
-          </div>
-        )}
-      </Section>
+    <>
+      <PageBand
+        icon={Inbox}
+        hue={entityHue('ticket')}
+        eyebrow="My requests"
+        title={tickets.length ? `${plural(tickets.length, 'request', 'requests')} on the go` : 'Nothing open'}
+        sub={requester
+          ? `Everything ${requester.name} has raised through this portal, with the team working it and their replies.`
+          : 'Everything you have raised through this portal.'}
+      />
 
-      {orgTickets.length > 0 && (
-        <Section title={`Also open at ${org.name}`}
-          hint="Colleagues on the same account. Shared visibility stops three people raising the same ticket.">
-          <div className={DENSITY.rowGap}>
-            {orgTickets.map(tk => (
-              <ListRow
-                key={tk.id}
-                accent="slate"
-                icon={Inbox}
-                title={tk.title}
-                subtitle={`${tk.key} · ${queues.get(tk.queueId)?.name || 'Unrouted'} · ${fmtWhen(tk.createdAt)}`}
-                meta={<StatusPill status={tk.status} />}
-                onClick={() => onOpen(tk.id)}
-              />
-            ))}
-          </div>
-        </Section>
-      )}
-    </div>
+      <div className={cx(WIDE, 'pb-16 space-y-10')}>
+        <section>
+          {tickets.length === 0 ? (
+            <EmptyState icon={Inbox} title="Nothing open"
+              hint="Requests you submit show up here with their status, the team working them and the replies."
+              action={<Button variant="grad" module="portal" onClick={onBrowse}>Browse the help centre</Button>} />
+          ) : (
+            <div className={DENSITY.rowGap}>
+              {tickets.map(tk => (
+                <RequestRow key={tk.id} ticket={tk} queue={queues.get(tk.queueId)} onOpen={() => onOpen(tk.id)} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {orgTickets.length > 0 && (
+          <section>
+            <SectionHead
+              eyebrow="Shared visibility"
+              title={`Also open at ${org.name}`}
+              hint="Colleagues on the same account. Shared visibility stops three people raising the same ticket."
+            />
+            <div className={DENSITY.rowGap}>
+              {orgTickets.map(tk => (
+                <RequestRow key={tk.id} ticket={tk} queue={queues.get(tk.queueId)} muted onOpen={() => onOpen(tk.id)} />
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+    </>
+  );
+}
+
+function RequestRow({ ticket, queue, muted, onOpen }) {
+  const { t, a } = useTheme();
+  const c = a(muted ? 'slate' : entityHue('ticket'));
+  return (
+    <button
+      onClick={onOpen}
+      className={cx('group w-full text-left rounded-xl border flex items-center gap-3 shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg',
+        DENSITY.rowPad, t.portalCard)}
+    >
+      <IconTile icon={Inbox} accent={muted ? 'slate' : entityHue('ticket')} size="sm" />
+      <span className="min-w-0 flex-1">
+        <span className={cx('block text-sm font-medium truncate', t.text)}>{ticket.title}</span>
+        <span className={cx('block text-xs truncate', t.textMuted)}>
+          {ticket.key} · {queue?.name || 'Unrouted'} · raised {fmtWhen(ticket.createdAt)}
+        </span>
+      </span>
+      <span className="flex items-center gap-2.5 flex-shrink-0">
+        <PriorityFlag priority={ticket.priority} withLabel={false} />
+        <StatusPill status={ticket.status} />
+        <ChevronRight size={ICON.md} className={cx('opacity-0 group-hover:opacity-100 transition-opacity', c.fg)} />
+      </span>
+    </button>
   );
 }
 
@@ -1871,7 +2313,7 @@ function TicketModal({ ticket, queues, subforms, onClose }) {
         <div className="flex items-center gap-2 flex-wrap">
           <StatusPill status={ticket.status} />
           <PriorityFlag priority={ticket.priority} />
-          {sf && <Chip accent="purple" icon={FileQuestion}>{sf.name}</Chip>}
+          {sf && <Chip accent={entityHue('subform')} icon={FileQuestion}>{sf.name}</Chip>}
         </div>
 
         {ticket.description && (
@@ -1920,44 +2362,58 @@ function TicketModal({ ticket, queues, subforms, onClose }) {
  * Academy — the same atoms, sequenced for customers
  * ==================================================================== */
 
-function AcademyScreen({ curricula, courses, byKb, byCourse, onCourse }) {
+function AcademyScreen({ orgName, curricula, courses, byKb, byCourse, onCourse }) {
   const { t } = useTheme();
 
   return (
-    <div className="space-y-5">
-      <Banner accent="indigo" icon={GraduationCap} title="Northwind Academy">
-        Every lesson below is a live help-centre article. The academy is an ordering over content that already exists —
-        which is why a customer can be certified on material they could have read anyway.
-      </Banner>
+    <>
+      <PageBand
+        icon={GraduationCap}
+        hue={entityHue('curriculum')}
+        eyebrow="Academy"
+        title={`${orgName} Academy`}
+        sub="Every lesson below is a live help-centre article. The academy is an ordering over content that already exists — which is why a customer can be certified on material they could have read anyway."
+      />
 
-      {curricula.map(cur => (
-        <Panel
-          key={cur.id}
-          icon={Award}
-          accent="indigo"
-          title={cur.name}
-          subtitle={cur.certificateName ? `Certificate: ${cur.certificateName}` : undefined}
-          action={cur.targetDays ? <Chip accent="indigo" icon={Clock}>{cur.targetDays} days</Chip> : null}
-        >
-          <div className="p-4 space-y-2">
-            <p className={cx('text-sm leading-relaxed', t.textSecondary)}>{cur.summary}</p>
-            <ChipGroup
-              accent="indigo"
-              icon={BookMarked}
-              max={4}
-              items={(cur.courseIds || []).map(id => byCourse.get(id)).filter(Boolean)}
-              render={(c) => c.title}
-            />
+      <div className={cx(WIDE, 'pb-16 space-y-10')}>
+        {curricula.length > 0 && (
+          <section className="space-y-4">
+            {curricula.map(cur => (
+              <Panel
+                key={cur.id}
+                icon={Award}
+                accent="indigo"
+                title={cur.name}
+                subtitle={cur.certificateName ? `Certificate: ${cur.certificateName}` : undefined}
+                action={cur.targetDays ? <Chip accent="indigo" icon={Clock}>{cur.targetDays} days</Chip> : null}
+              >
+                <div className="p-5 space-y-3">
+                  <p className={cx('text-sm leading-relaxed', t.textSecondary)}>{cur.summary}</p>
+                  <ChipGroup
+                    accent="indigo"
+                    icon={BookMarked}
+                    max={4}
+                    items={(cur.courseIds || []).map(id => byCourse.get(id)).filter(Boolean)}
+                    render={(c) => c.title}
+                  />
+                </div>
+              </Panel>
+            ))}
+          </section>
+        )}
+
+        <section>
+          <SectionHead
+            eyebrow="Courses"
+            title="Learn it end to end"
+            hint={`${plural(courses.length, 'course is', 'courses are')} open to customers, built from the same articles the help centre publishes.`}
+          />
+          <div className="flex flex-wrap gap-4 items-stretch">
+            {courses.map(c => <CourseCard key={c.id} course={c} byKb={byKb} onOpen={() => onCourse(c.id)} />)}
           </div>
-        </Panel>
-      ))}
-
-      <Section title="Courses" hint={`${courses.length} open to customers.`}>
-        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(19rem, 1fr))' }}>
-          {courses.map(c => <CourseCard key={c.id} course={c} byKb={byKb} onOpen={() => onCourse(c.id)} />)}
-        </div>
-      </Section>
-    </div>
+        </section>
+      </div>
+    </>
   );
 }
 
@@ -1968,27 +2424,35 @@ function CourseCard({ course, byKb, onOpen }) {
   const minutes = courseMinutes(course, byKb);
 
   return (
-    <button onClick={onOpen} className={cx('text-left rounded-xl border p-3 flex gap-3 transition-colors', t.portalCard)}>
-      <span className={cx('w-1 self-stretch rounded-full flex-shrink-0', c.rail)} />
-      <IconTile icon={BookMarked} accent="indigo" size="sm" />
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-          <EntityTag kind="course" />
-          {course.certificate && <Chip accent="amber" icon={Award}>Certificate</Chip>}
-        </span>
-        <span className={cx('block text-sm font-medium leading-tight', t.text)}>{course.title}</span>
-        <span className={cx('block text-xs mt-0.5 leading-snug line-clamp-2', t.textMuted)}>{course.summary}</span>
-        <span className={cx('flex items-center gap-3 mt-1.5 text-[11px]', t.textMuted)}>
-          <span className="flex items-center gap-1"><BookOpen size={ICON.xs} />{lessons.length} lessons</span>
-          {minutes ? <span className="flex items-center gap-1"><Clock size={ICON.xs} />{fmtMinutes(minutes)}</span> : null}
-          <span className="flex items-center gap-1"><Layers size={ICON.xs} />{(course.modules || []).length} modules</span>
-        </span>
+    <button
+      onClick={onOpen}
+      className={cx('group relative text-left rounded-2xl border overflow-hidden p-5 flex flex-col',
+        'flex-1 basis-[20rem] min-w-[17rem] shadow-sm',
+        'transition-transform duration-200 hover:-translate-y-1 hover:shadow-xl', t.portalCard)}
+    >
+      <span aria-hidden className={cx('absolute inset-x-0 top-0 h-1 opacity-0 group-hover:opacity-100 transition-opacity', c.rail)} />
+      <span aria-hidden className={cx('absolute inset-0 rounded-2xl border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity', c.borderStrong)} />
+
+      <span className="flex items-start justify-between gap-3">
+        <IconTile icon={BookMarked} accent="indigo" size="lg" />
+        {course.certificate && <Chip accent="amber" icon={Award}>Certificate</Chip>}
+      </span>
+
+      <span className={cx('mt-4 block text-base font-semibold leading-snug text-balance', t.text)}>{course.title}</span>
+      <span className={cx('mt-2 block text-sm leading-relaxed line-clamp-2 min-h-[2.75rem]', t.textSecondary)}>
+        {course.summary}
+      </span>
+
+      <span className={cx('mt-auto pt-4 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs border-t', t.textMuted, t.border)}>
+        <span className="flex items-center gap-1.5"><BookOpen size={ICON.xs} />{plural(lessons.length, 'lesson', 'lessons')}</span>
+        {minutes ? <span className="flex items-center gap-1.5"><Clock size={ICON.xs} />{fmtMinutes(minutes)}</span> : null}
+        <span className="flex items-center gap-1.5"><Layers size={ICON.xs} />{plural((course.modules || []).length, 'module', 'modules')}</span>
       </span>
     </button>
   );
 }
 
-function CourseScreen({ course, byKb, catalog, onBack, onLesson }) {
+function CourseScreen({ course, byKb, catalog, onLesson }) {
   const { t } = useTheme();
   const lessons = lessonIdsOf(course);
   const minutes = courseMinutes(course, byKb);
@@ -2001,68 +2465,160 @@ function CourseScreen({ course, byKb, catalog, onBack, onLesson }) {
   }, [catalog, lessons]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button variant="outline" size="sm" icon={ArrowLeft} onClick={onBack}>All courses</Button>
-        <Breadcrumbs items={[{ id: 'a', name: 'Academy' }, { id: 'c', name: course.title }]}
-          onNavigate={() => onBack()} />
+    <>
+      <PageBand
+        icon={BookMarked}
+        hue={entityHue('course')}
+        eyebrow="Course"
+        title={course.title}
+        sub={course.summary}
+        meta={<>
+          {course.certificate && <Chip accent="amber" icon={Award}>{course.certificateName || 'Certificate'}</Chip>}
+          <Chip accent="slate" icon={Clock}>{fmtMinutes(minutes) || 'Self-paced'}</Chip>
+          {/* No "N lessons" chip: a chip carries a value, and every lesson is
+              named in the module list directly below. The count belongs to the
+              module headings, not to a pill pretending to be one. */}
+        </>}
+      />
+
+      <div className={cx(MID, 'pb-16 space-y-8')}>
+        {placed > 0 && (
+          <Banner accent="blue" icon={BookOpen} title="Nothing here was written for the course">
+            {placed} of these {lessons.length} lessons are the same articles published in the help centre. Author once, and
+            the atom keeps its identity wherever it is used.
+          </Banner>
+        )}
+
+        {(course.modules || []).map((m, mi) => (
+          <section key={m.id}>
+            <SectionHead eyebrow={`Module ${mi + 1}`} title={m.title} hint={m.summary} />
+            <div className={DENSITY.rowGap}>
+              {(m.lessonIds || []).map(id => {
+                const k = byKb.get(id);
+                if (!k) return null;
+                return <LessonRow key={id} atom={k} onOpen={() => onLesson(id)} />;
+              })}
+              {m.quiz && (
+                <div className={cx('rounded-xl border flex items-center gap-3', DENSITY.rowPad, t.portalCard)}>
+                  <IconTile icon={ShieldCheck} accent={entityHue('quiz')} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className={cx('text-sm font-medium truncate', t.text)}>{m.quiz.title || 'Knowledge check'}</p>
+                    <p className={cx('text-xs', t.textMuted)}>
+                      {plural((m.quiz.questions || []).length, 'question', 'questions')} · pass at {m.quiz.passingScore || course.passingScore || 80}%
+                    </p>
+                  </div>
+                  <EntityTag kind="quiz" />
+                </div>
+              )}
+            </div>
+          </section>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function LessonRow({ atom, onOpen }) {
+  const { t, a } = useTheme();
+  const guide = atom.format === 'guide';
+  const c = a(entityHue('lesson'));
+  const Glyph = guide ? LayoutGrid : BookOpen;
+  return (
+    <button
+      onClick={onOpen}
+      className={cx('group w-full text-left rounded-xl border flex items-center gap-3 shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg',
+        DENSITY.rowPad, t.portalCard)}
+    >
+      <IconTile icon={Glyph} accent={entityHue(guide ? 'guide' : 'lesson')} size="sm" />
+      <span className="min-w-0 flex-1">
+        <span className={cx('block text-sm font-medium truncate', t.text)}>{atom.title}</span>
+        <span className={cx('block text-xs truncate', t.textMuted)}>{atom.objective || atom.summary}</span>
+      </span>
+      <span className="flex items-center gap-2.5 flex-shrink-0">
+        <EntityTag kind={guide ? 'guide' : 'article'} />
+        {atom.minutes ? <span className={cx('text-xs tabular-nums', t.textMuted)}>{atom.minutes} min</span> : null}
+        <ChevronRight size={ICON.md} className={cx('opacity-0 group-hover:opacity-100 transition-opacity', c.fg)} />
+      </span>
+    </button>
+  );
+}
+
+/* ==================================================================== *
+ * Footer — brand, the quiet links, and the sign-in note that used to be a
+ * full-width banner competing with the hero.
+ * ==================================================================== */
+
+function PortalFooter({ form, orgName, external, requester, hasAcademy, onHelp, onRequests, onAcademy, onWhy }) {
+  const { t } = useTheme();
+  return (
+    <footer className={cx('border-t mt-4', t.border)}>
+      <div className={cx(WIDE, 'py-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1.2fr]')}>
+        <div>
+          <span className="flex items-center gap-2.5">
+            <span className={cx('w-8 h-8 rounded-lg flex-shrink-0', GRADIENT.brand)} />
+            <span className={cx('text-base font-semibold', t.text)}>{orgName}</span>
+          </span>
+          <p className={cx('mt-4 text-sm leading-relaxed max-w-sm', t.textSecondary)}>
+            {form.description || 'One place to find an answer, and to ask for help when there is not one yet.'}
+          </p>
+        </div>
+
+        <nav aria-label="Portal">
+          <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em] mb-3', t.textMuted)}>This portal</p>
+          <ul className="space-y-2.5">
+            <li>
+              <button onClick={onHelp} className={cx('text-sm hover:underline', t.textSecondary)}>Help centre</button>
+            </li>
+            <li>
+              <button onClick={onRequests} className={cx('text-sm hover:underline', t.textSecondary)}>My requests</button>
+            </li>
+            {hasAcademy && (
+              <li>
+                <button onClick={onAcademy} className={cx('text-sm hover:underline', t.textSecondary)}>Academy</button>
+              </li>
+            )}
+            <li>
+              <button onClick={onWhy}
+                className={cx('text-sm hover:underline inline-flex items-center gap-1.5', t.textSecondary)}>
+                <Sparkles size={ICON.sm} />Why this works
+              </button>
+            </li>
+          </ul>
+        </nav>
+
+        <div>
+          <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em] mb-3', t.textMuted)}>Signing in</p>
+          <p className={cx('text-sm leading-relaxed', t.textSecondary)}>
+            {form.requireSignIn ? (
+              <>
+                This portal requires an {external ? 'account' : `${orgName}`} sign-in, so requests arrive already attached
+                to the person who raised them — no “what is your email address” round trip.
+                {requester && <> You are signed in as <strong className={t.text}>{requester.name}</strong>.</>}
+              </>
+            ) : (
+              <>
+                Anyone can read and search here without signing in. A sign-in is only asked for when you raise a request,
+                so we can attach it to you and show you the reply.
+              </>
+            )}
+          </p>
+        </div>
       </div>
 
-      <Card className={cx(DENSITY.cardPad, 'flex items-start gap-3')}>
-        <IconTile icon={BookMarked} accent="indigo" size="lg" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-            <EntityTag kind="course" />
-            {course.certificate && <Chip accent="amber" icon={Award}>{course.certificateName || 'Certificate'}</Chip>}
-            <Chip accent="slate" icon={Clock}>{fmtMinutes(minutes) || 'Self-paced'}</Chip>
-            <Chip accent="slate" icon={BookOpen}>{lessons.length} lessons</Chip>
-          </div>
-          <h3 className={cx('text-lg font-semibold leading-tight', t.text)}>{course.title}</h3>
-          <p className={cx('text-sm mt-1 leading-relaxed', t.textSecondary)}>{course.summary}</p>
+      <div className={cx('border-t', t.border)}>
+        <div className={cx(WIDE, 'py-5 flex items-center justify-between gap-3 flex-wrap text-xs')}>
+          <span className={t.textMuted}>{orgName} · {form.name}</span>
+          <span className={cx('flex items-center gap-1.5', t.textMuted)}>
+            Powered by
+            <span className={cx('inline-flex items-center gap-1.5 font-medium', t.textSecondary)}>
+              <span className={cx('w-3.5 h-3.5 rounded-[4px] flex-shrink-0', GRADIENT.brand)} />
+              RelayHQ
+            </span>
+            · service, support and training on one substrate
+          </span>
         </div>
-      </Card>
-
-      {placed > 0 && (
-        <Banner accent="blue" icon={BookOpen} title="Nothing here was written for the course">
-          {placed} of these {lessons.length} lessons are the same articles published in the help centre. Author once, and
-          the atom keeps its identity wherever it is used.
-        </Banner>
-      )}
-
-      {(course.modules || []).map((m, mi) => (
-        <Section key={m.id} title={`${mi + 1}. ${m.title}`} hint={m.summary}>
-          <div className={DENSITY.rowGap}>
-            {(m.lessonIds || []).map(id => {
-              const k = byKb.get(id);
-              if (!k) return null;
-              return (
-                <ListRow
-                  key={id}
-                  accent="blue"
-                  icon={k.format === 'guide' ? LayoutGrid : BookOpen}
-                  title={k.title}
-                  subtitle={k.objective || k.summary}
-                  meta={<>
-                    <EntityTag kind={k.format === 'guide' ? 'guide' : 'article'} />
-                    {k.minutes ? <span className={cx('text-xs tabular-nums', t.textMuted)}>{k.minutes} min</span> : null}
-                  </>}
-                  onClick={() => onLesson(id)}
-                />
-              );
-            })}
-            {m.quiz && (
-              <ListRow
-                accent="amber"
-                icon={ShieldCheck}
-                title={m.quiz.title || 'Knowledge check'}
-                subtitle={`${(m.quiz.questions || []).length} questions · pass at ${m.quiz.passingScore || course.passingScore || 80}%`}
-                meta={<EntityTag kind="quiz" />}
-              />
-            )}
-          </div>
-        </Section>
-      ))}
-    </div>
+      </div>
+    </footer>
   );
 }
 
@@ -2070,7 +2626,9 @@ function CourseScreen({ course, byKb, catalog, onBack, onLesson }) {
  * The argument
  *
  * Everything below is computed from state. No industry statistics, no outside
- * research — only what is true of the data on this screen.
+ * research — only what is true of the data on this screen. It lives behind a
+ * quiet footer link now, because a customer came here for help, not for a
+ * pitch — but a viewer evaluating the product can still open it in one click.
  * ==================================================================== */
 
 function computeFacts(s, defaultQueue) {
@@ -2158,7 +2716,8 @@ function WhyPanel({ open, onClose, facts, subforms, queues, defaultQueue }) {
       title="Why this portal is shaped like this"
       subtitle="Every number below is counted from the data you are looking at right now."
       footer={<>
-        <span className={cx('text-xs', t.textMuted)}>Reopen this any time from “Why this works”.</span>
+        <span className={cx('text-xs', t.textMuted)}>Reopen this any time from the footer.</span>
+        {/* A modal dismiss is a solid, per the standard modal shell. */}
         <Button variant="solid" accent="purple" onClick={onClose}>Got it</Button>
       </>}
     >
@@ -2173,15 +2732,19 @@ function WhyPanel({ open, onClose, facts, subforms, queues, defaultQueue }) {
   );
 }
 
-function WhyCompare({ facts, subforms, queues, defaultQueue }) {
+function WhyCompare({ facts, subforms }) {
   const { t, a } = useTheme();
   const slate = a('slate');
   const purple = a('purple');
   const sample = facts.sample;
 
   return (
-    <Section title="The same request, two ways"
-      hint="Left: what this instance looks like if every intake is offered at once. Right: what the portal actually does.">
+    <section>
+      <SectionHead
+        title="The same request, two ways"
+        hint="Left: what this instance looks like if every intake is offered at once. Right: what the portal actually does."
+        className="mb-4"
+      />
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(18rem, 1fr))' }}>
         {/* Flat list */}
         <Card className="overflow-hidden">
@@ -2228,11 +2791,11 @@ function WhyCompare({ facts, subforms, queues, defaultQueue }) {
               <div className={cx('rounded-lg border p-2.5 space-y-1.5', t.borderLight)}>
                 <p className={cx('text-xs font-medium flex items-center gap-1.5', t.text)}>
                   <BookOpen size={ICON.sm} className={a('blue').fg} />
-                  Then {sample.help} {sample.help === 1 ? 'article' : 'articles'} — shown first, every time
+                  Then {plural(sample.help, 'article', 'articles')} — shown first, every time
                 </p>
                 <p className={cx('text-xs font-medium flex items-center gap-1.5', t.text)}>
                   <FileQuestion size={ICON.sm} className={purple.fg} />
-                  Then {sample.forms} request {sample.forms === 1 ? 'form' : 'forms'}, each routed on its own
+                  Then {plural(sample.forms, 'request form', 'request forms')}, each routed on its own
                 </p>
               </div>
               <p className={cx('text-[11px]', t.textMuted)}>
@@ -2245,15 +2808,19 @@ function WhyCompare({ facts, subforms, queues, defaultQueue }) {
           )}
         </Card>
       </div>
-    </Section>
+    </section>
   );
 }
 
 function WhyNumbers({ facts }) {
   const { t } = useTheme();
   return (
-    <Section title="What is actually in this instance"
-      hint="Counted from state at render time — not typed in, and not borrowed from anybody's research.">
+    <section>
+      <SectionHead
+        title="What is actually in this instance"
+        hint="Counted from state at render time — not typed in, and not borrowed from anybody's research."
+        className="mb-4"
+      />
       <div className="flex flex-wrap gap-2">
         <Stat label="catalog items" value={facts.items} accent="emerald" icon={Circle} />
         <Stat label="knowledge atoms" value={facts.knowledge} accent="blue" icon={BookOpen} />
@@ -2293,7 +2860,7 @@ function WhyNumbers({ facts }) {
           — or before they closed the tab without submitting. That number is ours to earn on your data, not to borrow.
         </span>
       </Banner>
-    </Section>
+    </section>
   );
 }
 
@@ -2304,16 +2871,21 @@ function WhyDiagram({ facts }) {
 
   if (!ex) {
     return (
-      <Section title="One atom, three destinations">
+      <section>
+        <SectionHead title="One atom, three destinations" className="mb-4" />
         <EmptyState icon={BookOpen} title="No atom is placed yet"
           hint="Attach a knowledge atom to a catalog item and a course module to see this drawn." />
-      </Section>
+      </section>
     );
   }
 
   return (
-    <Section title="One atom, three destinations"
-      hint={`Drawn from a real record — “${ex.atom.title}” — and its actual placements.`}>
+    <section>
+      <SectionHead
+        title="One atom, three destinations"
+        hint={`Drawn from a real record — “${ex.atom.title}” — and its actual placements.`}
+        className="mb-4"
+      />
       <div className="flex flex-col items-center">
         <Card accent="blue" className={cx(DENSITY.cardPad, 'w-full max-w-md flex items-start gap-3')}>
           <IconTile icon={ex.atom.format === 'guide' ? LayoutGrid : BookOpen} accent="blue" size="lg" />
@@ -2359,19 +2931,19 @@ function WhyDiagram({ facts }) {
         which is the only reason a company can afford to keep a help centre, an enablement library and an academy at the
         same time.
       </p>
-    </Section>
+    </section>
   );
 }
 
 function DestinationCard({ hue, icon, title, caption, items, emptyNote }) {
   const { t, a } = useTheme();
   const c = a(hue);
-  const Icon = icon;
+  const Glyph = icon;
   return (
     <div className={cx('rounded-xl border p-3', t.bgCard, t.borderLight)}>
       <div className="flex items-center gap-2 mb-1.5">
         <span className={cx('w-1 h-6 rounded-full', c.rail)} />
-        <Icon size={ICON.md} className={c.fg} />
+        <Glyph size={ICON.md} className={c.fg} />
         <div className="min-w-0">
           <p className={cx('text-sm font-medium leading-tight', t.text)}>{title}</p>
           <p className={cx('text-[11px]', t.textMuted)}>{caption}</p>

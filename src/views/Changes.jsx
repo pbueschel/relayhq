@@ -41,6 +41,7 @@ import { POL, USR } from '@/store/seed/ids.js';
  */
 
 const HUE = ENTITIES.change.hue;   // orange — the registered change hue
+const MODULE = 'changes';          // signature gradient key: header tile + primary action
 
 /* ==================================================================== *
  * Lifecycle
@@ -863,7 +864,7 @@ export default function Changes({ route }) {
       ? <ChangeDetail change={normalize(selected)} all={rawChanges} view={view} />
       : (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <PageHeader icon={GitBranch} accent={HUE} title="Change not found" subtitle={selectedId} />
+          <PageHeader icon={GitBranch} module={MODULE} accent={HUE} title="Change not found" subtitle={selectedId} />
           <PageBody>
             <EmptyState
               icon={GitBranch}
@@ -880,10 +881,11 @@ export default function Changes({ route }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={GitBranch}
+        module={MODULE}
         accent={HUE}
         title="Change Management"
         subtitle="Northwind Systems · standard, normal and emergency change enablement"
-        actions={<Button variant="solid" accent={HUE} icon={Plus} onClick={() => setCreating(true)}>New change</Button>}
+        actions={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setCreating(true)}>New change</Button>}
       >
         <Toolbar>
           <ViewSwitcher items={VIEWS} value={view} onChange={(v) => navigate('changes', v)} />
@@ -1033,7 +1035,7 @@ function ListView({ changes, onNew, view }) {
             icon={GitBranch}
             title="No changes have been raised"
             hint="A change records what is going to be altered, why it is worth the risk, and how it will be undone if it goes wrong."
-            action={<Button variant="solid" accent={HUE} icon={Plus} onClick={onNew}>Raise the first change</Button>}
+            action={<Button variant="grad" module={MODULE} icon={Plus} onClick={onNew}>Raise the first change</Button>}
           />
         )}
 
@@ -1457,13 +1459,14 @@ function ChangeDetail({ change: c, all, view }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={type.icon}
+        module={MODULE}
         accent={HUE}
         title={`${c.key} · ${c.title}`}
         subtitle={`${type.label} change · raised by ${personName(c.requestedById, directory)} · ${fmtWindow(c)}`}
         actions={
           <>
             {!terminal && next && (
-              <Button variant="solid" accent={HUE} icon={ArrowRight} disabled={blockers.length > 0}
+              <Button variant="grad" module={MODULE} icon={ArrowRight} disabled={blockers.length > 0}
                 onClick={advance}>{transitionLabel(c, next)}</Button>
             )}
             <div className="relative">
@@ -2875,7 +2878,7 @@ function NewChangeModal({ open, onClose, existing }) {
           <span className={cx('text-xs', t.textMuted)}>{nextChangeKey(existing)} · {meta.label}</span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="solid" accent={HUE} icon={Check} disabled={!ready} onClick={create}>
+            <Button variant="grad" module={MODULE} icon={Check} disabled={!ready} onClick={create}>
               {type === 'standard' ? 'Book it' : type === 'emergency' ? 'Raise emergency change' : 'Raise change'}
             </Button>
           </div>

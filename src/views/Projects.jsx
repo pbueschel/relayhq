@@ -52,6 +52,19 @@ const HUE_PROJECT   = ENTITIES.project.hue;      // violet
 const HUE_TASK      = ENTITIES.task.hue;         // teal
 const HUE_MILESTONE = ENTITIES.milestone.hue;    // amber
 
+/**
+ * The module key this view owns — it resolves the violet→purple signature
+ * gradient for the header tile and the primary (create / commit) action.
+ *
+ * A PERSONAL project is task-coloured (teal) everywhere else on the screen —
+ * rail, icon tile, progress bar, the `task` entity tag — and the teal→cyan pair
+ * is the `workspace` entry in the gradient map. So its header tile and primary
+ * action read from that key rather than wearing project violet over a teal
+ * screen. The gradient always follows the hue the record is already wearing.
+ */
+const MODULE = 'projects';
+const gradKeyFor = (project) => (project?.personal ? 'workspace' : MODULE);
+
 const PERSONAL_ID = 'personal-tasks';
 
 /** The four status groups. Not started / Active / Done / Closed. */
@@ -813,10 +826,10 @@ function ProjectsLanding({ projects, personal, tasks, people, onOpenTask, onNewP
     <>
       <PageHeader
         icon={Briefcase}
-        accent={HUE_PROJECT}
+        module={MODULE}
         title="Projects"
         subtitle={`${projects.length} projects · ${stats.open} tasks open · ${stats.overdue} overdue`}
-        actions={<Button variant="solid" accent={HUE_PROJECT} icon={Plus} onClick={onNewProject}>New project</Button>}
+        actions={<Button variant="grad" module={MODULE} icon={Plus} onClick={onNewProject}>New project</Button>}
       >
         <Toolbar>
           <SubTabs
@@ -851,7 +864,7 @@ function ProjectsLanding({ projects, personal, tasks, people, onOpenTask, onNewP
 
           {!filtered.length && (
             <EmptyState icon={Briefcase} title="No projects match" hint="Try a different search, or create a project."
-              action={<Button variant="solid" accent={HUE_PROJECT} icon={Plus} onClick={onNewProject}>New project</Button>} />
+              action={<Button variant="grad" module={MODULE} icon={Plus} onClick={onNewProject}>New project</Button>} />
           )}
 
           {mode === 'list' ? (
@@ -891,6 +904,10 @@ function ProjectRow({ project, tasks, people, expanded, onToggle, onOpenTask }) 
     // @container, not a viewport breakpoint: the row condenses off its OWN width,
     // so it stays correct when the sidebar expands or the pane narrows.
     <Card className="overflow-hidden @container">
+      {/* Expansion is disclosure, not selection: several rows can be open at
+          once and one is open by default. The active-nav gradient tint would
+          therefore wash most of the list, so the row keeps the card surface and
+          the rail carries the hue. Selection is navigation — clicking the name. */}
       <div className={cx('flex items-center gap-3', DENSITY.rowPad)}>
         <span className={cx('w-1 self-stretch min-h-10 rounded-full flex-shrink-0', c.rail)} />
         <button
@@ -1161,7 +1178,7 @@ function ProjectWorkspace({ project, view, tasks, people, curricula, onOpenTask 
     <>
       <PageHeader
         icon={project.personal ? User : Briefcase}
-        accent={hue}
+        module={gradKeyFor(project)}
         title={project.name}
         subtitle={project.description}
         actions={
@@ -1170,7 +1187,7 @@ function ProjectWorkspace({ project, view, tasks, people, curricula, onOpenTask 
             {!project.personal && (
               <IconButton icon={Settings2} label="Project settings" accent={hue} onClick={() => setSettings(true)} />
             )}
-            <Button variant="solid" accent={hue} icon={Plus}
+            <Button variant="grad" module={gradKeyFor(project)} icon={Plus}
               onClick={() => addTo('tasks', newTask(project, {}, 'New task'))}>
               New task
             </Button>
@@ -2030,7 +2047,7 @@ function TaskModal({ taskId, onClose, onOpenTask }) {
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" accent="red" icon={Trash2} onClick={() => setConfirmDelete(true)}>Delete</Button>
-              <Button variant="solid" accent={hue} icon={Check} onClick={onClose}>Done</Button>
+              <Button variant="grad" module={gradKeyFor(project)} icon={Check} onClick={onClose}>Done</Button>
             </div>
           </>
         }
@@ -2550,7 +2567,7 @@ function ProjectSettingsModal({ project, people, tasks, onClose }) {
         footer={
           <>
             <Button variant="ghost" accent="red" icon={Trash2} onClick={() => setConfirmProject(true)}>Delete project</Button>
-            <Button variant="solid" accent={HUE_PROJECT} icon={Check} onClick={onClose}>Done</Button>
+            <Button variant="grad" module={MODULE} icon={Check} onClick={onClose}>Done</Button>
           </>
         }
       >
@@ -2885,7 +2902,7 @@ function NewProjectModal({ open, people, currentUser, onClose }) {
           <span className={cx('text-xs', t.textMuted)}>{chosen.statuses.length} statuses · {members.length} members</span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="solid" accent={HUE_PROJECT} icon={Check} disabled={!name.trim()} onClick={create}>
+            <Button variant="grad" module={MODULE} icon={Check} disabled={!name.trim()} onClick={create}>
               Create project
             </Button>
           </div>

@@ -813,11 +813,12 @@ function AutomationList({ automations, runs, lookup }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={Workflow}
+        module="automations"
         accent="sky"
         title="Automations"
         subtitle={`${automations.length} workflows · ${totals.runs} executions in the last 7 days`}
         actions={
-          <Button variant="solid" accent="sky" icon={Plus} onClick={() => setCreating(true)}>
+          <Button variant="grad" module="automations" icon={Plus} onClick={() => setCreating(true)}>
             New automation
           </Button>
         }
@@ -854,7 +855,7 @@ function AutomationList({ automations, runs, lookup }) {
               icon={Workflow}
               title="No workflows match"
               hint="Automations react to events in RelayHQ — a ticket arriving, an approval deciding, a course being completed — and run a chain of nodes."
-              action={<Button variant="solid" accent="sky" icon={Plus} onClick={() => setCreating(true)}>New automation</Button>}
+              action={<Button variant="grad" module="automations" icon={Plus} onClick={() => setCreating(true)}>New automation</Button>}
             />
           ) : (
             <div className={DENSITY.rowGap}>
@@ -1040,7 +1041,7 @@ function NewAutomationModal({ open, onClose }) {
           <span className={cx('text-xs', t.textMuted)}>Created inactive — activate it when the canvas is right.</span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="solid" accent="sky" icon={Check} onClick={create}>Create workflow</Button>
+            <Button variant="grad" module="automations" icon={Check} onClick={create}>Create workflow</Button>
           </div>
         </>
       }
@@ -1281,6 +1282,7 @@ function AutomationEditor({ automation, runs, lookup }) {
     <div className="flex-1 flex flex-col overflow-hidden min-w-0">
       <PageHeader
         icon={Workflow}
+        module="automations"
         accent="sky"
         title={automation.name}
         subtitle={automation.description}
@@ -1289,7 +1291,7 @@ function AutomationEditor({ automation, runs, lookup }) {
             <Button variant="soft" accent="sky" icon={Plus} onClick={() => { setPendingLink(null); setPanel('palette'); }}>
               Add node
             </Button>
-            <Button variant="solid" accent="sky" icon={Play} onClick={() => startRun(null)}>
+            <Button variant="grad" module="automations" icon={Play} onClick={() => startRun(null)}>
               Test workflow
             </Button>
             <div className="relative">

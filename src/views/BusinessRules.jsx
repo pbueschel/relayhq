@@ -7,7 +7,7 @@ import {
   FileQuestion, Folder, Gauge, Send,
 } from 'lucide-react';
 import {
-  useTheme, cx, ACCENT_HUES, ICON, DENSITY, GRADIENT, PRIORITY, priorityMeta, ENTITIES,
+  useTheme, cx, ACCENT_HUES, ICON, DENSITY, PRIORITY, priorityMeta, ENTITIES,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, PriorityFlag,
   Avatar, AvatarStack, EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat,
   Banner, Divider,
@@ -44,6 +44,10 @@ import { Q, USR, SF, CAT } from '@/store/seed/ids.js';
 /* ==================================================================== *
  * Constants
  * ==================================================================== */
+
+/* The module's signature gradient key — rose→orange, which is what v1 put behind
+ * every "New …" action in this module. Read by PageHeader and Button variant="grad". */
+const MODULE = 'rules';
 
 /* Entity accents come from the ENTITIES registry, never restated as literals —
  * a queue is the same colour here as it is in the sidebar and on a ticket. */
@@ -327,7 +331,7 @@ export default function BusinessRules({ route }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={Filter}
-        gradient={GRADIENT.rules}
+        module={MODULE}
         title="Business Rules"
         subtitle="Where work goes, what happens to it on the way, and who has to say yes"
       >
@@ -413,7 +417,7 @@ function QueuesTab({ data, routing }) {
         </div>
         <div className="flex items-center gap-2">
           <SearchInput value={search} onChange={setSearch} placeholder="Find a queue…" width="w-52" accent="gray" />
-          <Button variant="solid" accent="rose" icon={Plus} size="sm" onClick={() => setEditing(newQueue())}>
+          <Button variant="grad" module={MODULE} icon={Plus} size="sm" onClick={() => setEditing(newQueue())}>
             New queue
           </Button>
         </div>
@@ -836,7 +840,7 @@ function RulesTab({ data }) {
             onClick={() => setTesterOpen((v) => !v)}>
             {testerOpen ? 'Hide tester' : 'Test rules'}
           </Button>
-          <Button variant="solid" accent="rose" size="sm" icon={Plus} onClick={() => setEditing(newRule())}>
+          <Button variant="grad" module={MODULE} size="sm" icon={Plus} onClick={() => setEditing(newRule())}>
             New rule
           </Button>
         </div>
@@ -862,7 +866,7 @@ function RulesTab({ data }) {
       {rules.length === 0 ? (
         <EmptyState icon={Filter} title="No rules yet"
           hint="A rule is a trigger, a condition tree and a list of actions. Start with something narrow — auto-labelling billing questions is the usual first one."
-          action={<Button variant="solid" accent="rose" icon={Plus} onClick={() => setEditing(newRule())}>New rule</Button>} />
+          action={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newRule())}>New rule</Button>} />
       ) : (
         <div className={DENSITY.rowGap}>
           {rules.map((rule, i) => {
@@ -1038,6 +1042,11 @@ function RuleEditorModal({ draft, data, onChange, onClose, onSave }) {
             label={draft.enabled ? 'Enabled — runs on matching events' : 'Disabled — saved but never runs'} />
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
+            {/* Editor commits stay SOLID in the modal's own accent. The module
+                gradient belongs to the header tile and the "New …" action that
+                opens this editor — spending it again on every Save turns a
+                signature into wallpaper, and it would fight the accent frame
+                that tells you which record you are editing. */}
             <Button variant="solid" accent="rose" icon={Check} disabled={!draft.name.trim()} onClick={() => onSave(draft)}>
               Save rule
             </Button>
@@ -2111,7 +2120,7 @@ function PoliciesTab({ data }) {
           <Stat label="stages total" value={policies.reduce((n, p) => n + (p.stages || []).length, 0)} accent="violet" icon={Layers} />
           <Stat label="multi-stage" value={policies.filter((p) => (p.stages || []).length > 1).length} accent="teal" icon={ArrowRight} />
         </div>
-        <Button variant="solid" accent="amber" size="sm" icon={Plus} onClick={() => setEditing(newPolicy())}>
+        <Button variant="grad" module={MODULE} size="sm" icon={Plus} onClick={() => setEditing(newPolicy())}>
           New policy
         </Button>
       </div>
@@ -2124,7 +2133,7 @@ function PoliciesTab({ data }) {
 
       {policies.length === 0 ? (
         <EmptyState icon={Stamp} title="No approval policies"
-          action={<Button variant="solid" accent="amber" icon={Plus} onClick={() => setEditing(newPolicy())}>New policy</Button>} />
+          action={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setEditing(newPolicy())}>New policy</Button>} />
       ) : (
         <div className="space-y-2">
           {policies.map((p) => (
@@ -2264,6 +2273,9 @@ function PolicyEditorModal({ draft, data, onChange, onClose, onSave }) {
           </span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
+            {/* Solid amber, matching this modal's accent — see the note on the
+                rule editor's Save. The gradient is the module's, not every
+                commit button's. */}
             <Button variant="solid" accent="amber" icon={Check} disabled={!draft.name.trim()} onClick={() => onSave(draft)}>
               Save policy
             </Button>
@@ -2640,7 +2652,7 @@ function SlaTab({ data }) {
           <Stat label="round the clock" value={slas.filter((s) => s.clock === 'calendar').length} accent="rose" icon={Clock} />
           <Stat label="business hours" value={slas.filter((s) => s.clock !== 'calendar').length} accent="sky" icon={Building2} />
         </div>
-        <Button variant="solid" accent="emerald" size="sm" icon={Plus} onClick={() => setEditing(newSla())}>
+        <Button variant="grad" module={MODULE} size="sm" icon={Plus} onClick={() => setEditing(newSla())}>
           New SLA policy
         </Button>
       </div>

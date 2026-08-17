@@ -7,7 +7,7 @@ import {
   Info, Scale, CheckCheck, Ban, UserCheck, TriangleAlert, ArrowRight, Undo2,
 } from 'lucide-react';
 import {
-  useTheme, cx, ICON, DENSITY, LAYOUT, ENTITIES, entityHue,
+  useTheme, cx, ICON, DENSITY, LAYOUT, ENTITIES, entityHue, tint,
   Button, Chip, ChipGroup, StatusPill, EntityTag, Avatar, AvatarStack,
   EmptyState, Card, GroupLabel, ListRow, Stat, Banner, Divider,
   Field, Textarea, SearchInput,
@@ -40,6 +40,23 @@ import { USR, Q, CAT, SF, POL } from '@/store/seed/ids.js';
 /* ================================================================== *
  * Time
  * ================================================================== */
+
+/**
+ * The module key this view owns. Approvals shares the rules family's
+ * rose→orange signature gradient (see MODULE_GRADIENT) because an approval
+ * policy IS a business rule that happens to need a human.
+ *
+ * TINT has no `approvals` entry — falling through to its default would hand
+ * this screen the catalog purple→amber pair — so the selected-state tint names
+ * the same `rules` family the module gradient resolves to.
+ *
+ * Approvals has no create action: requests are raised by policy, never by hand.
+ * So the signature gradient appears on the header tile and nowhere else. The
+ * "run the timeout policy now" buttons are secondary controls inside a warning
+ * banner — they stay red, which is the colour of the consequence they carry.
+ */
+const MODULE = 'approvals';
+const TINT_KEY = 'rules';
 
 const HOUR = 3600 * 1000;
 const iso = (ms) => new Date(ms).toISOString();
@@ -641,7 +658,7 @@ export default function Approvals({ route }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={Stamp}
-        accent="amber"
+        module={MODULE}
         title="Approvals"
         subtitle={`${counts.open} running · ${counts.mine} waiting on ${impersonating ? actingPerson?.name?.split(' ')[0] : 'you'} · policies run live, nothing here is a mock-up`}
         actions={
@@ -841,7 +858,7 @@ function emptyHint(lens, total, policyCount) {
  * ================================================================== */
 
 function ActingAsControl({ people, requests, actingId, currentUser, onPick }) {
-  const { t } = useTheme();
+  const { t, dark } = useTheme();
   const [open, setOpen] = useState(false);
 
   const withPending = useMemo(() => {
@@ -855,6 +872,10 @@ function ActingAsControl({ people, requests, actingId, currentUser, onPick }) {
 
   const acting = people.find(p => p.id === actingId) || currentUser;
   const candidates = people.filter(p => withPending.has(p.id));
+  // Whose inbox you are in is this screen's top-level switch. Off its default it
+  // wears the module's gradient tint — the same "you are somewhere other than
+  // home" treatment v1 gave an active nav item.
+  const impersonating = !!currentUser && actingId !== currentUser.id;
 
   return (
     <div className="relative">
@@ -862,7 +883,7 @@ function ActingAsControl({ people, requests, actingId, currentUser, onPick }) {
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
         className={cx('flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-xl border transition-colors',
-          t.bgCard, t.borderLight, t.bgHover)}
+          impersonating ? tint(TINT_KEY, dark) : cx(t.bgCard, t.borderLight, t.bgHover))}
       >
         <Avatar name={acting?.name} size="md" />
         <span className="text-left leading-tight hidden sm:block">

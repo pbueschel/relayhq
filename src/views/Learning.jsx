@@ -423,13 +423,14 @@ export default function Learning({ route }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={GraduationCap}
-        accent="indigo"
+        module="learning"
+        accent={ENTITIES.curriculum.hue}
         title="Learning"
         subtitle={`${s.curricula.length} curricula · ${s.courses.length} courses · ${totalLessons} distinct atoms in use · ${reusedAtoms} of them in more than one place`}
         actions={
           <>
             {tab === 'courses' && !openCourse && (
-              <Button variant="solid" accent="indigo" icon={Plus} size="sm" onClick={() => setNewCourse(true)}>
+              <Button variant="grad" module="learning" icon={Plus} size="sm" onClick={() => setNewCourse(true)}>
                 New course
               </Button>
             )}
@@ -1988,7 +1989,7 @@ function NewCourseModal({ open, onClose, jobFunctions }) {
           <span className={cx('text-xs', t.textMuted)}>Starts as a draft with one empty module.</span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="solid" accent="indigo" icon={Plus} disabled={!title.trim()} onClick={create}>Create course</Button>
+            <Button variant="grad" module="learning" icon={Plus} disabled={!title.trim()} onClick={create}>Create course</Button>
           </div>
         </>
       }

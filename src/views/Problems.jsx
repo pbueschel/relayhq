@@ -47,6 +47,7 @@ const TICKET_HUE = ENTITIES.ticket.hue;        // rose
 const CHANGE_HUE = ENTITIES.change.hue;        // orange
 const KB_HUE = ENTITIES.article.hue;           // blue
 const GUIDE_HUE = ENTITIES.guide.hue;          // purple
+const MODULE = 'problems';                     // signature gradient key: header tile + primary action
 
 /**
  * A knowledge atom is drawn with the registry's own colour and icon for its
@@ -368,10 +369,11 @@ export default function Problems({ route }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={OctagonAlert}
+        module={MODULE}
         accent={HUE}
         title="Problem Management"
         subtitle="Northwind Systems · the root cause behind repeated incidents, and the change that removes it"
-        actions={<Button variant="solid" accent={HUE} icon={Plus} onClick={() => setCreating(true)}>New problem</Button>}
+        actions={<Button variant="grad" module={MODULE} icon={Plus} onClick={() => setCreating(true)}>New problem</Button>}
       >
         <Toolbar>
           <SubTabs
@@ -536,7 +538,7 @@ function ProblemList({ problems, tickets, people, tab, onTab, onOpen, onNew, vio
               : 'A problem is opened when the same failure produces incident after incident. Group them here, prove the cause once, and let one change close the whole set.'}
             action={problems.length
               ? <Button variant="outline" onClick={() => { setQ(''); setPriority('all'); setFocus(null); }}>Clear filters</Button>
-              : <Button variant="solid" accent={HUE} icon={Plus} onClick={onNew}>New problem</Button>}
+              : <Button variant="grad" module={MODULE} icon={Plus} onClick={onNew}>New problem</Button>}
           />
         </Card>
       )}
@@ -679,10 +681,14 @@ function ProblemDetail({ problemId, onClose }) {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Close</Button>
+            {/* The stage advance carries the module gradient, EXCEPT while the
+                workaround is missing: it stays flat grey, which is the affordance
+                that says "not yet" before the click explains why. */}
             {next && (
               <Button
-                variant="solid"
-                accent={next.to === 'known_error' && !ready ? 'gray' : HUE}
+                variant={next.to === 'known_error' && !ready ? 'solid' : 'grad'}
+                module={MODULE}
+                accent="gray"
                 icon={next.icon}
                 onClick={() => attempt(next.to)}
               >
@@ -1603,7 +1609,7 @@ function NewProblemModal({ open, onClose, problems }) {
         </span>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => { reset(); onClose(); }}>Cancel</Button>
-          <Button variant="solid" accent={HUE} icon={Check} onClick={create}>Create problem</Button>
+          <Button variant="grad" module={MODULE} icon={Check} onClick={create}>Create problem</Button>
         </div>
       </>}
     >

@@ -7,7 +7,7 @@ import {
   Paperclip, User, Server, Folder, Settings2, Send, Filter,
 } from 'lucide-react';
 import {
-  useTheme, cx, DENSITY, ICON, GRADIENT,
+  useTheme, cx, DENSITY, ICON,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag,
   EmptyState, Card, Panel, Section, GroupLabel, ListRow, Stat, Banner, Divider,
   Field, Input, Textarea, Select, Checkbox, Toggle, TileGroup, SearchInput,
@@ -268,15 +268,15 @@ export default function Forms({ route }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={FileText}
-        gradient={GRADIENT.brand}
+        module="forms"
         title="Forms"
         subtitle="Portal entry points, and the request intakes that sit behind them"
         actions={
           <>
             <Button variant="outline" icon={ExternalLink} onClick={() => navigate('portal')}>Open portal</Button>
             {tab === 'portal'
-              ? <Button variant="solid" accent="purple" icon={Plus} onClick={createForm}>New form</Button>
-              : <Button variant="solid" accent="purple" icon={Plus} onClick={createSubform}>New request form</Button>}
+              ? <Button variant="grad" module="forms" icon={Plus} onClick={createForm}>New form</Button>
+              : <Button variant="grad" module="forms" icon={Plus} onClick={createSubform}>New request form</Button>}
           </>
         }
       >
@@ -420,7 +420,7 @@ function PortalForms({ forms, subforms, catalog, onEdit, onDelete, onCreate }) {
         icon={FileText}
         title="No portal forms yet"
         hint="A form is what a person lands on — it scopes the portal to a set of products for one audience."
-        action={<Button variant="solid" accent="purple" icon={Plus} onClick={onCreate}>New form</Button>}
+        action={<Button variant="grad" module="forms" icon={Plus} onClick={onCreate}>New form</Button>}
       />
     );
   }
@@ -595,7 +595,7 @@ function FormEditorBody({ form, products, onClose }) {
           />
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button variant="solid" accent="purple" icon={Check} onClick={save}>Save form</Button>
+            <Button variant="grad" module="forms" icon={Check} onClick={save}>Save form</Button>
           </div>
         </>
       }
@@ -725,7 +725,7 @@ function RequestForms({ subforms, total, queues, policies, unrouted, onCreate })
         icon={FileQuestion}
         title="No request forms yet"
         hint="A request form is the intake behind a catalog item — its fields, its destination queue and its approval policy."
-        action={<Button variant="solid" accent="purple" icon={Plus} onClick={onCreate}>New request form</Button>}
+        action={<Button variant="grad" module="forms" icon={Plus} onClick={onCreate}>New request form</Button>}
       />
     );
   }
@@ -887,6 +887,7 @@ function Builder({ subform, queues, policies, directory, assets }) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         icon={FileQuestion}
+        module="forms"
         accent="purple"
         title={subform.name}
         subtitle={subform.description || 'Request intake'}
