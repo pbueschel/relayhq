@@ -25,7 +25,7 @@ import {
 import { useStore, getState, addTo, uid, NOW } from '@/store/store.js';
 import { evaluate } from '@/lib/conditions.js';
 import { serviceRequestContext, annualCost } from '@/lib/servicerequest.js';
-import { startApproval, matchingPolicies, progress } from '@/lib/approvals.js';
+import { startApproval, matchingPolicies, progress, canDecide } from '@/lib/approvals.js';
 import { useRoute, navigate } from '@/lib/router.js';
 import { Q, USR, CON, CAT } from '@/store/seed/ids.js';
 
@@ -55,7 +55,7 @@ import { Q, USR, CON, CAT } from '@/store/seed/ids.js';
  * the front door. Neither of them is a page: BOTH OPEN THE CARD.
  *
  * THE PAGE NEVER MOVES. Home is one stable screen — hero, search, the two doors,
- * popular requests, browse grid — and every level of every drill happens inside
+ * the requester's open work, browse grid — and every level of every drill happens inside
  * a contained card over it:
  *
  *     door → product → subcategory → item → article / guide → request → receipt
@@ -196,12 +196,6 @@ function lessonIdsOf(course) {
 
 function courseMinutes(course, byId) {
   return lessonIdsOf(course).reduce((n, id) => n + (byId.get(id)?.minutes || 0), 0);
-}
-
-function popularItems(products) {
-  return walkCatalog(products)
-    .filter(x => x.node.type === 'item' && x.node.popular)
-    .slice(0, 6);
 }
 
 /* ==================================================================== *
@@ -631,7 +625,6 @@ export default function Portal({ route }) {
    * with its full breadcrumb trail already assembled. */
   const flatHelp = useMemo(() => walkCatalog(products), [products]);
   const byNode = useMemo(() => new Map(flatHelp.map(x => [x.node.id, x])), [flatHelp]);
-  const popular = useMemo(() => popularItems(products), [products]);
 
   /* ---------------- Service catalog: orderable things ---------------- */
 
@@ -645,8 +638,6 @@ export default function Portal({ route }) {
     .slice()
     .sort((x, y) => (x.order ?? 99) - (y.order ?? 99)),
   [s.serviceCategories, svcItems, form]);
-
-  const svcPopular = useMemo(() => svcItems.filter(i => i.popular).slice(0, 6), [svcItems]);
 
   /* ---------------- where the card is standing ---------------- */
 
@@ -787,6 +778,29 @@ export default function Portal({ route }) {
       : tk.requesterId === requester?.id);
     return mine.slice().sort((x, y) => String(y.createdAt || '').localeCompare(String(x.createdAt || '')));
   }, [s.tickets, external, requester]);
+
+  /* What is actually in flight for this person: their unresolved requests, and
+     any approval sitting on their decision right now. */
+  const openTickets = useMemo(
+    () => myTickets.filter(tk => !['resolved', 'closed', 'cancelled'].includes(tk.status)).slice(0, 4),
+    [myTickets]);
+
+  /* canDecide() is the same predicate the Approvals module uses, so the portal
+     can never disagree with the agent view about whose turn it is. */
+  const myApprovals = useMemo(
+    () => !requester?.id ? []
+      : (s.approvals || []).filter(r => canDecide(r, requester.id)).slice(0, 3),
+    [s.approvals, requester]);
+
+  /* The OTHER sense of "my approvals": not one waiting on me, but one holding
+     up something I asked for. It belongs on the ticket row, not in a second
+     list — the requester's question is "is my thing moving", not "which record
+     type is it stuck in". */
+  const blockedTickets = useMemo(() => new Set(
+    (s.approvals || [])
+      .filter(r => r.state === 'awaiting' && r.targetType === 'ticket' && r.targetId)
+      .map(r => r.targetId)),
+  [s.approvals]);
 
   const orgTickets = useMemo(() => {
     if (!external || !org) return [];
@@ -1240,13 +1254,13 @@ export default function Portal({ route }) {
               doors={<DoorCards facts={doorFacts} onOpen={openDoor} />}
               /* Full-width rows, so each one has room to say where it sits in
                  the catalog rather than being a bare name in a pill. */
-              popular={popular.map(({ node, trail }) => ({
-                id: node.id, name: node.name, icon: Circle,
-                hint: trail.map(n => n.name).join(' › '),
-              }))}
-              popularHue={entityHue('item')}
-              popularLabel="Most requested"
-              onPopular={openHelpNode}
+              openWork={<OpenWork
+                tickets={openTickets}
+                approvals={myApprovals}
+                blocked={blockedTickets}
+                onTicket={(tk) => setDetailId(tk.id)}
+                onSeeAll={() => setTab('requests')}
+              />}
             />
 
             <section className={cx(WIDE, 'pb-16')}>
@@ -1280,14 +1294,13 @@ export default function Portal({ route }) {
               onAtom={(hit) => openCard([...serviceFrames(hit.leaf.id), { type: 'atom', id: hit.id }])}
               onThing={(hit) => openService(hit.id)}
               doors={<DoorCards facts={doorFacts} onOpen={openDoor} />}
-              popular={svcPopular.map(i => ({
-                id: i.id, name: i.name, icon: serviceGlyph(i.icon),
-                hint: [byCat.get(i.categoryId)?.name, fmtMoney(i.price) || 'No charge', fmtDelivery(i.deliveryDays)]
-                  .filter(Boolean).join(' · '),
-              }))}
-              popularHue={entityHue('item')}
-              popularLabel="Ordered most often"
-              onPopular={openService}
+              openWork={<OpenWork
+                tickets={openTickets}
+                approvals={myApprovals}
+                blocked={blockedTickets}
+                onTicket={(tk) => setDetailId(tk.id)}
+                onSeeAll={() => setTab('requests')}
+              />}
             />
             <ServiceCategoriesScreen
               categories={svcCategories}
@@ -1632,13 +1645,77 @@ function HeroBackdrop({ compact }) {
  * headline; the service catalog asks the ordering question instead, and the
  * search says which of the two it is about to look through.
  *
- * `doors` sits between the search and the popular pills — search first for the
- * person who knows the words for their problem, the two doors immediately after
- * for the person who does not.
+ * `doors` sits between the search and the requester's open work — search first
+ * for the person who knows the words for their problem, the two doors
+ * immediately after for the person who does not.
  */
+function OpenWork({ tickets, approvals, blocked, onTicket, onSeeAll }) {
+  const { t, a } = useTheme();
+  const ticketHue = entityHue('ticket');
+  const approvalHue = entityHue('approval');
+
+  /* Nothing in flight means no panel at all. An empty shelf under the search
+     reads as a broken page, not as good news. */
+  if (!tickets.length && !approvals.length) return null;
+
+  return (
+    <div className={cx('mt-10 text-left', OPTION_COL)}>
+      <div className="flex items-baseline justify-between mb-3.5 px-1">
+        <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em]', t.textMuted)}>
+          Your open requests
+        </p>
+        <button onClick={onSeeAll} className={cx('text-xs font-medium hover:underline', a(ticketHue).fg)}>
+          See all
+        </button>
+      </div>
+
+      <div className={OPTION_STACK}>
+        {/* Approvals lead: something waiting on YOU outranks something you are
+            waiting on. */}
+        {approvals.map(ap => (
+          <OptionRow
+            key={ap.id}
+            icon={Stamp}
+            hue={approvalHue}
+            name={ap.subject || 'Approval request'}
+            secondary="Waiting on your decision"
+            trailing={<Chip accent={approvalHue}>Needs you</Chip>}
+            onClick={onSeeAll}
+          />
+        ))}
+        {tickets.map(tk => (
+          <OptionRow
+            key={tk.id}
+            icon={Inbox}
+            hue={ticketHue}
+            name={tk.title}
+            secondary={blocked.has(tk.id)
+              ? `${tk.key} · waiting on an approval`
+              : `${tk.key} · raised ${relDays(tk.createdAt)}`}
+            trailing={<StatusPill status={tk.status} />}
+            onClick={() => onTicket(tk)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** "3 days ago" / "today" — enough to know whether a request is moving. */
+function relDays(iso) {
+  if (!iso) return 'recently';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'recently';
+  const days = Math.round((Date.now() - then) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days} days ago`;
+  return 'a while ago';
+}
+
 function PortalHero({
   door, form, external, orgName, query, onQuery, results,
-  onAtom, onThing, doors, popular, popularHue, popularLabel, onPopular,
+  onAtom, onThing, doors, openWork,
 }) {
   const { t, dark } = useTheme();
   const services = door.scope !== 'help';
@@ -1683,28 +1760,11 @@ function PortalHero({
 
         {doors}
 
-        {popular.length > 0 && (
-          <div className={cx('mt-10 text-left', OPTION_COL)}>
-            <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em] mb-3.5 text-center', t.textMuted)}>
-              {popularLabel}
-            </p>
-            {/* A CHOICE LIST, SO IT IS A STACK OF FULL-WIDTH ROWS. These used to
-                wrap into ragged rows of inline pills, which made a short list of
-                the most-asked-for things look like a tag cloud. */}
-            <div className={OPTION_STACK}>
-              {popular.map(p => (
-                <OptionRow
-                  key={p.id}
-                  icon={p.icon || Circle}
-                  hue={popularHue}
-                  name={p.name}
-                  secondary={p.hint}
-                  onClick={() => onPopular(p.id)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+        {/* What a RETURNING requester wants under the search: not a list of
+            what other people ask for, but the state of their own. "Most
+            requested" was catalog trivia to anyone who had already raised
+            something. */}
+        {openWork}
       </div>
     </section>
   );

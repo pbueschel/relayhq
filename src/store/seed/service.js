@@ -714,6 +714,37 @@ export const TICKETS = [
     createdAt: '2026-08-15T08:50:00',
     updatedAt: '2026-08-15T15:40:00',
   },
+  {
+    id: 'tkt-4823',
+    key: 'TKT-4823',
+    title: 'Access to the campaign analytics console to answer customer questions',
+    description:
+      'Customers ask which campaign an offer code came from and support has no way to look it up, so every one of those '
+      + 'becomes a handoff to marketing. Read access to the campaign console would let us answer in the first reply.',
+    status: 'open',
+    priority: 'low',
+    queueId: Q.IT,
+    assigneeId: USR.EMMA,
+    isExternal: false,
+    requesterId: USR.DEVON,
+    orgId: null,
+    source: 'portal',
+    subformId: SF.REQUEST_ACCESS,
+    catalogItemId: CAT.I_MFA,
+    labels: ['access-review'],
+    cc: [USR.LISA],
+    comments: [
+      { id: 'cmt-4823-1', authorId: USR.DEVON, body: 'Read-only is fine — I never need to change a campaign, only see which one a code belongs to.', internal: false, at: '2026-08-16T09:05:00' },
+      { id: 'cmt-4823-2', authorId: USR.EMMA, body: 'Marketing owns the console, so this needs Sarah as system owner on top of Lisa. Both are on the approval.', internal: false, at: '2026-08-16T09:40:00' },
+    ],
+    links: [
+      { type: 'approval', id: 'apr-7' },
+    ],
+    slaPolicyId: SLA.INTERNAL,
+    firstResponseAt: '2026-08-16T09:40:00',
+    createdAt: '2026-08-16T09:05:00',
+    updatedAt: '2026-08-16T09:40:00',
+  },
 ];
 
 /* ==================================================================== *
@@ -1763,6 +1794,50 @@ export const APPROVALS = [
     currentStage: 0,
     state: 'awaiting',
     createdAt: '2026-08-16T08:30:00',
+    resolvedAt: null,
+  },
+  {
+    id: 'apr-7',
+    policyId: POL.ACCESS_GRANT,
+    policyName: 'Privileged access grant',
+    subject: 'TKT-4823 · Campaign analytics console, read access for Devon Okafor',
+    targetType: 'ticket',
+    targetId: 'tkt-4823',
+    requesterId: USR.DEVON,
+    onReject: 'stop',
+    context: {
+      requesterId: USR.DEVON,
+      ticketId: 'tkt-4823',
+      answers: { accessLevel: 'read', system: 'Campaign analytics console', duration: 'standing' },
+    },
+    stages: [
+      {
+        id: 'stg-access-owner',
+        index: 0,
+        name: 'System owner and manager',
+        approvers: [{ kind: 'user', userId: USR.SARAH }, { kind: 'manager' }],
+        approverIds: [USR.SARAH, USR.LISA],
+        unresolved: false,
+        rule: 'all',
+        quorum: 2,
+        dueInHours: 8,
+        onTimeout: 'escalate',
+        escalateTo: { kind: 'queue', queueId: Q.IT },
+        /* Lisa has answered; Sarah has not. This is the state the PORTAL panel
+           exists to surface — an approval sitting on the person looking at the
+           page, reached without opening the agent console. */
+        decisions: [
+          { approverId: USR.LISA, verdict: 'approved', comment: 'Devon takes these questions daily. Read access is the right scope.', at: '2026-08-16T10:10:00' },
+        ],
+        state: 'awaiting',
+        startedAt: '2026-08-16T09:40:00',
+        dueAt: '2026-08-16T17:40:00',
+        resolvedAt: null,
+      },
+    ],
+    currentStage: 0,
+    state: 'awaiting',
+    createdAt: '2026-08-16T09:40:00',
     resolvedAt: null,
   },
 ];
