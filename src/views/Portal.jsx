@@ -24,6 +24,7 @@ import {
 } from '@/ds';
 import { useStore, getState, addTo, uid, NOW } from '@/store/store.js';
 import { evaluate } from '@/lib/conditions.js';
+import { serviceRequestContext, annualCost } from '@/lib/servicerequest.js';
 import { startApproval, matchingPolicies, progress } from '@/lib/approvals.js';
 import { useRoute, navigate } from '@/lib/router.js';
 import { Q, USR, CON, CAT } from '@/store/seed/ids.js';
@@ -33,35 +34,48 @@ import { Q, USR, CON, CAT } from '@/store/seed/ids.js';
  * for RelayHQ's model rather than merely implement it.
  *
  * ============================================================================
- * TWO FRONT DOORS, AND ONE CONTAINED CARD
+ * ONE HOME PAGE, TWO FRONT DOORS, AND ONE CARD THAT HOLDS THE WHOLE DRILL
  * ============================================================================
- * The portal's primary switch is two categories that answer different questions:
+ * The portal's primary switch is two doors that answer different questions, and
+ * the page says which is which BEFORE anybody has to guess at a tab:
  *
- *   GET HELP        "something is wrong" — the Product › Subcategory › Item drill
- *                   over `catalog`, knowledge first and a report-a-problem form
- *                   second. Deflection is the mechanic.
+ *   GET HELP        "Something is wrong / I have a question" — the
+ *                   Product › Subcategory › Item drill over `catalog`, knowledge
+ *                   first and a report-a-problem form second. Deflection is the
+ *                   mechanic.
  *
- *   SERVICE CATALOG "I want something"   — a Category › ServiceItem browse over
+ *   SERVICE CATALOG "I want something" — a Category › ServiceItem browse over
  *                   `serviceCategories` + `serviceItems`, where an item carries a
  *                   price, a delivery time, an approval and a fulfilment queue.
  *
- * BROWSING IS A PAGE. THE LEAF IS A CARD. Picking an item does not navigate the
- * whole portal away: it opens a contained card over the page, and the whole leaf
- * journey happens INSIDE that card —
+ * They are TWO LARGE ENTRY CARDS under the hero search — each with its own
+ * entity accent, its own glyph, its own plain-words statement of what it is FOR,
+ * and a live fact counted off the seed rather than typed in. The tab strip in
+ * the bar stays for people who already know where they are going; the cards are
+ * the front door. Neither of them is a page: BOTH OPEN THE CARD.
  *
- *     item (help above forms) → article / guide → request form → receipt
+ * THE PAGE NEVER MOVES. Home is one stable screen — hero, search, the two doors,
+ * popular requests, browse grid — and every level of every drill happens inside
+ * a contained card over it:
  *
- * Back moves up one level inside the card; close dismisses to the browse page
- * underneath, which never scrolled and never lost its place. That shape is the
- * v1 behaviour restored in the new visual language, because a person comparing
- * three services should not have to re-drill the catalog between each one.
+ *     door → product → subcategory → item → article / guide → request → receipt
+ *     door → category → service item → request → receipt
+ *
+ * Back moves up ONE level inside the card, the breadcrumbs in the card header
+ * jump to any level above, and Close dismisses to a page that never re-rendered
+ * and never lost its scroll position. That is v1's behaviour restored: the
+ * shadow box opens on the FIRST selection rather than the last, so comparing
+ * three services never costs a full-page repaint between each one.
  *
  * THE CARD IS A REAL DIALOG. Escape closes it, focus is trapped inside it,
- * background scroll is locked, and focus returns to whatever opened it. It is
- * composed here rather than taken from <Modal> only because the header is the v1
- * shape (close left, title optically centred) and the guide viewer wants more
- * width than the standard body — the structure and the accessibility contract
- * are the DS shell's.
+ * background scroll is locked, and focus returns to whatever opened it. It
+ * scales and fades in with the backdrop blurring up behind it, exits the same
+ * distance in reverse, and swaps each level's CONTENT with a small slide while
+ * the frame itself stays perfectly still — all of it suppressed under
+ * prefers-reduced-motion. It is composed here rather than taken from <Modal>
+ * only because the header is the v1 shape (close left, title optically centred,
+ * breadcrumbs beneath) and the guide viewer wants more width than the standard
+ * body — the accessibility contract is the DS shell's.
  *
  * THE THINGS IT PROVES
  *  1. DRILL-DOWN — Product › Subcategory › Item, not a flat list of every form.
@@ -70,8 +84,11 @@ import { Q, USR, CON, CAT } from '@/store/seed/ids.js';
  *     service catalog obeys the same rule with "before you order" knowledge.
  *  3. THE SUBMISSION REALLY LANDS — a request creates a ticket in the store,
  *     routed by the service item's fulfilment queue (or the subform's, falling
- *     back to General, said out loud), and starts a real approval. The receipt
- *     names the ticket key and, when an approval started, who it now waits on.
+ *     back to General, said out loud), and starts a real approval. A service
+ *     order builds that approval's context with serviceRequestContext() from
+ *     '@/lib/servicerequest.js' — the same function test/smoke.js uses — so the
+ *     portal and the gate can never disagree about what an order costs. The
+ *     receipt names the ticket key and, when an approval started, who it waits on.
  *
  * Everything the "Why this works" panel claims is computed from state. There are
  * no invented industry statistics anywhere in this file — only facts about the
@@ -367,13 +384,20 @@ function usePrefersReducedMotion() {
  * `onClose` is held in a ref so the effect depends only on `open` — rebinding it
  * every render would re-run the effect and steal focus out of the request form
  * on every keystroke.
+ *
+ * `fallbackRef` is where focus goes when the OPENER NO LONGER EXISTS. A search
+ * suggestion unmounts itself in the same click that opens the card — clearing
+ * the query is what dismisses the popover — so by the time this card closes the
+ * button that opened it is detached, and `.focus()` on a detached node is a
+ * silent no-op that drops the keyboard onto <body>. The next Tab then restarts
+ * at the top of the document instead of near where the reader was.
  */
 const FOCUSABLE = [
   'a[href]', 'button:not([disabled])', 'input:not([disabled])',
   'select:not([disabled])', 'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
-function useDialogShell(open, onClose, levelKey) {
+function useDialogShell(open, onClose, levelKey, fallbackRef) {
   const ref = useRef(null);
   const bodyRef = useRef(null);
   const closeRef = useRef(onClose);
@@ -406,7 +430,11 @@ function useDialogShell(open, onClose, levelKey) {
     return () => {
       document.removeEventListener('keydown', onKey, true);
       document.body.style.overflow = prevOverflow;
-      if (opener && typeof opener.focus === 'function') opener.focus();
+      /* `preventScroll` on both branches: this card promises the page never
+       * moved, and restoring focus is not allowed to be the thing that moves it. */
+      const real = opener && opener !== document.body && opener.isConnected;
+      const back = real ? opener : fallbackRef?.current || null;
+      if (back && typeof back.focus === 'function') back.focus({ preventScroll: true });
     };
   }, [open]);
 
@@ -441,27 +469,60 @@ const LEVEL_COPY = [
   { label: 'Step 3 of 3', hint: 'Choose the thing you need.' },
 ];
 
-/* The two front doors, and the vocabulary each one uses. Hues come from the
- * entity registry rather than being picked to look nice: Get Help is fronted by
- * knowledge, the service catalog by orderable items. */
+/* The two front doors, and the vocabulary each one uses.
+ *
+ * Hues come from the entity registry rather than being picked to look nice: Get
+ * Help is fronted by knowledge, the service catalog by orderable items. `question`
+ * is the thing the whole redesign turns on — it is the sentence a person arrives
+ * holding, said back to them, so choosing a door is recognition rather than a
+ * guess between two similarly-sized pills. */
 const DOOR = {
   help: {
+    kind: 'help',
     hue: entityHue('guide'),
+    icon: LifeBuoy,
+    factIcon: BookOpen,
     label: 'Get Help',
+    question: 'Something is wrong, or I have a question',
+    door: 'Report a problem, or find the answer that means you never have to raise anything. Every area ends in a topic with the answers attached — and a request form only if you still need one.',
     headline: 'How can we help?',
     sub: 'Search the answers first. If none of them fit, the request form is one click further on — and it already knows what you read.',
     search: 'Search help articles and problems…',
     scope: 'help',
+    browseTitle: 'Where do you need help?',
+    pageTitle: 'Every area we support',
+    browseHint: 'Pick the area your question belongs to. Every path ends in a topic with the answers attached — and a request form only if you still need one.',
   },
   services: {
+    kind: 'service',
     hue: entityHue('item'),
+    icon: ShoppingCart,
+    factIcon: Truck,
     label: 'Service Catalog',
+    question: 'I want something',
+    door: 'Equipment, software, access and workplace services you can order. Every item says what it costs, when it arrives and who has to sign it off — before you fill anything in.',
     headline: 'What do you need?',
     sub: 'Equipment, software, access and workplace services you can order. Every item says what it costs, when it arrives and who has to sign it off.',
     search: 'Search services you can order…',
     scope: 'the service catalog',
+    browseTitle: 'What kind of thing do you need?',
+    pageTitle: 'Everything you can order',
+    browseHint: 'These are things you can order, not problems to report. Every one names its price, how long it takes and whether somebody has to approve it before you commit.',
   },
 };
+
+/* Motion.
+ *
+ * ENTRY IS CSS, EXIT IS JS, AND THAT ASYMMETRY IS DELIBERATE. The entry states
+ * are declared with `starting:` — @starting-style — so the RESTING state is the
+ * visible one and the animation is the thing that is optional. Driving it the
+ * other way (mount hidden, reveal on a frame) fails catastrophically when the
+ * frame does not arrive: an open, focused, scroll-locked, invisible card. The
+ * exit has to be held in JS because the card must finish leaving before the
+ * state that renders it is torn down, and `exitMs` is what that costs.
+ *
+ * Under prefers-reduced-motion both are skipped outright — not shortened. */
+const MOTION = { exitMs: 160 };
 
 export default function Portal({ route }) {
   const { t, dark, toggle } = useTheme();
@@ -481,14 +542,24 @@ export default function Portal({ route }) {
   }, [r.sub, published, form]);
 
   const [tab, setTab] = useState('help');
-  const [path, setPath] = useState([]);            // Get Help drill, a page
-  const [svcCat, setSvcCat] = useState(null);      // Service catalog category, a page
   const [query, setQuery] = useState('');
-  /* THE CARD. `leaf` is which leaf is open; `stack` is where you are INSIDE it.
-   * An empty stack is the item view; frames above it are the article, the form,
-   * the receipt. Neither touches `path` or `svcCat`, which is exactly why the
-   * page underneath keeps its place. */
-  const [leaf, setLeaf] = useState(null);          // { kind: 'help' | 'service', id }
+  /* THE CARD, AND THE ONLY PLACE THE DRILL LIVES.
+   *
+   * `stack` is the entire journey: an empty stack is the home page with no card
+   * over it, and every level — door, product, subcategory, item, article, request
+   * form, receipt — is a frame pushed onto it:
+   *
+   *   { type: 'root',     kind }   the door itself: all products / all categories
+   *   { type: 'node',     id }     a catalog product, subcategory or item
+   *   { type: 'category', id }     a service category
+   *   { type: 'service',  id }     an orderable service item
+   *   { type: 'atom',     id }     an article or a guide
+   *   { type: 'form',     id }     a request form
+   *   { type: 'receipt',  receipt } | { type: 'resolved', id }
+   *
+   * NOTHING about the page underneath is stored here, and the page stores nothing
+   * about the drill. That separation is the whole fix: the home page cannot
+   * re-render itself away while somebody is three levels into a card. */
   const [stack, setStack] = useState([]);
   const [answers, setAnswers] = useState({});
   const [touched, setTouched] = useState(false);
@@ -508,6 +579,10 @@ export default function Portal({ route }) {
   const bySf = useMemo(() => new Map((s.subforms || []).map(f => [f.id, f])), [s.subforms]);
   const byQueue = useMemo(() => new Map((s.queues || []).map(q => [q.id, q])), [s.queues]);
   const byCourse = useMemo(() => new Map((s.courses || []).map(c => [c.id, c])), [s.courses]);
+  /* Every service category, not only the ones the browse grid shows: a frame in
+   * the card has to resolve its own title even when its category was filtered
+   * out of the grid, or the header renders an empty string. */
+  const byCat = useMemo(() => new Map((s.serviceCategories || []).map(c => [c.id, c])), [s.serviceCategories]);
   const defaultQueue = useMemo(
     () => (s.queues || []).find(q => q.isDefault) || (s.queues || []).find(q => q.id === Q.GENERAL) || null,
     [s.queues]);
@@ -538,20 +613,11 @@ export default function Portal({ route }) {
       : roots.filter(n => audienceMatch(n.audience, form?.audience));
   }, [s.catalog, form]);
 
-  const trail = useMemo(() => {
-    const out = [];
-    let level = products;
-    for (const id of path) {
-      const n = (level || []).find(x => x.id === id);
-      if (!n) break;
-      out.push(n);
-      level = n.children;
-    }
-    return out;
-  }, [products, path]);
-
-  const branch = trail[trail.length - 1] || null;
-  const children = branch ? (branch.children || []) : products;
+  /* The whole tree walked once. `byNode` answers "what is this id, and what sits
+   * above it" in one lookup, which is what lets a search suggestion open the card
+   * with its full breadcrumb trail already assembled. */
+  const flatHelp = useMemo(() => walkCatalog(products), [products]);
+  const byNode = useMemo(() => new Map(flatHelp.map(x => [x.node.id, x])), [flatHelp]);
   const popular = useMemo(() => popularItems(products), [products]);
 
   /* ---------------- Service catalog: orderable things ---------------- */
@@ -567,28 +633,47 @@ export default function Portal({ route }) {
     .sort((x, y) => (x.order ?? 99) - (y.order ?? 99)),
   [s.serviceCategories, svcItems, form]);
 
-  const svcCategory = svcCat ? svcCategories.find(c => c.id === svcCat) || null : null;
-  const svcInCategory = useMemo(
-    () => (svcCategory ? svcItems.filter(i => i.categoryId === svcCategory.id) : []),
-    [svcItems, svcCategory]);
   const svcPopular = useMemo(() => svcItems.filter(i => i.popular).slice(0, 6), [svcItems]);
 
-  /* ---------------- the open leaf ---------------- */
+  /* ---------------- where the card is standing ---------------- */
 
-  const helpItems = useMemo(() => walkCatalog(products).filter(x => x.node.type === 'item'), [products]);
+  const helpItems = useMemo(() => flatHelp.filter(x => x.node.type === 'item'), [flatHelp]);
 
-  const leafHelp = useMemo(
-    () => (leaf?.kind === 'help' ? helpItems.find(x => x.node.id === leaf.id) || null : null),
-    [leaf, helpItems]);
-  const leafService = useMemo(
-    () => (leaf?.kind === 'service' ? svcItems.find(i => i.id === leaf.id) || null : null),
-    [leaf, svcItems]);
+  const frame = stack[stack.length - 1] || null;
+  const frameKind = frame?.type || null;
+  /* Which door this card belongs to, read off its first frame rather than stored
+   * twice. A card opened from a search suggestion knows its door for free. */
+  const cardKind = !stack.length ? null
+    : stack[0].type === 'root' ? stack[0].kind
+    : stack[0].type === 'node' ? 'help'
+    : 'service';
+
+  /* The ITEM the card is standing on — the deepest frame that is a catalog item
+   * or a service item. Articles, request forms and receipts all hang off it, and
+   * finding it by walking down means an article never loses its parent. */
+  const itemIndex = useMemo(() => {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const f = stack[i];
+      if (f.type === 'service') return i;
+      if (f.type === 'node' && byNode.get(f.id)?.node.type === 'item') return i;
+    }
+    return -1;
+  }, [stack, byNode]);
+
+  const itemFrame = itemIndex >= 0 ? stack[itemIndex] : null;
+  const leafHelp = itemFrame?.type === 'node' ? byNode.get(itemFrame.id) || null : null;
+  const leafService = itemFrame?.type === 'service'
+    ? svcItems.find(i => i.id === itemFrame.id) || null
+    : null;
+
+  const frameNode = frameKind === 'node' ? byNode.get(frame.id) || null : null;
+  const frameCategory = frameKind === 'category' ? byCat.get(frame.id) || null : null;
 
   const leafName = leafHelp?.node.name || leafService?.name || '';
   const leafTrail = leafHelp
     ? leafHelp.trail.map(n => n.name).join(' › ')
     : leafService
-      ? (svcCategories.find(c => c.id === leafService.categoryId)?.name || 'Service catalog')
+      ? (byCat.get(leafService.categoryId)?.name || 'Service catalog')
       : '';
 
   const leafAtoms = useMemo(() => {
@@ -605,10 +690,9 @@ export default function Portal({ route }) {
       .filter(f => !!f && f.enabled !== false && audienceMatch(f.audience, form?.audience));
   }, [leafHelp, leafService, bySf, form]);
 
-  const frame = stack[stack.length - 1] || null;
-  const frameAtom = frame?.type === 'atom' ? byKb.get(frame.id) || null : null;
-  const frameIntake = frame?.type === 'form' ? bySf.get(frame.id) || null : null;
-  const frameResolved = frame?.type === 'resolved' ? byKb.get(frame.id) || null : null;
+  const frameAtom = frameKind === 'atom' ? byKb.get(frame.id) || null : null;
+  const frameIntake = frameKind === 'form' ? bySf.get(frame.id) || null : null;
+  const frameResolved = frameKind === 'resolved' ? byKb.get(frame.id) || null : null;
 
   const svcPolicy = leafService
     ? (s.approvalPolicies || []).find(p => p.id === leafService.approvalPolicyId) || null
@@ -709,47 +793,70 @@ export default function Portal({ route }) {
 
   /* ---------------- navigation ---------------- */
 
-  const goHome = () => { setPath([]); setSvcCat(null); setQuery(''); };
-  const drill = (node) => { setPath(p => [...p, node.id]); setQuery(''); };
+  const closeCard = () => {
+    setStack([]); setAnswers({}); setTouched(false); setEmphasise(false);
+  };
+  const openCard = (frames) => {
+    setStack(frames); setAnswers({}); setTouched(false); setEmphasise(false); setQuery('');
+  };
 
-  const closeLeaf = () => {
-    setLeaf(null); setStack([]); setAnswers({}); setTouched(false); setEmphasise(false);
+  /* Opening AT a leaf opens the whole path DOWN TO it, so the breadcrumbs and the
+   * Back button behave identically whether you drilled there yourself or landed
+   * on it from a search suggestion. Nobody arrives inside a card with no idea
+   * where they are. */
+  const helpFrames = (id) => {
+    const entry = byNode.get(id);
+    if (!entry) return [{ type: 'node', id }];
+    return [...entry.trail.map(n => ({ type: 'node', id: n.id })), { type: 'node', id }];
   };
-  const openLeaf = (next, frames = []) => {
-    setLeaf(next); setStack(frames); setAnswers({}); setTouched(false); setEmphasise(false); setQuery('');
+  const serviceFrames = (id) => {
+    const item = svcItems.find(i => i.id === id);
+    return item?.categoryId
+      ? [{ type: 'category', id: item.categoryId }, { type: 'service', id }]
+      : [{ type: 'service', id }];
   };
-  const openHelpItem = (id) => openLeaf({ kind: 'help', id });
-  const openService = (id) => openLeaf({ kind: 'service', id });
-  const openAtomFrame = (id) => setStack(st => [...st, { type: 'atom', id }]);
+
+  const openDoor = (kind) => openCard([{ type: 'root', kind }]);
+  const openHelpNode = (id) => openCard(helpFrames(id));
+  const openCategory = (id) => openCard([{ type: 'category', id }]);
+  const openService = (id) => openCard(serviceFrames(id));
+
+  const pushFrame = (next) => setStack(st => [...st, next]);
+  const openAtomFrame = (id) => pushFrame({ type: 'atom', id });
   const openIntakeFrame = (id) => {
     setAnswers({}); setTouched(false);
-    setStack(st => [...st, { type: 'form', id }]);
+    pushFrame({ type: 'form', id });
   };
+
   /* Back moves up ONE level inside the card. At the base level there is nothing
-   * above the item but the browse page, so it dismisses — which is the same
-   * gesture, one step further out. */
-  const leafBack = () => {
-    if (stack.length) { setStack(st => st.slice(0, -1)); return; }
-    closeLeaf();
+   * above it but the page, so it dismisses — which is the same gesture, one step
+   * further out. The breadcrumb jumps straight to any level above. */
+  const cardBack = () => {
+    if (stack.length > 1) { setStack(st => st.slice(0, -1)); setEmphasise(false); return; }
+    closeCard();
   };
+  const goToLevel = (i) => { setStack(st => st.slice(0, i + 1)); setEmphasise(false); };
 
   /* Reset the journey when the brand changes — a customer never sees two at once. */
   useEffect(() => {
-    setPath([]); setSvcCat(null); setLeaf(null); setStack([]); setCourseId(null);
-    setLessonId(null); setQuery(''); setEmphasise(false);
+    setStack([]); setCourseId(null); setLessonId(null); setQuery(''); setEmphasise(false);
   }, [form?.id]);
 
   /* A page navigation starts at the top of the page, the way a real one would.
-   * Opening the CARD is deliberately absent from this list: the page underneath
-   * must keep its scroll position for when the card closes again. */
+   * The CARD is deliberately absent from this list — opening it, drilling inside
+   * it and closing it must all leave the page's scroll position exactly alone. */
   useEffect(() => {
     if (scroller.current) scroller.current.scrollTop = 0;
-  }, [tab, path.length, svcCat, courseId, lessonId]);
+  }, [tab, courseId, lessonId]);
 
-  /* "No, I need help" promises to land you on the request forms for this
-   * service. Inside the card that is one level up, with the intakes called out. */
-  const onArticleNo = () => { setStack([]); setEmphasise(true); };
-  const onArticleYes = (id) => setStack([{ type: 'resolved', id }]);
+  /* "No, I need help" promises to land you on the request forms for this thing.
+   * Inside the card that is a jump back down to its item, with the intakes
+   * called out — never a dismissal, which would throw away the drill. */
+  const onArticleNo = () => {
+    if (itemIndex >= 0) setStack(st => st.slice(0, itemIndex + 1));
+    setEmphasise(true);
+  };
+  const onArticleYes = (id) => setStack(st => [...st.slice(0, -1), { type: 'resolved', id }]);
 
   /* ---------------- submission ---------------- */
 
@@ -774,9 +881,6 @@ export default function Portal({ route }) {
     const now = new Date().toISOString();
     const key = nextTicketKey(st.tickets);
     const answerCtx = answerContext(intake, answers);
-    /* An order's price is an amount even when the form never asked for one, so a
-     * spend policy can see it. Derived from the item, not typed in twice. */
-    if (svc && answerCtx.amount === undefined && Number(svc.price)) answerCtx.amount = Number(svc.price);
 
     const ticket = {
       id: uid('tkt'),
@@ -825,24 +929,53 @@ export default function Portal({ route }) {
     let unresolved = false;
 
     if (policy) {
-      const ctx = {
-        requesterId: requester?.id,
-        directory: st.directory || [],
-        queues: st.queues || [],
-        answers: answerCtx,
-        ticket: {
-          title: ticket.title, priority: ticket.priority, status: ticket.status,
-          queueId: ticket.queueId, source: 'portal', labels: [],
-          subformId: intake.id, catalogItemId: helpNode?.id || null,
-        },
-        requester: {
-          department: external ? null : requester?.department || null,
-          isExternal: !!external,
-          vip: !!requester?.vip,
-        },
+      const who = {
+        id: requester?.id,
+        department: external ? null : requester?.department || null,
+        isExternal: !!external,
+        vip: !!requester?.vip,
         org: { plan: org?.plan || null },
-        __now: now,
       };
+
+      /* A SERVICE ORDER BUILDS ITS CONTEXT WITH THE SHARED FUNCTION.
+       *
+       * test/smoke.js asserts that every service item declaring an approval
+       * actually fires one, and it builds the context with serviceRequestContext.
+       * If the portal hand-rolled a second version — as it used to, deriving a
+       * one-off `amount` from `item.price` — the gate would pass on the annual
+       * figure while the portal ordered a $55/month seat against a $500 threshold
+       * and nobody signed off. One function, both callers, no daylight. */
+      const ordered = svc
+        ? serviceRequestContext(svc, answerCtx, who,
+          { directory: st.directory || [], queues: st.queues || [] })
+        : null;
+
+      const ctx = ordered
+        ? {
+          ...ordered,
+          ticket: {
+            ...ordered.ticket,
+            /* The ticket really landed, so the policy sees the destination it
+             * landed in rather than the one the item merely asked for. */
+            title: ticket.title, priority: ticket.priority, status: ticket.status,
+            queueId: ticket.queueId,
+          },
+          __now: now,
+        }
+        : {
+          requesterId: requester?.id,
+          directory: st.directory || [],
+          queues: st.queues || [],
+          answers: answerCtx,
+          ticket: {
+            title: ticket.title, priority: ticket.priority, status: ticket.status,
+            queueId: ticket.queueId, source: 'portal', labels: [],
+            subformId: intake.id, catalogItemId: helpNode?.id || null,
+          },
+          requester: { department: who.department, isExternal: who.isExternal, vip: who.vip },
+          org: who.org,
+          __now: now,
+        };
       const declared = !!svc?.approvalPolicyId;
       if (declared || matchingPolicies([policy], ctx).length) {
         const request = startApproval(policy, ctx, {
@@ -859,7 +992,10 @@ export default function Portal({ route }) {
       }
     }
 
-    setStack([{
+    /* The receipt REPLACES the form it came from rather than resetting the stack:
+     * the levels above it are still the path you took, so the breadcrumb still
+     * reads Product › Item › Submitted and Done still closes to the same page. */
+    setStack(st => [...st.slice(0, -1), {
       type: 'receipt',
       receipt: {
         ticketId: ticket.id,
@@ -874,7 +1010,9 @@ export default function Portal({ route }) {
         confirmation: intake.confirmation || null,
         serviceName: svc?.name || null,
         delivery: svc ? fmtDelivery(svc.deliveryDays) : null,
-        price: svc ? fmtMoney(svc.price) : null,
+        /* The same annualised figure the approval was tested against, so the
+         * receipt cannot quote a number the sign-off never saw. */
+        price: svc ? fmtMoney(annualCost(svc, answerCtx.quantity)) : null,
       },
     }]);
   };
@@ -883,6 +1021,34 @@ export default function Portal({ route }) {
 
   const facts = useMemo(() => computeFacts(s, defaultQueue), [s, defaultQueue]);
   const orgName = s.settings?.orgName || 'Northwind Systems';
+
+  /* The line under each door. COUNTED, never typed: a door that promises "answers
+   * on everything" has to be able to prove it from the catalog it is standing on,
+   * and the delivery claim is a median with the population that beats it named,
+   * rather than the vaguest true thing we could have said. */
+  const doorFacts = useMemo(() => {
+    const topics = helpItems.length;
+    const answered = helpItems.filter(x => (x.node.knowledgeIds || []).length).length;
+    const help = topics
+      ? `${plural(topics, 'topic', 'topics')} · ${answered === topics
+        ? 'answers attached to every one'
+        : `${answered} with answers attached`}`
+      : 'Nothing published for your audience yet';
+
+    const days = svcItems.map(i => Number(i.deliveryDays)).filter(Number.isFinite).sort((x, y) => x - y);
+    const median = days.length ? days[Math.floor(days.length / 2)] : null;
+    const quick = median === null ? 0 : svcItems.filter(i => Number(i.deliveryDays) <= median).length;
+    const speed = median === null ? null
+      : median <= 0 ? 'the same day'
+      : `${plural(median, 'day', 'days')} or less`;
+    const services = svcItems.length
+      ? `${plural(svcItems.length, 'thing', 'things')} you can order${speed
+        ? ` · ${quick} of them arrive in ${speed}`
+        : ''}`
+      : 'Nothing published for your audience yet';
+
+    return { help, services };
+  }, [helpItems, svcItems]);
 
   if (!form) {
     return (
@@ -916,8 +1082,8 @@ export default function Portal({ route }) {
 
   const brandIcon = external ? Building2 : Users;
   const tabs = [
-    { value: 'help', label: DOOR.help.label, icon: LifeBuoy, accent: DOOR.help.hue },
-    { value: 'services', label: DOOR.services.label, icon: Store, accent: DOOR.services.hue },
+    { value: 'help', label: DOOR.help.label, icon: DOOR.help.icon, accent: DOOR.help.hue },
+    { value: 'services', label: DOOR.services.label, icon: DOOR.services.icon, accent: DOOR.services.hue },
     { value: 'requests', label: 'My requests', icon: Inbox, accent: entityHue('ticket'), count: myTickets.length },
   ];
   if (academyCourses.length) {
@@ -927,30 +1093,82 @@ export default function Portal({ route }) {
     });
   }
 
-  const door = DOOR[tab] || DOOR.help;
-  const helpAtHome = !trail.length;
-  const svcAtHome = !svcCategory;
+  /* ---------------- what the card is showing ---------------- */
+
+  const cardDoor = cardKind === 'service' ? DOOR.services : DOOR.help;
+  /* How many catalog levels deep the drill is, which is what LEVEL_COPY counts:
+   * 0 at the door, 1 standing on a product, 2 on a subcategory. */
+  const helpLevel = stack.filter(f => f.type === 'node').length;
+  const browsing = frameKind === 'root' || frameKind === 'category'
+    || (frameKind === 'node' && frameNode?.node.type !== 'item');
 
   /* The card's frame decides its own accent, eyebrow and title, so the border
    * tells you what you are standing on without a second label. */
-  const frameKind = frame?.type || 'item';
   const cardAccent = frameKind === 'atom'
     ? entityHue(frameAtom?.format === 'guide' ? 'guide' : 'article')
     : frameKind === 'form' ? entityHue('subform')
     : frameKind === 'receipt' ? entityHue('ticket')
     : frameKind === 'resolved' ? statusMeta('resolved').hue
+    : frameKind === 'root' ? cardDoor.hue
+    : frameKind === 'category' ? entityHue('product')
+    : frameKind === 'node' ? entityHue(frameNode?.node.type || 'product')
     : entityHue('item');
   const cardEyebrow = frameKind === 'atom' ? (frameAtom?.format === 'guide' ? 'Guide' : 'Article')
     : frameKind === 'form' ? 'Request'
     : frameKind === 'receipt' ? 'Submitted'
     : frameKind === 'resolved' ? 'Sorted'
-    : leaf?.kind === 'service' ? 'Service' : 'Help';
+    : frameKind === 'root' ? cardDoor.label
+    /* The service catalog is two levels, not three, and it says so out loud —
+     * the same "how far in am I" signal the help drill gives. */
+    : frameKind === 'category' ? 'Step 2 of 2'
+    : frameKind === 'node' && frameNode?.node.type !== 'item' ? LEVEL_COPY[Math.min(helpLevel, 2)].label
+    : cardKind === 'service' ? 'Service' : 'Help';
   const cardTitle = frameKind === 'atom' ? (frameAtom?.title || 'Article')
     : frameKind === 'form' ? (frameIntake?.name || 'Request')
     : frameKind === 'receipt' ? 'Request received'
     : frameKind === 'resolved' ? 'Glad that sorted it'
+    : frameKind === 'root' ? cardDoor.browseTitle
+    : frameKind === 'category' ? (frameCategory?.name || 'Service catalog')
+    : frameKind === 'node' ? (frameNode?.node.name || 'Browse')
     : leafName;
-  const cardSubtitle = frameKind === 'item' ? leafTrail : leafName;
+  /* The door's own words, quoted back — so the card you just opened is visibly
+   * the card that door promised. */
+  const cardSubtitle = frameKind === 'root' ? `“${cardDoor.question}”`
+    : browsing ? null
+    : frameKind === 'node' || frameKind === 'service' ? leafTrail
+    : leafName;
+
+  /* Crumbs ARE the stack — there is no second copy of where you are to fall out
+   * of step with it. The last one is the level you are on, which <Breadcrumbs>
+   * renders as plain text rather than a link. */
+  const crumbs = stack.map((f, i) => ({
+    id: i,
+    name: f.type === 'root' ? (f.kind === 'service' ? DOOR.services.label : DOOR.help.label)
+      : f.type === 'node' ? (byNode.get(f.id)?.node.name || 'Topic')
+      : f.type === 'category' ? (byCat.get(f.id)?.name || 'Category')
+      : f.type === 'service' ? (svcItems.find(x => x.id === f.id)?.name || 'Service')
+      : f.type === 'atom' ? (byKb.get(f.id)?.title || 'Article')
+      : f.type === 'form' ? (bySf.get(f.id)?.name || 'Request')
+      : f.type === 'receipt' ? 'Submitted'
+      : 'Sorted',
+  }));
+
+  /* One primary action per screen, and only where there is genuinely one thing
+   * to do next. A browse level has none — it says what to do instead. */
+  const cardPrimary = frameKind === 'form'
+    ? { label: frameIntake?.submitLabel || 'Submit request', icon: Send, onClick: submit }
+    : frameKind === 'service' && leafForms[0]
+      ? { label: 'Request this', icon: ShoppingCart, onClick: () => openIntakeFrame(leafForms[0].id) }
+    : frameKind === 'node' && !browsing && leafForms.length === 1
+      ? { label: leafForms[0].submitLabel || 'Raise a request', icon: ArrowRight, onClick: () => openIntakeFrame(leafForms[0].id) }
+    : null;
+  const cardNote = browsing
+    ? (cardKind === 'service'
+      ? 'Pick one to see what it costs, when it arrives and who signs it off.'
+      : 'Pick one to see the answers attached to it.')
+    : cardKind === 'service'
+      ? 'This service has no request form attached yet.'
+      : 'Nothing here submits until you choose a form.';
 
   return (
     <div className={cx('h-screen flex flex-col overflow-hidden', t.bg, t.text)}>
@@ -965,14 +1183,12 @@ export default function Portal({ route }) {
         org={org}
         dark={dark}
         pickerOpen={pickerOpen}
-        onHome={() => { setTab('help'); goHome(); closeLeaf(); }}
-        /* Choosing a door from anywhere returns to that door's front page, and
-         * dismisses whatever card is open — otherwise it is a dead click for
-         * anyone standing inside an article. */
+        onHome={() => { setTab('help'); setQuery(''); closeCard(); }}
+        /* The tab strip is the shortcut for people who already know where they
+         * are going. It dismisses whatever card is open — otherwise it is a dead
+         * click for anyone standing inside an article. */
         onTab={(v) => {
-          setTab(v); setCourseId(null); setLessonId(null); setQuery(''); closeLeaf();
-          if (v === 'help') setPath([]);
-          if (v === 'services') setSvcCat(null);
+          setTab(v); setCourseId(null); setLessonId(null); setQuery(''); closeCard();
         }}
         onPickerOpen={() => setPickerOpen(v => !v)}
         onPickerClose={() => setPickerOpen(false)}
@@ -987,8 +1203,17 @@ export default function Portal({ route }) {
         onToggleTheme={toggle}
       />
 
-      <div ref={scroller} className="flex-1 overflow-auto">
-        {tab === 'help' && (helpAtHome ? (
+      {/* `tabIndex={-1}` is not for tabbing to — it is so the card has somewhere
+          real to hand focus back to when the control that opened it has since
+          been unmounted (a search suggestion opens the card and dismisses
+          itself in the same click). Focus lands on the page's own content
+          container, so the next Tab resumes in the page rather than at the very
+          top of the document. */}
+      <div ref={scroller} tabIndex={-1} className="flex-1 overflow-auto outline-none">
+        {/* THE HOME PAGE. One screen per door, and each one is STABLE: nothing
+            below re-renders when the card opens, drills or closes, which is why
+            closing puts you back on the same grid at the same scroll offset. */}
+        {tab === 'help' && (
           <>
             <PortalHero
               door={DOOR.help}
@@ -998,51 +1223,34 @@ export default function Portal({ route }) {
               query={query}
               onQuery={setQuery}
               results={results}
-              onAtom={(hit) => openLeaf(hit.leaf, [{ type: 'atom', id: hit.id }])}
-              onThing={(hit) => openHelpItem(hit.id)}
+              onAtom={(hit) => openCard([...helpFrames(hit.leaf.id), { type: 'atom', id: hit.id }])}
+              onThing={(hit) => openHelpNode(hit.id)}
+              doors={<DoorCards facts={doorFacts} onOpen={openDoor} />}
               popular={popular.map(({ node }) => ({ id: node.id, name: node.name, icon: Circle }))}
               popularHue={entityHue('item')}
               popularLabel="Most requested"
-              onPopular={openHelpItem}
+              onPopular={openHelpNode}
             />
 
             <section className={cx(WIDE, 'pb-16')}>
+              {/* The page grid is the WHOLE list; the door asks the question.
+                  Titling both the same would read as the page repeating itself. */}
               <SectionHead
                 eyebrow="Browse"
-                title="Where do you need help?"
-                hint="Pick the area your question belongs to. Every path ends in a service with the answers attached — and a request form only if you still need one."
+                title={DOOR.help.pageTitle}
+                hint={DOOR.help.browseHint}
               />
-              {children.length === 0 ? (
+              {products.length === 0 ? (
                 <EmptyState icon={Folder} title="Nothing published here"
                   hint="This portal has no products scoped to your audience yet." />
               ) : (
-                <BrowseGrid nodes={children} onPick={(n) => (n.type === 'item' ? openHelpItem(n.id) : drill(n))} />
+                <BrowseGrid nodes={products} onPick={(n) => openHelpNode(n.id)} />
               )}
             </section>
           </>
-        ) : (
-          <>
-            <TrailBar
-              crumbs={[{ id: 'root', name: DOOR.help.label }, ...trail.map(n => ({ id: n.id, name: n.name }))]}
-              onNavigate={(crumb, i) => setPath(path.slice(0, i))}
-              onBack={() => setPath(p => p.slice(0, -1))}
-              query={query}
-              onQuery={setQuery}
-              results={results}
-              placeholder={DOOR.help.search}
-              onAtom={(hit) => openLeaf(hit.leaf, [{ type: 'atom', id: hit.id }])}
-              onThing={(hit) => openHelpItem(hit.id)}
-            />
-            <LevelScreen
-              node={branch}
-              nodes={children}
-              level={trail.length}
-              onPick={(n) => (n.type === 'item' ? openHelpItem(n.id) : drill(n))}
-            />
-          </>
-        ))}
+        )}
 
-        {tab === 'services' && (svcAtHome ? (
+        {tab === 'services' && (
           <>
             <PortalHero
               door={DOOR.services}
@@ -1052,8 +1260,9 @@ export default function Portal({ route }) {
               query={query}
               onQuery={setQuery}
               results={results}
-              onAtom={(hit) => openLeaf(hit.leaf, [{ type: 'atom', id: hit.id }])}
+              onAtom={(hit) => openCard([...serviceFrames(hit.leaf.id), { type: 'atom', id: hit.id }])}
               onThing={(hit) => openService(hit.id)}
+              doors={<DoorCards facts={doorFacts} onOpen={openDoor} />}
               popular={svcPopular.map(i => ({ id: i.id, name: i.name, icon: serviceGlyph(i.icon) }))}
               popularHue={entityHue('item')}
               popularLabel="Ordered most often"
@@ -1062,30 +1271,10 @@ export default function Portal({ route }) {
             <ServiceCategoriesScreen
               categories={svcCategories}
               items={svcItems}
-              onPick={setSvcCat}
+              onPick={openCategory}
             />
           </>
-        ) : (
-          <>
-            <TrailBar
-              crumbs={[{ id: 'root', name: DOOR.services.label }, { id: svcCategory.id, name: svcCategory.name }]}
-              onNavigate={(crumb, i) => { if (i === 0) setSvcCat(null); }}
-              onBack={() => setSvcCat(null)}
-              query={query}
-              onQuery={setQuery}
-              results={results}
-              placeholder={DOOR.services.search}
-              onAtom={(hit) => openLeaf(hit.leaf, [{ type: 'atom', id: hit.id }])}
-              onThing={(hit) => openService(hit.id)}
-            />
-            <ServiceItemsScreen
-              category={svcCategory}
-              items={svcInCategory}
-              policies={s.approvalPolicies || []}
-              onPick={openService}
-            />
-          </>
-        ))}
+        )}
 
         {tab === 'requests' && (
           <RequestsScreen
@@ -1095,7 +1284,7 @@ export default function Portal({ route }) {
             queues={byQueue}
             requester={requester}
             onOpen={setDetailId}
-            onBrowse={() => { setTab('help'); goHome(); }}
+            onBrowse={() => { setTab('help'); setQuery(''); }}
           />
         )}
 
@@ -1146,41 +1335,40 @@ export default function Portal({ route }) {
           external={external}
           requester={requester}
           hasAcademy={academyCourses.length > 0}
-          onHelp={() => { setTab('help'); setPath([]); closeLeaf(); }}
-          onServices={() => { setTab('services'); setSvcCat(null); closeLeaf(); }}
-          onRequests={() => { setTab('requests'); closeLeaf(); }}
-          onAcademy={() => { setTab('academy'); closeLeaf(); }}
+          onHelp={() => { setTab('help'); closeCard(); }}
+          onServices={() => { setTab('services'); closeCard(); }}
+          onRequests={() => { setTab('requests'); closeCard(); }}
+          onAcademy={() => { setTab('academy'); closeCard(); }}
           onWhy={() => setWhyOpen(true)}
         />
       </div>
 
-      {/* THE CONTAINED CARD. Everything that used to navigate the page away
-          happens in here, over a browse page that never moved. */}
-      {leaf && (leafHelp || leafService) && (
+      {/* THE CONTAINED CARD. Every level of the drill happens in here, over a
+          home page that never moved — the door, the browse levels, the item, the
+          reading, the request and the receipt. */}
+      {stack.length > 0 && (
         <LeafCard
           accent={cardAccent}
           eyebrow={cardEyebrow}
           title={cardTitle}
           subtitle={cardSubtitle}
-          wide={frameKind === 'atom' && frameAtom?.format === 'guide'}
-          levelKey={`${leaf.kind}:${leaf.id}:${stack.length}:${frame?.id || frameKind}`}
-          onClose={closeLeaf}
+          crumbs={crumbs}
+          onCrumb={goToLevel}
+          /* Browse levels and the guide player both want the wider measure; prose
+             stays near 70 characters where it belongs. */
+          wide={browsing || (frameKind === 'atom' && frameAtom?.format === 'guide')}
+          levelKey={`${cardKind}:${stack.length}:${frameKind}:${frame?.id || ''}`}
+          onClose={closeCard}
+          returnFocusTo={scroller}
           footer={
             <LeafFooter
               frame={frame}
-              kind={leaf.kind}
-              onBack={leafBack}
-              onClose={closeLeaf}
-              backLabel={stack.length ? 'Back' : 'Back to browse'}
-              primary={
-                frameKind === 'form' ? { label: frameIntake?.submitLabel || 'Submit request', icon: Send, onClick: submit }
-                : frameKind === 'item' && leaf.kind === 'service' && leafForms[0]
-                  ? { label: 'Request this', icon: ShoppingCart, onClick: () => openIntakeFrame(leafForms[0].id) }
-                : frameKind === 'item' && leaf.kind === 'help' && leafForms.length === 1
-                  ? { label: leafForms[0].submitLabel || 'Raise a request', icon: ArrowRight, onClick: () => openIntakeFrame(leafForms[0].id) }
-                : null
-              }
-              onRequests={() => { closeLeaf(); setTab('requests'); }}
+              onBack={cardBack}
+              onClose={closeCard}
+              backLabel={stack.length > 1 ? 'Back' : 'Back to browse'}
+              primary={cardPrimary}
+              note={cardNote}
+              onRequests={() => { closeCard(); setTab('requests'); }}
               ticketId={frame?.receipt?.ticketId}
             />
           }
@@ -1216,7 +1404,27 @@ export default function Portal({ route }) {
             />
           ) : frameKind === 'resolved' && frameResolved ? (
             <LeafResolved atom={frameResolved} itemName={leafName} />
-          ) : leaf.kind === 'service' && leafService ? (
+          ) : frameKind === 'root' && cardKind === 'service' ? (
+            <LeafServiceCategories
+              categories={svcCategories}
+              items={svcItems}
+              onPick={(id) => pushFrame({ type: 'category', id })}
+            />
+          ) : frameKind === 'root' ? (
+            <LeafHelpBrowse
+              level={0}
+              node={null}
+              nodes={products}
+              onPick={(n) => pushFrame({ type: 'node', id: n.id })}
+            />
+          ) : frameKind === 'category' ? (
+            <LeafServiceItems
+              category={frameCategory}
+              items={svcItems.filter(i => i.categoryId === frame.id)}
+              policies={s.approvalPolicies || []}
+              onPick={(id) => pushFrame({ type: 'service', id })}
+            />
+          ) : frameKind === 'service' && leafService ? (
             <LeafServiceItem
               item={leafService}
               categoryName={leafTrail}
@@ -1225,6 +1433,13 @@ export default function Portal({ route }) {
               queue={svcQueue}
               policy={svcPolicy}
               onAtom={openAtomFrame}
+            />
+          ) : frameKind === 'node' && frameNode?.node.type !== 'item' ? (
+            <LeafHelpBrowse
+              level={helpLevel}
+              node={frameNode?.node || null}
+              nodes={frameNode?.node.children || []}
+              onPick={(n) => pushFrame({ type: 'node', id: n.id })}
             />
           ) : leafHelp ? (
             <LeafHelpItem
@@ -1238,7 +1453,12 @@ export default function Portal({ route }) {
               onAtom={openAtomFrame}
               onIntake={openIntakeFrame}
             />
-          ) : null}
+          ) : (
+            /* A frame whose record has gone — an id that no longer resolves after
+               a portal switch. Say so rather than rendering an empty card. */
+            <EmptyState icon={FileQuestion} title="That is no longer published"
+              hint="The thing this card was showing is not in the current portal's scope. Close this and pick again." />
+          )}
         </LeafCard>
       )}
 
@@ -1392,10 +1612,14 @@ function HeroBackdrop({ compact }) {
  * The hero belongs to the active door. Get Help keeps the portal's authored
  * headline; the service catalog asks the ordering question instead, and the
  * search says which of the two it is about to look through.
+ *
+ * `doors` sits between the search and the popular pills — search first for the
+ * person who knows the words for their problem, the two doors immediately after
+ * for the person who does not.
  */
 function PortalHero({
   door, form, external, orgName, query, onQuery, results,
-  onAtom, onThing, popular, popularHue, popularLabel, onPopular,
+  onAtom, onThing, doors, popular, popularHue, popularLabel, onPopular,
 }) {
   const { t, dark } = useTheme();
   const services = door.scope !== 'help';
@@ -1438,8 +1662,10 @@ function PortalHero({
           />
         </div>
 
+        {doors}
+
         {popular.length > 0 && (
-          <div className="mt-8">
+          <div className="mt-10">
             <p className={cx('text-[11px] font-semibold uppercase tracking-[0.14em] mb-3.5', t.textMuted)}>
               {popularLabel}
             </p>
@@ -1452,6 +1678,73 @@ function PortalHero({
         )}
       </div>
     </section>
+  );
+}
+
+/* ==================================================================== *
+ * THE TWO FRONT DOORS
+ *
+ * The fix for the complaint that started this: two identically-sized pills in a
+ * tab strip cannot tell anybody which one they want. These can, because each one
+ * says the sentence its person arrived holding —
+ *
+ *     "Something is wrong, or I have a question"   → Get Help
+ *     "I want something"                           → Service Catalog
+ *
+ * — and then proves it is worth clicking with a fact counted off the seed rather
+ * than a promise. They are not tabs and they are not links: both OPEN THE CARD,
+ * so the choice costs no page.
+ * ==================================================================== */
+
+function DoorCards({ facts, onOpen }) {
+  return (
+    <div className="mt-10 max-w-4xl mx-auto grid gap-4 sm:grid-cols-2 text-left">
+      <DoorCard door={DOOR.help} fact={facts.help} onOpen={() => onOpen(DOOR.help.kind)} />
+      <DoorCard door={DOOR.services} fact={facts.services} onOpen={() => onOpen(DOOR.services.kind)} />
+    </div>
+  );
+}
+
+/**
+ * One door. The accent is the entity hue of what lies behind it — knowledge for
+ * Get Help, orderable items for the catalog — so the colour has already told you
+ * which world you are entering before you read the words. The rail is present at
+ * rest, not on hover: at rest is when the distinction has to be legible.
+ */
+function DoorCard({ door, fact, onOpen }) {
+  const { t, a } = useTheme();
+  const c = a(door.hue);
+  const Glyph = door.icon;
+  const FactGlyph = door.factIcon;
+
+  return (
+    <button
+      onClick={onOpen}
+      className={cx('group relative rounded-3xl border overflow-hidden text-left flex flex-col p-6 sm:p-7 shadow-sm',
+        'transition-transform duration-200 hover:-translate-y-1 hover:shadow-2xl', t.portalCard)}
+    >
+      <span aria-hidden className={cx('absolute inset-x-0 top-0 h-1.5', c.rail)} />
+      <span aria-hidden className={cx('absolute inset-0 rounded-3xl border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity', c.borderStrong)} />
+
+      <span className="flex items-start justify-between gap-3">
+        <span className={cx('w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0', c.softStrong)}>
+          <Glyph size={28} className={c.fg} />
+        </span>
+        <ChevronRight size={ICON.xl}
+          className={cx('mt-3 flex-shrink-0 -translate-x-1 opacity-0 group-hover:opacity-100 group-hover:translate-x-0 transition-all', c.fg)} />
+      </span>
+
+      <span className={cx('mt-5 block text-xl sm:text-2xl font-semibold tracking-tight', t.text)}>
+        {door.label}
+      </span>
+      <span className={cx('mt-1.5 block text-sm font-medium', c.fg)}>“{door.question}”</span>
+      <span className={cx('mt-3 block text-sm leading-relaxed text-pretty', t.textSecondary)}>{door.door}</span>
+
+      <span className={cx('mt-auto pt-5 flex items-center gap-2 text-xs border-t', t.textMuted, t.border)}>
+        <FactGlyph size={ICON.xs} className="flex-shrink-0" />
+        {fact}
+      </span>
+    </button>
   );
 }
 
@@ -1664,10 +1957,14 @@ function PopularPill({ entry, hue, onOpen }) {
 }
 
 /* ==================================================================== *
- * The trail — back, breadcrumbs and a search that stays within reach.
+ * The trail — back and breadcrumbs, for the one journey that is still a PAGE.
+ *
+ * The academy is a course, not a leaf: a lesson is read at page width with the
+ * course sequence around it, so it keeps its own trail bar. Everything the help
+ * and service doors used this for now lives in the card header instead.
  * ==================================================================== */
 
-function TrailBar({ crumbs, onNavigate, onBack, query, onQuery, results, placeholder, onAtom, onThing }) {
+function TrailBar({ crumbs, onNavigate, onBack }) {
   const { t } = useTheme();
   return (
     <div className={cx('sticky top-0 z-20 border-b backdrop-blur-xl', t.border, t.bgSidebar)}>
@@ -1676,19 +1973,6 @@ function TrailBar({ crumbs, onNavigate, onBack, query, onQuery, results, placeho
         <div className="min-w-0 flex-1">
           <Breadcrumbs items={crumbs} onNavigate={onNavigate} />
         </div>
-        {onQuery && (
-          <div className="hidden md:block w-72 flex-shrink-0">
-            <PortalSearch
-              size="sm"
-              value={query}
-              onChange={onQuery}
-              results={results}
-              placeholder={placeholder}
-              onAtom={onAtom}
-              onThing={onThing}
-            />
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1778,19 +2062,23 @@ function NodeCard({ node, onPick }) {
   );
 }
 
-function LevelScreen({ node, nodes, level, onPick }) {
+/**
+ * A HELP BROWSE LEVEL, INSIDE THE CARD.
+ *
+ * The same cards the home grid uses, in the card's measure — because the point
+ * of moving the drill in here is that nothing changes shape when it moves. The
+ * step label lives in the card header, so the body only has to say what to do.
+ */
+function LeafHelpBrowse({ level, node, nodes, onPick }) {
+  const { t } = useTheme();
   const copy = LEVEL_COPY[Math.min(level, 2)];
   return (
-    <>
-      <PageBand
-        icon={nodeIcon(node)}
-        hue={entityHue(node?.type || 'product')}
-        eyebrow={copy.label}
-        title={node?.name || 'Browse'}
-        sub={node?.description}
-      />
-      <section className={cx(WIDE, 'pb-16')}>
-        <SectionHead
+    <div className="space-y-5">
+      {node?.description && (
+        <p className={cx('text-[15px] leading-relaxed', t.textSecondary)}>{node.description}</p>
+      )}
+      <div>
+        <LeafSectionHead
           title={nodes.length ? 'Choose one' : 'Nothing here yet'}
           hint={nodes.length ? copy.hint : undefined}
         />
@@ -1800,8 +2088,8 @@ function LevelScreen({ node, nodes, level, onPick }) {
         ) : (
           <BrowseGrid nodes={nodes} onPick={onPick} />
         )}
-      </section>
-    </>
+      </div>
+    </div>
   );
 }
 
@@ -1809,17 +2097,80 @@ function LevelScreen({ node, nodes, level, onPick }) {
  * Browse — Service Catalog
  *
  * A different shape from the help tree because it answers a different question.
- * Two levels only, and the leaf card carries a price, a delivery time and a
- * sign-off rather than an article and a symptom picker.
+ * Two levels only, and the item carries a price, a delivery time and a sign-off
+ * rather than an article and a symptom picker.
  * ==================================================================== */
 
+/** The service door's first level, inside the card. */
+function LeafServiceCategories({ categories, items, onPick }) {
+  return (
+    <div>
+      <LeafSectionHead
+        title={categories.length ? 'Choose one' : 'Nothing here yet'}
+        hint={categories.length ? DOOR.services.browseHint : undefined}
+      />
+      {categories.length === 0 ? (
+        <EmptyState icon={ShoppingCart} title="No services published yet"
+          hint="The service catalog is empty for your audience. Published service items appear here grouped by category." />
+      ) : (
+        <div className="flex flex-wrap gap-4 items-stretch">
+          {categories.map(cat => (
+            <ServiceCategoryCard
+              key={cat.id}
+              category={cat}
+              items={items.filter(i => i.categoryId === cat.id)}
+              onPick={onPick}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The things in one category, inside the card. */
+function LeafServiceItems({ category, items, policies, onPick }) {
+  const { t } = useTheme();
+  return (
+    <div className="space-y-5">
+      {category?.description && (
+        <p className={cx('text-[15px] leading-relaxed', t.textSecondary)}>{category.description}</p>
+      )}
+      <div>
+        <LeafSectionHead
+          title={items.length ? 'Choose what to order' : 'Nothing here yet'}
+          hint={items.length
+            ? 'Prices and delivery times are the real ones attached to the item, and anything that needs a sign-off says so here rather than after you have filled the form in.'
+            : undefined}
+        />
+        {items.length === 0 ? (
+          <EmptyState icon={Package} title="Nothing published in this category"
+            hint="Service items appear here once they are published to your audience." />
+        ) : (
+          <div className="flex flex-wrap gap-4 items-stretch">
+            {items.map(item => (
+              <ServiceItemCard
+                key={item.id}
+                item={item}
+                policy={policies.find(p => p.id === item.approvalPolicyId) || null}
+                onPick={onPick}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The service categories as the home page's browse grid. */
 function ServiceCategoriesScreen({ categories, items, onPick }) {
   return (
     <section className={cx(WIDE, 'pb-16')}>
       <SectionHead
         eyebrow="Browse"
-        title="What kind of thing do you need?"
-        hint="These are things you can order, not problems to report. Every one of them names its price, how long it takes and whether somebody has to approve it before you commit."
+        title={DOOR.services.pageTitle}
+        hint={DOOR.services.browseHint}
       />
       {categories.length === 0 ? (
         <EmptyState icon={ShoppingCart} title="No services published yet"
@@ -1886,42 +2237,6 @@ function ServiceCategoryCard({ category, items, onPick }) {
   );
 }
 
-function ServiceItemsScreen({ category, items, policies, onPick }) {
-  const Glyph = serviceGlyph(category.icon, Boxes);
-  return (
-    <>
-      <PageBand
-        icon={Glyph}
-        hue={entityHue('product')}
-        eyebrow="Step 2 of 2"
-        title={category.name}
-        sub={category.description}
-      />
-      <section className={cx(WIDE, 'pb-16')}>
-        <SectionHead
-          title="Choose what to order"
-          hint="Prices and delivery times are the real ones attached to the item, and anything that needs a sign-off says so here rather than after you have filled the form in."
-        />
-        {items.length === 0 ? (
-          <EmptyState icon={Package} title="Nothing published in this category"
-            hint="Service items appear here once they are published to your audience." />
-        ) : (
-          <div className="flex flex-wrap gap-4 items-stretch">
-            {items.map(item => (
-              <ServiceItemCard
-                key={item.id}
-                item={item}
-                policy={policies.find(p => p.id === item.approvalPolicyId) || null}
-                onPick={onPick}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-    </>
-  );
-}
-
 function ServiceItemCard({ item, policy, onPick }) {
   const { t, a } = useTheme();
   const hue = entityHue('item');
@@ -1981,9 +2296,16 @@ function ServiceItemCard({ item, policy, onPick }) {
  * THE CONTAINED CARD
  *
  * v1's shape, in the new language: a fixed, blurred overlay; a centred card with
- * a pinned header (close left, title optically centred, spacer right), a
- * scrolling body whose reading column stays near 70 characters inside the wider
- * card, and a pinned footer carrying Back and the one primary action.
+ * a pinned header (close left, title optically centred, spacer right, and the
+ * breadcrumb trail beneath), a scrolling body whose reading column stays near 70
+ * characters inside the wider card, and a pinned footer carrying Back and the
+ * one primary action.
+ *
+ * IT HOLDS THE WHOLE DRILL, not just the leaf, so the frame must stay perfectly
+ * still while its CONTENT changes. The card is therefore mounted for the life of
+ * the journey and only <LeafLevel> is keyed — one continuous surface rather than
+ * a stack of dialogs. Motion is per MOTION above: declared entry, held exit,
+ * nothing at all under prefers-reduced-motion.
  *
  * It composes rather than reuses <Modal> for two reasons — the header is the v1
  * arrangement rather than the admin one, and the guide viewer wants the full
@@ -1992,18 +2314,44 @@ function ServiceItemCard({ item, policy, onPick }) {
  * scroll is locked, focus returns to the opener.
  * ==================================================================== */
 
-function LeafCard({ accent, eyebrow, title, subtitle, wide, levelKey, onClose, footer, children }) {
+function LeafCard({ accent, eyebrow, title, subtitle, crumbs, onCrumb, wide, levelKey, onClose, returnFocusTo, footer, children }) {
   const { t, a } = useTheme();
   const c = a(accent);
-  const shell = useDialogShell(true, onClose, levelKey);
+  const reduced = usePrefersReducedMotion();
+  const [leaving, setLeaving] = useState(false);
+  const exitTimer = useRef(null);
+
+  useEffect(() => () => { if (exitTimer.current) clearTimeout(exitTimer.current); }, []);
+
+  /* Exit is the entry gesture reversed, and it has to FINISH before the state
+   * that renders this card is torn down — hence the timer. It is cleared on
+   * unmount so a card closed some other way never calls into a dead component. */
+  const requestClose = () => {
+    /* Reduced motion means NO motion: close immediately rather than running the
+     * same animation faster. */
+    if (reduced) { onClose(); return; }
+    if (leaving) return;
+    setLeaving(true);
+    exitTimer.current = setTimeout(onClose, MOTION.exitMs);
+  };
+
+  const shell = useDialogShell(true, requestClose, levelKey, returnFocusTo);
 
   return createPortal(
     <div
       /* Clicking the backdrop dismisses, the way every modal in the app does.
-         Guarded on the target so a drag that ends outside the card does not. */
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+         Guarded on the target so a drag that ends outside the card does not.
+         Fading the overlay fades the blur with it, which is what makes the page
+         behind appear to soften rather than to snap out of focus. */
+      onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}
       className={cx('fixed inset-0 flex items-center justify-center p-4 backdrop-blur-sm overscroll-contain',
-        t.overlay, LAYOUT.zModal)}
+        t.overlay, LAYOUT.zModal,
+        /* A card that is on its way out must not still take clicks. Without
+           this the 160ms exit is a window in which Back, a breadcrumb or the
+           footer action can still fire into a stack that is about to be
+           thrown away. */
+        !reduced && cx('transition-opacity duration-200 ease-out',
+          leaving ? 'opacity-0 pointer-events-none' : 'opacity-100 starting:opacity-0'))}
     >
       <div
         ref={shell.ref}
@@ -2012,32 +2360,42 @@ function LeafCard({ accent, eyebrow, title, subtitle, wide, levelKey, onClose, f
         aria-label={typeof title === 'string' ? title : undefined}
         tabIndex={-1}
         className={cx('w-full max-w-4xl h-full max-h-[90vh] rounded-3xl border-2 shadow-2xl',
-          'flex flex-col overflow-hidden outline-none', t.modal, c.borderStrong)}
+          'flex flex-col overflow-hidden outline-none', t.modal, c.borderStrong,
+          !reduced && cx('transition-transform duration-200 ease-out',
+            leaving ? 'scale-[0.97]' : 'scale-[1] starting:scale-[0.97]'))}
       >
         {/* PINNED HEADER. The close control sits left and a spacer of equal width
             sits right, so the title is optically centred rather than merely
-            centred in whatever space is left over. */}
-        <header className={cx(DENSITY.modalHeaderPad, 'flex-shrink-0 border-b flex items-center gap-3',
-          t.border, c.soft)}>
-          <span className="w-20 flex-shrink-0 flex justify-start">
-            <IconButton icon={X} label="Close" onClick={onClose} />
-          </span>
-          <span className="min-w-0 flex-1 text-center">
-            {eyebrow && (
-              <span className={cx('block text-[11px] font-semibold uppercase tracking-[0.14em]', t.textMuted)}>
-                {eyebrow}
-              </span>
-            )}
-            <h2 className={cx('text-base sm:text-lg font-semibold leading-tight truncate', t.text)}>{title}</h2>
-            {subtitle && <span className={cx('block text-xs truncate mt-0.5', t.textMuted)}>{subtitle}</span>}
-          </span>
-          <span aria-hidden className="w-20 flex-shrink-0" />
+            centred in whatever space is left over. The breadcrumb sits under it
+            — this card holds a whole drill, so where you are has to be legible
+            without leaving it. */}
+        <header className={cx(DENSITY.modalHeaderPad, 'flex-shrink-0 border-b', t.border, c.soft)}>
+          <div className="flex items-center gap-3">
+            <span className="w-20 flex-shrink-0 flex justify-start">
+              <IconButton icon={X} label="Close" onClick={requestClose} />
+            </span>
+            <span className="min-w-0 flex-1 text-center">
+              {eyebrow && (
+                <span className={cx('block text-[11px] font-semibold uppercase tracking-[0.14em]', t.textMuted)}>
+                  {eyebrow}
+                </span>
+              )}
+              <h2 className={cx('text-base sm:text-lg font-semibold leading-tight truncate', t.text)}>{title}</h2>
+              {subtitle && <span className={cx('block text-xs truncate mt-0.5', t.textMuted)}>{subtitle}</span>}
+            </span>
+            <span aria-hidden className="w-20 flex-shrink-0" />
+          </div>
+          {crumbs && crumbs.length > 1 && (
+            <div className="mt-2.5 flex justify-center">
+              <Breadcrumbs items={crumbs} onNavigate={(crumb) => onCrumb(crumb.id)} />
+            </div>
+          )}
         </header>
 
         <div ref={shell.bodyRef}
           className={cx('flex-1 min-h-0 overflow-auto overscroll-contain', DENSITY.modalBodyPad)}>
           <div className={cx('mx-auto w-full', wide ? 'max-w-3xl' : 'max-w-2xl')}>
-            {children}
+            <LeafLevel key={levelKey} reduced={reduced}>{children}</LeafLevel>
           </div>
         </div>
 
@@ -2054,11 +2412,35 @@ function LeafCard({ accent, eyebrow, title, subtitle, wide, levelKey, onClose, f
 }
 
 /**
+ * ONE LEVEL'S CONTENT.
+ *
+ * Keyed by the level, so it mounts fresh and slides in while the frame around it
+ * — border, header, footer — does not move at all. That is the difference
+ * between drilling through one continuous surface and opening a stack of
+ * dialogs, and it is the whole reason the card can hold the entire journey.
+ *
+ * THE ENTRY IS DECLARED, NOT DRIVEN. Its resting state is the VISIBLE one and
+ * `starting:` supplies the frame to animate from, so a browser that never runs
+ * the transition — an older engine, a throttled tab — still shows the content.
+ * The obvious alternative, flipping a class on requestAnimationFrame, fails
+ * exactly the wrong way: a frame that never arrives leaves a card that is open,
+ * focused, scroll-locked and completely invisible.
+ */
+function LeafLevel({ reduced, children }) {
+  if (reduced) return <div>{children}</div>;
+  return (
+    <div className="transition duration-200 ease-out opacity-100 translate-y-0 starting:opacity-0 starting:translate-y-2">
+      {children}
+    </div>
+  );
+}
+
+/**
  * The footer is contextual, but its grammar never changes: a way back on the
  * left, the ONE primary action on the right. The gradient lives on that primary
  * action and nowhere else inside the card.
  */
-function LeafFooter({ frame, kind, onBack, onClose, backLabel, primary, onRequests, ticketId }) {
+function LeafFooter({ frame, onBack, onClose, backLabel, primary, note, onRequests, ticketId }) {
   const { t } = useTheme();
 
   if (frame?.type === 'receipt') {
@@ -2093,11 +2475,7 @@ function LeafFooter({ frame, kind, onBack, onClose, backLabel, primary, onReques
           {primary.label}
         </Button>
       ) : (
-        <span className={cx('text-xs', t.textMuted)}>
-          {kind === 'service'
-            ? 'This service has no request form attached yet.'
-            : 'Nothing here submits until you choose a form.'}
-        </span>
+        <span className={cx('text-xs', t.textMuted)}>{note}</span>
       )}
     </>
   );
@@ -2270,6 +2648,11 @@ function LeafServiceItem({ item, categoryName, atoms, subform, queue, policy, on
   const delivery = fmtDelivery(item.deliveryDays);
   const fields = (subform?.fields || []).length;
   const conditional = (subform?.fields || []).filter(f => f.showIf).length;
+  /* The figure a spend policy will actually test — annualised, one-off plus
+   * recurring — computed by the same function the approval and the smoke gate
+   * use. Shown here because a $45 seat that trips a $500 sign-off is a surprise
+   * only if we never said it was $540 a year. */
+  const firstYear = Number(item.recurringPrice) ? fmtMoney(annualCost(item)) : null;
 
   return (
     <div className="space-y-7">
@@ -2283,7 +2666,9 @@ function LeafServiceItem({ item, categoryName, atoms, subform, queue, policy, on
       {/* The commercial facts, before anything is filled in. */}
       <div className={cx('rounded-2xl border p-4 grid gap-3 sm:grid-cols-2', t.portalCard)}>
         <ServiceFact icon={DollarSign} hue={entityHue('item')} label="Cost" value={price}
-          note={recurring ? `then ${recurring}` : undefined} />
+          note={recurring
+            ? `then ${recurring}${firstYear ? ` · ${firstYear} across the first year` : ''}`
+            : undefined} />
         <ServiceFact icon={Truck} hue={entityHue('item')} label="Delivery" value={delivery || 'Timing agreed after you order'} />
         <ServiceFact
           icon={Stamp}
@@ -3048,7 +3433,8 @@ function LeafReceipt({ receipt, queue, approval, directory }) {
       {receipt.delivery && (
         <Banner accent={entityHue('item')} icon={Truck} title={receipt.delivery}>
           That is the published lead time on the item{receipt.price && receipt.price !== 'No charge'
-            ? <>, and the {receipt.price} is charged to your cost centre on fulfilment</>
+            ? <>, and {receipt.price} — the first-year cost, one-off plus recurring — is charged to your cost centre on
+              fulfilment. That is the figure the approval was tested against, not a smaller one</>
             : ', charged to nobody because this one is free'}.
           {approval && ' The clock starts when the approval clears, not when you pressed submit.'}
         </Banner>
@@ -3620,8 +4006,8 @@ function WhyDoors({ facts }) {
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(18rem, 1fr))' }}>
         <Card className={DENSITY.cardPad}>
           <div className="flex items-center gap-2.5 mb-2">
-            <IconTile icon={LifeBuoy} accent={DOOR.help.hue} size="sm" />
-            <p className={cx('text-sm font-semibold', t.text)}>Get Help — “something is wrong”</p>
+            <IconTile icon={DOOR.help.icon} accent={DOOR.help.hue} size="sm" />
+            <p className={cx('text-sm font-semibold', t.text)}>Get Help — “{DOOR.help.question}”</p>
           </div>
           <p className={cx('text-xs leading-relaxed', t.textSecondary)}>
             {facts.products} products › {facts.subcategories} subcategories › {facts.items} items, where an item carries
@@ -3633,8 +4019,8 @@ function WhyDoors({ facts }) {
 
         <Card className={DENSITY.cardPad}>
           <div className="flex items-center gap-2.5 mb-2">
-            <IconTile icon={Store} accent={DOOR.services.hue} size="sm" />
-            <p className={cx('text-sm font-semibold', t.text)}>Service Catalog — “I want something”</p>
+            <IconTile icon={DOOR.services.icon} accent={DOOR.services.hue} size="sm" />
+            <p className={cx('text-sm font-semibold', t.text)}>Service Catalog — “{DOOR.services.question}”</p>
           </div>
           <p className={cx('text-xs leading-relaxed', t.textSecondary)}>
             {facts.serviceCategories
@@ -3698,7 +4084,7 @@ function WhyCompare({ facts, subforms }) {
         {/* RelayHQ */}
         <Card className="overflow-hidden">
           <div className={cx(DENSITY.sectionPad, 'border-b', t.borderLight)}>
-            <p className={cx('text-sm font-semibold', t.text)}>RelayHQ: browse the page, open the leaf in a card</p>
+            <p className={cx('text-sm font-semibold', t.text)}>RelayHQ: one page, and the whole drill in one card</p>
             <p className={cx('text-xs mt-0.5', t.textMuted)}>
               {facts.products} products › {facts.subcategories} subcategories › {facts.items} items.
             </p>
@@ -3726,9 +4112,10 @@ function WhyCompare({ facts, subforms }) {
                 </p>
               </div>
               <p className={cx('text-[11px]', t.textMuted)}>
-                All of that happens in a card over the browse page, so closing it puts you back on the same grid,
-                unscrolled. Across this catalog, {facts.helpBeforeForm} items put help in front of a form and
-                {' '}{facts.multiIntake} carry more than one intake — which a single form-per-item model cannot express.
+                Every step of that happens in one card over the home page — the first click and the last — so closing it
+                puts you back on the same grid at the same scroll offset. Across this catalog, {facts.helpBeforeForm} items
+                put help in front of a form and {facts.multiIntake} carry more than one intake, which a single
+                form-per-item model cannot express.
               </p>
             </div>
           ) : (
