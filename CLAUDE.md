@@ -61,6 +61,19 @@ bun test/width-check.js    # header shape across four widths — RUN THIS ALONE
 **Run them alone, and not at the same time as each other** — a second headless Chrome against the
 same profile will hang the run. There is no `timeout` binary on macOS; both use explicit kill timers.
 
+## Landing-page shots
+
+The landing page shows REAL screenshots of the app, generated into `public/shots/`:
+
+```
+bun run build && bun scripts/gen-shots.js     # RUN THIS ALONE — drives Chrome
+```
+
+They used to be hand-built markup that looked like the app, and they drifted every time it moved.
+**Regenerate them after any visible change to the portal, business rules or automations**, or the pitch
+page starts depicting a product that no longer exists. Both themes are captured because the page follows
+the reader's. Nothing enforces this — it is a habit, and the reason it is written down.
+
 `width-check` exists because the other gates are blind to layout: `render-check` never passes
 `--window-size`, so it runs at Chrome's 800×600 default and only ever sees one width. The header
 reflow bug of 2026-08-17 was invisible to a fully green suite.

@@ -228,10 +228,16 @@ function RotatingWord() {
     >
       {/* Reserves the width of the longest word so the line never jumps. */}
       <span aria-hidden="true" className="invisible">Everything</span>
+      {/* The box extends BELOW the line box on purpose. `bg-clip-text` paints the
+          gradient only where the element's own background reaches, and this line
+          is set at 0.95 leading — tighter than the glyphs. With `inset-0` the
+          descender of the y in "Everything" fell outside the painted area and
+          read as clipped by the line beneath it. Nothing moves: the extra depth
+          is background only. */}
       <span
         key={word}
         aria-hidden="true"
-        className={cx('absolute inset-0 whitespace-nowrap bg-clip-text text-transparent',
+        className={cx('absolute inset-x-0 top-0 -bottom-[0.16em] whitespace-nowrap bg-clip-text text-transparent',
           GRADIENT.brandBar, animate && 'animate-[rhqWordIn_.34s_ease-out]')}
       >
         {word}
@@ -329,6 +335,34 @@ function Step({ num, eyebrow, title, body, accent, points, cta, to, children, fl
   );
 }
 
+/**
+ * A REAL screenshot, not a drawing of one.
+ *
+ * These used to be hand-built markup that looked like the app. It drifted every
+ * time the app moved — by the third design pass the mockups showed a header, a
+ * list alignment and a portal home the product no longer had, and nothing
+ * compared them to anything. They are now generated from the built app by
+ * `bun scripts/gen-shots.js`, which is the only way a pitch page stays true.
+ *
+ * Only the theme-matched file is requested, so a visit fetches one image per
+ * shot rather than both.
+ */
+function ShotImage({ name, alt }) {
+  const { dark } = useTheme();
+  const src = `${import.meta.env.BASE_URL}shots/${name}-${dark ? 'dark' : 'light'}.png`;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      width="1100"
+      height="739"
+      loading="lazy"
+      decoding="async"
+      className="block w-full h-auto"
+    />
+  );
+}
+
 function Shot({ children, label }) {
   const { t } = useTheme();
   return (
@@ -361,31 +395,7 @@ function StepPortal({ n }) {
       cta="Open the portal" to={['portal']}
     >
       <Shot label="relayhq / portal">
-        <div className={cx('p-5', t.portalBg)}>
-          <p className={cx('text-center text-[15px] font-bold mb-2', t.text)}>How can we help?</p>
-          <div className={cx('mx-auto max-w-[260px] rounded-lg border px-3 py-1.5 flex items-center gap-2 mb-4', t.bgCard, t.borderLight)}>
-            <Search size={11} className={t.textMuted} />
-            <span className={cx('text-[10px]', t.textMuted)}>Search help articles and problems…</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {[['Get Help', '“Something is wrong”', 'purple'], ['Service Catalog', '“I want something”', 'emerald']].map(([ttl, q, hue]) => (
-              <div key={ttl} className={cx('rounded-lg border p-2.5', t.bgCard, a(hue).border)}>
-                <span className={cx('block w-6 h-6 rounded-md mb-1.5', a(hue).softStrong)} />
-                <span className={cx('block text-[11px] font-bold', t.text)}>{ttl}</span>
-                <span className={cx('block text-[9px] font-medium', a(hue).fg)}>{q}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 space-y-1.5">
-            {['Cannot sign in', 'Multi-factor not working', 'Laptop not powering on'].map(x => (
-              <div key={x} className={cx('rounded-lg border px-2.5 py-1.5 flex items-center gap-2', t.bgCard, t.borderLight)}>
-                <span className={cx('w-4 h-4 rounded flex-shrink-0', a('emerald').softStrong)} />
-                <span className={cx('text-[10px] flex-1', t.text)}>{x}</span>
-                <ChevronRight size={10} className={t.textMuted} />
-              </div>
-            ))}
-          </div>
-        </div>
+        <ShotImage name="portal" alt="The RelayHQ portal screen" />
       </Shot>
     </Step>
   );
@@ -421,23 +431,7 @@ function StepQueues({ n }) {
       cta="Open business rules" to={['rules']}
     >
       <Shot label="relayhq / rules">
-        <div className="p-4 space-y-2">
-          {ROUTING.map(([form, queue, hue]) => (
-            <div key={form} className={cx('flex items-center gap-2 rounded-lg border px-2.5 py-2', t.borderLight)}>
-              <FileText size={12} className={a('purple').fg} />
-              <span className={cx('text-[11px] flex-1 truncate', t.text)}>{form}</span>
-              <ArrowRight size={10} className={t.textMuted} />
-              <span className={cx('text-[9.5px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap',
-                a(hue).soft, a(hue).fgOnSoft)}>{queue}</span>
-            </div>
-          ))}
-          <div className={cx('flex items-center gap-2 rounded-lg border px-2.5 py-2', a('amber').border, a('amber').soft)}>
-            <Stamp size={12} className={a('amber').fg} />
-            <span className={cx('text-[10px] flex-1 leading-snug', a('amber').fgOnSoft)}>
-              Over $500 → manager, then finance · escalates after 24 hours
-            </span>
-          </div>
-        </div>
+        <ShotImage name="rules" alt="The RelayHQ rules screen" />
       </Shot>
     </Step>
   );
@@ -536,25 +530,7 @@ function StepAutomations({ n }) {
       cta="Open automations" to={['automations']}
     >
       <Shot label="relayhq / automations">
-        <div className={cx('relative h-[220px] rhq-canvas', t.bgSubtle)}
-          style={{ '--rhq-grid': dark ? '#3f3f46' : '#d4d4d8' }}>
-          <svg className="absolute inset-0 w-full h-full" aria-hidden="true" viewBox="0 0 480 220" preserveAspectRatio="none">
-            <path d="M108 100 C 140 100, 130 100, 158 100" stroke="#38bdf8" strokeWidth="1.6" fill="none" />
-            <path d="M240 92  C 280 92, 280 44, 322 44"    stroke="#38bdf8" strokeWidth="1.6" fill="none" />
-            <path d="M240 108 C 280 108, 280 162, 322 162" stroke="#38bdf8" strokeWidth="1.6" fill="none" />
-          </svg>
-          {NODES.map(nd => (
-            <div key={nd.label}
-              className={cx('absolute rounded-lg border px-2.5 py-1.5 shadow-sm', t.bgCard, t.borderLight)}
-              style={{ left: nd.left, top: nd.top }}>
-              <span className={cx('block w-1.5 h-1.5 rounded-full mb-1', a(nd.hue).dot)} />
-              <span className={cx('text-[10px] font-semibold whitespace-nowrap', t.text)}>{nd.label}</span>
-            </div>
-          ))}
-          <span className={cx('absolute bottom-2 left-3 text-[9px] font-mono', t.textMuted)}>
-            run 42 · 5 nodes · 128 ms · success
-          </span>
-        </div>
+        <ShotImage name="automations" alt="The RelayHQ automations screen" />
       </Shot>
     </Step>
   );

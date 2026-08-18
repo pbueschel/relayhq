@@ -388,10 +388,20 @@ function QueuesTab({ data, routing, tabs }) {
   /* Chips show VALUES, not counts — so these carry the actual form and rule
    * names and ChipGroup collapses the overflow. "4 forms" told you a queue was
    * busy; the names tell you what it is FOR, which is the question you had. */
+  /* DISTINCT INTAKES, not routing rows. deriveRouting emits a row per catalog
+   * item x subform, and sf-laptop-repair alone hangs off ~88 items — so a naive
+   * push listed the same intake dozens of times and the chip group rendered it
+   * twice with a "+86" after it, which reads as duplicate data rather than as
+   * one form attached in many places. The queue card answers "which intakes land
+   * here", and that is a set. */
   const formsByQueue = useMemo(() => {
     const map = {};
+    const seen = {};
     for (const r of routing.rows) {
       if (!r.queueId) continue;
+      const key = `${r.queueId}::${r.subformId}`;
+      if (seen[key]) continue;
+      seen[key] = true;
       (map[r.queueId] || (map[r.queueId] = [])).push(r.subform?.name || r.subformId);
     }
     return map;
