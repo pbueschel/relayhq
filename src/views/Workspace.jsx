@@ -1574,7 +1574,7 @@ function TicketModal({ ticket, data, meId, now, onClose }) {
             accent="rose"
             width="w-80"
             options={Object.keys(PRIORITY).map(p => ({
-              value: p, label: PRIORITY[p].label, accent: PRIORITY[p].hue, icon: AlertTriangle,
+              value: p, label: PRIORITY[p].label, accent: PRIORITY[p].hue, icon: PRIORITY[p].icon,
             }))}
           />
           <TilePicker
@@ -2083,7 +2083,7 @@ function TaskModal({ task, data, meId, now, onClose }) {
             accent={accent}
             width="w-80"
             options={Object.keys(PRIORITY).map(p => ({
-              value: p, label: PRIORITY[p].label, accent: PRIORITY[p].hue, icon: AlertTriangle,
+              value: p, label: PRIORITY[p].label, accent: PRIORITY[p].hue, icon: PRIORITY[p].icon,
             }))}
           />
           <PeoplePicker
@@ -2234,7 +2234,7 @@ function NewRecordModal({ kind, data, meId, onClose, onCreated }) {
             columns={4}
             accent={accent}
             options={Object.keys(PRIORITY).map(p => ({
-              value: p, label: PRIORITY[p].label, accent: PRIORITY[p].hue, icon: AlertTriangle,
+              value: p, label: PRIORITY[p].label, accent: PRIORITY[p].hue, icon: PRIORITY[p].icon,
             }))}
           />
         </Field>

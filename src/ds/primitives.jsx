@@ -187,9 +187,12 @@ export function PriorityFlag({ priority, withLabel = true, className }) {
   const { a } = useTheme();
   const meta = priorityMeta(priority);
   const c = a(meta.hue);
+  /* The mark comes from the PRIORITY map so the row, the filter tile and the
+   * rule editor cannot disagree about what "urgent" looks like. */
+  const Mark = meta.icon;
   return (
     <span className={cx('inline-flex items-center gap-1 text-xs font-medium', c.fg, className)} title={`${meta.label} priority`}>
-      <FlagGlyph />
+      {Mark ? <Mark size={12} className="flex-shrink-0" /> : <FlagGlyph />}
       {withLabel && meta.label}
     </span>
   );

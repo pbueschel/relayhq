@@ -613,7 +613,7 @@ function PriorityCell({ task, onChange }) {
       <Menu open={open} onClose={() => setOpen(false)} width="w-44">
         <MenuLabel>Priority</MenuLabel>
         {PRIORITY_ORDER.map(p => (
-          <MenuItem key={p} icon={Flag} iconClass={a(PRIORITY[p].hue).fg} label={PRIORITY[p].label}
+          <MenuItem key={p} icon={PRIORITY[p].icon} iconClass={a(PRIORITY[p].hue).fg} label={PRIORITY[p].label}
             selected={(task.priority || 'medium') === p}
             onClick={() => { onChange(p); setOpen(false); }} />
         ))}

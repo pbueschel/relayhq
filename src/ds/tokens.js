@@ -8,7 +8,9 @@
 // THE RULE: no component hardcodes a grey, and no component builds a colour class
 // by interpolation. Surfaces come from `theme()`, accents come from `accents.js`.
 
+import { Flame, AlertTriangle } from 'lucide-react';
 import { ACCENTS, ACCENT_HUES, accent, accentSet } from './accents.js';
+import { BurstGlyph, BangGlyph } from './glyphs.jsx';
 
 export { ACCENTS, ACCENT_HUES, accent, accentSet };
 
@@ -276,11 +278,19 @@ export function statusMeta(key) {
   return STATUS[key] || { hue: 'gray', label: String(key || 'Unknown'), group: 'open' };
 }
 
+/**
+ * Priority carries its own MARK, on the map, so every surface draws the same
+ * one. The four used to render an identical triangle in the filter tiles and an
+ * identical flag on the rows, which made the control a colour-matching exercise
+ * — the icon said "priority", never WHICH priority. Escalating shapes now do
+ * the work the colour was doing alone: a burst, a flame, a warning triangle, a
+ * bare exclamation.
+ */
 export const PRIORITY = {
-  urgent: { hue: 'red',    label: 'Urgent', rank: 4 },
-  high:   { hue: 'orange', label: 'High',   rank: 3 },
-  medium: { hue: 'amber',  label: 'Medium', rank: 2 },
-  low:    { hue: 'gray',   label: 'Low',    rank: 1 },
+  urgent: { hue: 'red',    label: 'Urgent', rank: 4, icon: BurstGlyph },
+  high:   { hue: 'orange', label: 'High',   rank: 3, icon: Flame },
+  medium: { hue: 'amber',  label: 'Medium', rank: 2, icon: AlertTriangle },
+  low:    { hue: 'gray',   label: 'Low',    rank: 1, icon: BangGlyph },
 };
 
 export function priorityMeta(key) {

@@ -1586,7 +1586,7 @@ function ActionConfig({ action, onChange, data }) {
           value={action.priority}
           onChange={(v) => onChange({ priority: v })}
           columns={4}
-          options={Object.entries(PRIORITY).map(([k, m]) => ({ value: k, label: m.label, icon: Flag, accent: m.hue }))}
+          options={Object.entries(PRIORITY).map(([k, m]) => ({ value: k, label: m.label, icon: m.icon, accent: m.hue }))}
         />
       );
 
