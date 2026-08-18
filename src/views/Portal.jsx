@@ -138,10 +138,10 @@ const WASH = {
 const NODE_ICON = { product: Folder, subcategory: Layers, item: Circle };
 
 const PRODUCT_ICON = {
-  [CAT.P_ACCOUNTS]: KeyRound,
-  [CAT.P_EMAIL]: Mail,
   [CAT.P_DEVICES]: Laptop,
-  [CAT.P_SOFTWARE]: AppWindow,
+  [CAT.P_APPLICATIONS]: AppWindow,
+  [CAT.P_M365]: Mail,
+  [CAT.P_NETSEC]: KeyRound,
   [CAT.P_WORKPLACE]: Building2,
   [CAT.P_STOREFRONT]: Store,
 };

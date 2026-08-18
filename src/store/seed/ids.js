@@ -132,13 +132,17 @@ export const SF = {
  * assets link to items, and forms scope to products.
  * ------------------------------------------------------------------ */
 export const CAT = {
-  // products
-  P_ACCOUNTS:   'cat-p-accounts',
-  P_EMAIL:      'cat-p-email',
-  P_DEVICES:    'cat-p-devices',
-  P_SOFTWARE:   'cat-p-software',
-  P_WORKPLACE:  'cat-p-workplace',
-  P_STOREFRONT: 'cat-p-storefront',   // the external product customers buy
+  /* Products. Four of these are Technology's and the Technology form names all
+   * four; Workplace and Storefront are the Facilities and customer front doors.
+   * `Accounts & Access`, `Email & Calendar` and `Software & Licensing` used to
+   * be top-level and are gone — their items moved into Network & Security,
+   * Microsoft 365 and Applications & Software respectively. */
+  P_DEVICES:      'cat-p-devices',
+  P_APPLICATIONS: 'cat-p-applications',
+  P_M365:         'cat-p-m365',
+  P_NETSEC:       'cat-p-netsec',
+  P_WORKPLACE:    'cat-p-workplace',
+  P_STOREFRONT:   'cat-p-storefront',   // the external product customers buy
   // items commonly linked to
   I_CANNOT_SIGN_IN: 'cat-i-cannot-sign-in',
   I_MFA:            'cat-i-mfa',

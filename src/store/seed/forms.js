@@ -607,13 +607,31 @@ export const SUBFORMS = [
 
 export const FORMS = [
   {
+    id: 'form-technology',
+    name: 'Technology',
+    description: 'The IT desk. Devices, the applications Northwind runs on, Microsoft 365, and everything about the network and getting in.',
+    headline: 'Something wrong with your kit, your apps or your access?',
+    subhead: 'Search first — most answers are already written down. If not, raise it and IT will pick it up.',
+    audience: 'internal',
+    /* The four Technology categories, and only those. Workplace and Storefront
+     * belong to other desks. */
+    productIds: [CAT.P_DEVICES, CAT.P_APPLICATIONS, CAT.P_M365, CAT.P_NETSEC],
+    published: true,
+    slug: 'technology',
+    requireSignIn: true,
+    showKnowledge: true,
+    ownerId: USR.EMMA,
+    updatedAt: '2026-08-17T19:00:00',
+    submissions30d: 486,
+  },
+  {
     id: 'form-employee-help',
     name: 'Employee Help Centre',
     description: 'The one place Northwind staff go for anything IT, workplace, people or finance related.',
     headline: 'How can we help?',
     subhead: 'Search first — most answers are already written down. If not, raise a request and we will pick it up.',
     audience: 'internal',
-    productIds: [CAT.P_ACCOUNTS, CAT.P_EMAIL, CAT.P_DEVICES, CAT.P_SOFTWARE, CAT.P_WORKPLACE],
+    productIds: [CAT.P_DEVICES, CAT.P_APPLICATIONS, CAT.P_M365, CAT.P_NETSEC, CAT.P_WORKPLACE],
     published: true,
     slug: 'help',
     requireSignIn: true,
@@ -645,7 +663,7 @@ export const FORMS = [
     headline: 'Bringing someone new in?',
     subhead: 'One submission opens the account, orders the kit and books the desk.',
     audience: 'internal',
-    productIds: [CAT.P_WORKPLACE, CAT.P_DEVICES, CAT.P_ACCOUNTS],
+    productIds: [CAT.P_WORKPLACE, CAT.P_DEVICES, CAT.P_NETSEC],
     published: true,
     slug: 'onboarding',
     requireSignIn: true,
