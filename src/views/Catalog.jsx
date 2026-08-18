@@ -8,9 +8,9 @@ import {
   useTheme, cx, ICON, DENSITY, ENTITIES, entityHue, tint,
   Button, IconButton, IconTile, Chip, ChipGroup, StatusPill, EntityTag, Avatar,
   EmptyState, Card, Panel, GroupLabel, Stat, Banner,
-  Field, Input, Select, SearchInput, TileGroup,
+  Field, Input, Textarea, Select, SearchInput, TileGroup,
   Modal, ConfirmDelete,
-  PageBody, Breadcrumbs,
+  PageBody, Breadcrumbs, SubTabs,
   ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
 } from '@/ds';
 import { useStore, setCollection, addTo, uid, nowISO } from '@/store/store.js';
@@ -809,12 +809,18 @@ function NodeDetail(props) {
   return node.type === 'item' ? <ItemDetail {...props} /> : <BranchDetail {...props} />;
 }
 
-function DetailHeader({ node, trail, onSelect, editingInPane, setEditingInPane, onRename, onCopy, onDelete, extra }) {
+function DetailHeader({ node, trail, onSelect, editingInPane, setEditingInPane, onRename, onCopy, onDelete, onPatch, extra }) {
   const { t, e } = useTheme();
   const c = e(node.type);
   const Icon = NODE_ICON[node.type] || Circle;
   const editing = editingInPane?.id === node.id;
-  const aud = audienceMeta(node.audience);
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [draftDesc, setDraftDesc] = useState('');
+
+  const commitDesc = () => {
+    onPatch(node.id, { description: draftDesc.trim() });
+    setEditingDesc(false);
+  };
 
   const commit = () => {
     if (editingInPane?.id === node.id) onRename(node.id, editingInPane.value);
@@ -829,7 +835,7 @@ function DetailHeader({ node, trail, onSelect, editingInPane, setEditingInPane, 
         className="mb-2"
       />
       <div className="flex items-start gap-3">
-        <IconTile icon={Icon} accent={entityHue(node.type)} size="lg" />
+        <IconTile icon={Icon} accent={entityHue(node.type)} />
         <div className="flex-1 min-w-0">
           {editing ? (
             <div className="flex items-center gap-2">
@@ -849,13 +855,21 @@ function DetailHeader({ node, trail, onSelect, editingInPane, setEditingInPane, 
             </div>
           ) : (
             <div className="flex items-center gap-2 min-w-0">
-              <h3 className={cx('text-lg font-semibold truncate', t.text)}>{node.name}</h3>
+              <h3 className={cx('text-base font-semibold truncate', t.text)}>{node.name}</h3>
               <IconButton icon={Pencil} label="Rename" onClick={() => setEditingInPane({ id: node.id, value: node.name })} />
             </div>
           )}
           <div className="flex items-center gap-2 flex-wrap mt-1.5">
             <EntityTag kind={node.type} />
-            <Chip accent={aud.hue} icon={aud.icon}>{aud.label}</Chip>
+            {/* Audience is a THREE-WAY CHOICE, not a fact, so it is a control —
+                and at 30px it belongs on the identity row rather than in a panel
+                of its own the height of a card. */}
+            <SubTabs
+              inline
+              value={node.audience || 'internal'}
+              onChange={(value) => onPatch(node.id, { audience: value })}
+              items={AUDIENCE_TILES.map(x => ({ value: x.value, label: x.label, icon: x.icon, accent: x.accent }))}
+            />
             {node.popular && <Chip accent="amber" icon={Star}>Popular</Chip>}
             {node.fulfillment && <Chip accent="gray" icon={Clock}>{node.fulfillment}</Chip>}
           </div>
@@ -865,7 +879,36 @@ function DetailHeader({ node, trail, onSelect, editingInPane, setEditingInPane, 
           <IconButton icon={Trash2} label="Delete" accent="red" onClick={() => onDelete(node)} />
         </div>
       </div>
-      {node.description && <p className={cx('text-sm mt-3', t.textSecondary)}>{node.description}</p>}
+      {/* The description used to be read-only prose baked into the seed, which
+          made it un-editable by the person whose catalog it is. Every node type
+          — product, subcategory and item — gets the same click-to-edit field. */}
+      {editingDesc ? (
+        <div className="mt-2 flex items-start gap-2">
+          <Textarea
+            autoFocus
+            rows={2}
+            accent={entityHue(node.type)}
+            value={draftDesc}
+            onChange={(ev) => setDraftDesc(ev.target.value)}
+            onKeyDown={(ev) => {
+              if (ev.key === 'Escape') { ev.preventDefault(); setEditingDesc(false); }
+              if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commitDesc(); }
+            }}
+            placeholder="Describe this node in a sentence…"
+          />
+          <IconButton icon={Check} label="Save description" accent="emerald" onClick={commitDesc} />
+          <IconButton icon={X} label="Cancel" onClick={() => setEditingDesc(false)} />
+        </div>
+      ) : (
+        <button
+          onClick={() => { setDraftDesc(node.description || ''); setEditingDesc(true); }}
+          className={cx('mt-2 w-full text-left text-sm rounded px-1 -mx-1 py-0.5', t.bgHover,
+            node.description ? t.textSecondary : t.textMuted)}
+          title="Edit description"
+        >
+          {node.description || 'Add a description…'}
+        </button>
+      )}
       {extra}
     </Card>
   );
@@ -890,7 +933,7 @@ function BranchDetail({
       <DetailHeader
         node={node} trail={trail} onSelect={onSelect}
         editingInPane={editingInPane} setEditingInPane={setEditingInPane}
-        onRename={onRename} onCopy={onCopy} onDelete={onDelete}
+        onRename={onRename} onCopy={onCopy} onDelete={onDelete} onPatch={onPatch}
         extra={
           <div className="flex items-center gap-2 flex-wrap mt-3">
             <Stat label={node.type === 'product' ? 'subcategories' : 'items'}
@@ -913,7 +956,6 @@ function BranchDetail({
       />
 
       <div className="space-y-3">
-        <AudiencePanel node={node} onPatch={onPatch} />
 
         <Panel
           icon={childType === 'subcategory' ? Layers : Circle}
@@ -935,7 +977,7 @@ function BranchDetail({
               className="py-8"
             />
           ) : (
-            <div className={cx('divide-y', t.borderLight)}>
+            <div className={cx('divide-y px-4', t.border)}>
               {node.children.map(child => (
                 <ChildRow key={child.id} node={child} knowledge={knowledge} subforms={subforms} onSelect={onSelect} />
               ))}
@@ -1045,11 +1087,10 @@ function ItemDetail({
       <DetailHeader
         node={node} trail={trail} onSelect={onSelect}
         editingInPane={editingInPane} setEditingInPane={setEditingInPane}
-        onRename={onRename} onCopy={onCopy} onDelete={onDelete}
+        onRename={onRename} onCopy={onCopy} onDelete={onDelete} onPatch={onPatch}
       />
 
       <div className="space-y-3">
-        <AudiencePanel node={node} onPatch={onPatch} />
 
         {/* ---------- Knowledge ---------- */}
         <Panel
@@ -1067,7 +1108,7 @@ function ItemDetail({
               className="py-8"
             />
           ) : (
-            <div className={cx('divide-y', t.borderLight)}>
+            <div className={cx('divide-y px-4', t.border)}>
               {atoms.map(({ id, record }) => (
                 <KnowledgeRow key={id} id={id} record={record} courses={courses} onDetach={() => detach('knowledge', id)} />
               ))}
@@ -1103,7 +1144,7 @@ function ItemDetail({
                 className="py-8"
               />
             ) : (
-              <div className={cx('divide-y', t.borderLight)}>
+              <div className={cx('divide-y px-4', t.border)}>
                 {forms.map(({ id, record }) => (
                   <SubformRow key={id} id={id} record={record} queues={queues} onDetach={() => detach('subform', id)} />
                 ))}
@@ -1126,7 +1167,7 @@ function ItemDetail({
               </p>
             </div>
           ) : (
-            <div className={cx('divide-y', t.borderLight)}>
+            <div className={cx('divide-y px-4', t.border)}>
               {linkedAssets.map(asset => <AssetRow key={asset.id} asset={asset} />)}
             </div>
           )}
@@ -1240,32 +1281,6 @@ function AssetRow({ asset }) {
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ *
- * Audience — internal / external / both, on every node
- * ------------------------------------------------------------------ */
-
-function AudiencePanel({ node, onPatch }) {
-  const aud = audienceMeta(node.audience);
-  return (
-    <Panel
-      icon={aud.icon}
-      accent={aud.hue}
-      title="Audience"
-      subtitle="Who sees this node"
-    >
-      <div className={DENSITY.cardPad}>
-        <TileGroup
-          value={node.audience || 'internal'}
-          onChange={(value) => onPatch(node.id, { audience: value })}
-          options={AUDIENCE_TILES}
-          columns={3}
-        />
-      </div>
-    </Panel>
-  );
-}
-
 /* ==================================================================== *
  * Import / copy
  * ==================================================================== */

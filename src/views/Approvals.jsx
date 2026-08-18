@@ -1125,7 +1125,7 @@ function TargetChip({ request }) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); navigate(meta.to[0], meta.to[1] || null, record.id); }}
-      className="inline-flex max-w-[16rem]"
+      className="inline-flex min-w-0 max-w-full"
       title={`Open ${label}`}
     >
       <Chip accent={entityHue(meta.kind)} icon={meta.icon} className="hover:underline">
@@ -1345,7 +1345,9 @@ function SummaryGrid({ request, people, now }) {
         </span>
       </MetaCell>
       <MetaCell label="Hangs off">
-        <div className="flex"><TargetChip request={request} /></div>
+        {/* min-w-0 all the way down, or the chip cannot shrink below its own
+            content and overflows into the next grid column. */}
+        <div className="flex min-w-0"><TargetChip request={request} /></div>
       </MetaCell>
       <MetaCell label="Raised">
         <span className={cx('text-sm', t.text)}>{stamp(request.createdAt)}</span>

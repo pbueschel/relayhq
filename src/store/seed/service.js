@@ -1540,7 +1540,7 @@ export const APPROVALS = [
     context: {
       requesterId: USR.PRIYA,
       ticketId: 'tkt-4814',
-      answers: { amount: 6400, vendor: 'Figma', term: 'annual', seats: 8 },
+      answers: { amount: 6400, annualAmount: 6400, vendor: 'Figma', term: 'annual', seats: 8 },
     },
     stages: [
       {
@@ -1729,7 +1729,7 @@ export const APPROVALS = [
     context: {
       requesterId: USR.SARAH,
       ticketId: 'tkt-4821',
-      answers: { amount: 1800, vendor: 'Retail Ops Summit', term: 'one-off' },
+      answers: { amount: 1800, annualAmount: 1800, vendor: 'Retail Ops Summit', term: 'one-off' },
     },
     stages: [
       {

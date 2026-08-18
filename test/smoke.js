@@ -455,6 +455,34 @@ for (const f of files) {
 }
 
 /* ------------------------------------------------------------------ *
+ * GUARD — a frozen approval can answer its own policy.
+ *
+ * An approval freezes the facts it was raised with. If the policy's conditions
+ * later start reading a different field, the frozen record can no longer answer
+ * them, and the "why this approval exists" panel renders a RED FAILING rule on
+ * an approval that is legitimately running — the screen contradicting itself.
+ *
+ * That is exactly what happened when `annualCost()` moved the spend policies
+ * from `answers.amount` to `answers.annualAmount` and the two seeded spend
+ * approvals kept the old key.
+ * ------------------------------------------------------------------ */
+
+const condFields = (where) => [
+  ...(where?.rows || []).map(r => r.field),
+  ...(where?.groups || []).flatMap(condFields),
+].filter(Boolean);
+
+for (const ap of seed.approvals || []) {
+  const pol = (seed.approvalPolicies || []).find(p => p.id === ap.policyId);
+  if (!pol) continue;
+  const answers = ap.context?.answers || {};
+  const unresolved = [...new Set(condFields(pol.appliesWhen))]
+    .filter(f => f.startsWith('answers.'))
+    .filter(f => answers[f.slice('answers.'.length)] === undefined);
+  ok(`approval ${ap.id} can answer ${pol.id}`, unresolved.length === 0, unresolved.join(', '));
+}
+
+/* ------------------------------------------------------------------ *
  * Report
  * ------------------------------------------------------------------ */
 
