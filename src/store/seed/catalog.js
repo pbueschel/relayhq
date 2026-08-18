@@ -4,19 +4,26 @@
  * Three levels, always: Product › Subcategory › Item. Items are LEAVES and the
  * only nodes that carry content — a product or a subcategory is navigation.
  *
- * AN ITEM IS AUTHORED ONCE AND PLACED BY REFERENCE.
+ * AN ITEM IS AUTHORED ONCE, AND SITS IN EXACTLY ONE PLACE.
  *
- * `ITEMS` below is the authored record for every leaf in the catalog. The tree
- * underneath it holds ids, not copies, so THE SAME ITEM CAN SIT ON SEVERAL
- * SHELVES — which is the point of the thing. "Wi-Fi or internet dropping" is a
- * laptop problem to the person whose laptop will not join, and a network problem
- * to the person whose whole floor is down; it appears under Laptops & desktops
- * AND under Network & Wi-Fi, and it is one record either way. Edit it once and
- * both shelves change. A badge that will not open a door is the same story
- * across Facilities and Physical security.
+ * `ITEMS` below is the authored record for every leaf; the tree holds ids rather
+ * than inline objects, which keeps authoring and arrangement apart. But an id
+ * appears in the tree EXACTLY ONCE, and smoke enforces it — because a leaf with
+ * two parents has two breadcrumbs, and the drill can only show one. A trail that
+ * says "Devices & Hardware ›" for something you opened under Network & Security
+ * is worse than the duplication it was avoiding.
  *
- * That is Rule 0 applied to PLACEMENT rather than to content: an item does not
- * own its position any more than it owns its knowledge.
+ * WHEN A SYMPTOM BELONGS IN TWO PLACES, COPY THE LEAF.
+ *
+ * "Wi-Fi or internet dropping" lives under Network & Wi-Fi. "Cannot connect to
+ * Wi-Fi on this machine" lives under Laptops & desktops. Two records, `copyOf`
+ * linking the second to the first — and each free to carry its own intake, which
+ * is the real prize: one machine that will not join is endpoint work, a floor
+ * that is down is network work, and they should not raise the same ticket.
+ *
+ * This does not breach Rule 0. Rule 0 governs KNOWLEDGE and SUBFORMS — the
+ * content — and both copies still reference the same atoms by id. What is
+ * duplicated is a navigational leaf, which is the cheap thing.
  *
  * Items do not OWN their content either. They reference shared atoms:
  *     knowledgeIds -> `knowledge`   (the same article can be a lesson too)
@@ -55,7 +62,13 @@ const ITEMS = {
   [CAT.I_NEW_LAPTOP]: { id: CAT.I_NEW_LAPTOP, type: 'item', name: 'Laptop needs replacing', description: 'Past the 36-month cycle or beyond economical repair. Anything above the standard build needs manager approval.', knowledgeIds: [KB.LAPTOP_SETUP, KB.APPROVAL_THRESHOLDS], subformIds: [SF.NEW_HARDWARE], popular: true, audience: 'internal', fulfillment: '5-7 business days' },
   ['cat-i-laptop-input']: { id: 'cat-i-laptop-input', type: 'item', name: 'Built-in keyboard or trackpad not responding', description: 'Keys repeat or stick, or the trackpad ignores taps after a wake.', subformIds: [SF.LAPTOP_REPAIR] },
   ['cat-i-disk-full']: { id: 'cat-i-disk-full', type: 'item', name: 'Machine out of disk space', description: 'Saves fail and updates will not install because the drive is full.', subformIds: [SF.LAPTOP_REPAIR] },
-  ['cat-i-wifi']: { id: 'cat-i-wifi', type: 'item', name: 'Wi-Fi or internet dropping', description: 'Drops out around the office, will not join at home, or connects with no traffic behind it.', subformIds: [SF.LAPTOP_REPAIR], audience: 'internal' },
+  ['cat-i-wifi']: { id: 'cat-i-wifi', type: 'item', name: 'Wi-Fi or internet dropping', description: 'Drops out around the office, or connects with no traffic behind it.', subformIds: [SF.LAPTOP_REPAIR], audience: 'internal' },
+  /* THE LAPTOP HALF OF THE SAME SYMPTOM, as its own record.
+   * It is a copy of the leaf, not of the content: both point at the same intake
+   * today, and either may take a different one tomorrow — which is the reason to
+   * copy rather than to place twice. One machine that will not join is endpoint
+   * work; a floor that is down is network work. */
+  ['cat-i-laptop-wifi']: { id: 'cat-i-laptop-wifi', type: 'item', name: 'Cannot connect to Wi-Fi on this machine', description: 'Other people are online, this laptop will not join or keeps asking for the password.', subformIds: [SF.LAPTOP_REPAIR], audience: 'internal', copyOf: 'cat-i-wifi' },
   ['cat-i-computers-not-listed']: { id: 'cat-i-computers-not-listed', type: 'item', name: 'Not listed', description: 'Nothing above matches. Describe it in your own words — a person reads it and routes it by hand.', subformIds: [SF.LAPTOP_REPAIR], audience: 'internal' },
   ['cat-i-monitor']: { id: 'cat-i-monitor', type: 'item', name: 'Monitor or dock not detected', description: 'Nothing on the second screen, a dock that drops out, or only one of two panels lighting up.', knowledgeIds: [KB.SCREEN_FLICKER, KB.REQUEST_MONITOR], subformIds: [SF.LAPTOP_REPAIR, SF.NEW_HARDWARE], audience: 'internal', fulfillment: '3-5 business days' },
   ['cat-i-desk-accessories']: { id: 'cat-i-desk-accessories', type: 'item', name: 'Keyboard, mouse or headset not working', description: 'Dead batteries, a dongle that will not pair, or a mic nobody on the call can hear.', knowledgeIds: [KB.REQUEST_MONITOR], subformIds: [SF.NEW_HARDWARE], audience: 'internal', fulfillment: '3-5 business days' },
@@ -205,6 +218,9 @@ const ITEMS = {
   ['cat-i-guest-wifi']: { id: 'cat-i-guest-wifi', type: 'item', name: 'Visitor cannot get on guest Wi-Fi', description: 'The guest code is refused, or the sign-in page never appears.' },
   ['cat-i-office-offline']: { id: 'cat-i-office-offline', type: 'item', name: 'Whole floor or office is offline' },
   ['cat-i-network-not-listed']: { id: 'cat-i-network-not-listed', type: 'item', name: 'Not listed', description: 'Nothing above matches. Describe it in your own words — a person reads it and routes it by hand.' },
+  /* Facilities' own leaf for the same door. Security owns badge RIGHTS; the
+   * building team owns the door itself, and they are different tickets. */
+  ['cat-i-badge-door']: { id: 'cat-i-badge-door', type: 'item', name: 'Door or badge reader not working', description: 'The reader is dead, the door will not release, or it opens for nobody.', subformIds: [SF.FACILITIES_ISSUE], audience: 'internal', copyOf: 'cat-i-badge-access' },
   ['cat-i-badge-access']: { id: 'cat-i-badge-access', type: 'item', name: 'Badge not opening a door', description: 'A new badge, a lost one, or access that stops at the Elk Grove data-centre door.', knowledgeIds: [KB.ACCOUNT_LOCKED, KB.APPROVAL_THRESHOLDS], subformIds: [SF.REQUEST_ACCESS, SF.FACILITIES_ISSUE], audience: 'internal', fulfillment: '1 business day' },
   ['cat-i-badge-reader-dead']: { id: 'cat-i-badge-reader-dead', type: 'item', name: 'Badge reader dead at a door', description: 'No light and no beep for anyone, not just one badge.', subformIds: [SF.FACILITIES_ISSUE] },
   ['cat-i-badge-lost']: { id: 'cat-i-badge-lost', type: 'item', name: 'Badge lost or stolen', description: 'Needs deactivating now and a replacement issued.', subformIds: [SF.FACILITIES_ISSUE, SF.REQUEST_ACCESS] },
@@ -291,7 +307,7 @@ export const CATALOG = [
     description: 'Laptops, phones, peripherals and the return or repair loop.',
     audience: 'internal',
     children: [
-      sub('cat-s-computers', 'Laptops & desktops', 'The machine itself — power, speed, screen, battery, connectivity.', null, [CAT.I_LAPTOP_ISSUE, 'cat-i-laptop-performance', 'cat-i-laptop-screen', 'cat-i-laptop-battery', 'cat-i-machine-setup', CAT.I_NEW_LAPTOP, 'cat-i-laptop-input', 'cat-i-disk-full', 'cat-i-wifi', 'cat-i-computers-not-listed']),
+      sub('cat-s-computers', 'Laptops & desktops', 'The machine itself — power, speed, screen, battery, connectivity.', null, [CAT.I_LAPTOP_ISSUE, 'cat-i-laptop-performance', 'cat-i-laptop-screen', 'cat-i-laptop-battery', 'cat-i-machine-setup', CAT.I_NEW_LAPTOP, 'cat-i-laptop-input', 'cat-i-disk-full', 'cat-i-laptop-wifi', 'cat-i-computers-not-listed']),
       sub('cat-s-peripherals', 'Peripherals & accessories', 'Monitors, docks, keyboards, headsets and what plugs into them.', null, ['cat-i-monitor', 'cat-i-desk-accessories', 'cat-i-webcam', 'cat-i-printing', 'cat-i-adapters', 'cat-i-peripheral-worn', 'cat-i-peripherals-not-listed']),
       sub('cat-s-mobile', 'Mobile devices', 'Company phones and tablets.', null, ['cat-i-lost-device', 'cat-i-phone-damaged', 'cat-i-phone-service', 'cat-i-mdm-enrolment', 'cat-i-roaming', 'cat-i-company-phone', 'cat-i-mobile-not-listed']),
       sub('cat-s-returns', 'Returns & repairs', 'Sending kit back, swapping it out, getting it fixed.', null, ['cat-i-repair-warranty', 'cat-i-loaner', 'cat-i-return-equipment', 'cat-i-return-label', 'cat-i-asset-record', 'cat-i-disposal', 'cat-i-returns-not-listed']),
@@ -353,7 +369,7 @@ export const CATALOG = [
     description: 'Buildings and desks, joining and leaving, and the ways-of-working material the service desk itself is trained on.',
     audience: 'internal',
     children: [
-      sub('cat-s-building', 'Building & desks', 'Chicago HQ, New York, Austin and the Bolingbrook warehouse.', 'internal', ['cat-i-facilities-issue', 'cat-i-comfort', 'cat-i-badge-access', 'cat-i-desk-move', 'cat-i-supplies', 'cat-i-parking-deliveries', 'cat-i-building-not-listed']),
+      sub('cat-s-building', 'Building & desks', 'Chicago HQ, New York, Austin and the Bolingbrook warehouse.', 'internal', ['cat-i-facilities-issue', 'cat-i-comfort', 'cat-i-badge-door', 'cat-i-desk-move', 'cat-i-supplies', 'cat-i-parking-deliveries', 'cat-i-building-not-listed']),
       sub('cat-s-joining-leaving', 'Joining & leaving', 'The two most cross-functional requests Northwind runs. Both fan out to IT, Facilities and People Ops.', 'internal', ['cat-i-new-hire', 'cat-i-starter-not-ready', 'cat-i-contractor-onboarding', 'cat-i-role-change', 'cat-i-offboarding', 'cat-i-leaver-access', 'cat-i-joining-not-listed']),
       sub('cat-s-ways-of-working', 'Ways of working', 'The service desk’s own enablement material. Every atom here is also a lesson in the Support Agent curriculum.', 'internal', ['cat-i-working-a-queue', 'cat-i-customer-comms', 'cat-i-escalation-sla', 'cat-i-wrong-queue', 'cat-i-knowledge-gap', 'cat-i-raise-a-change', 'cat-i-ways-not-listed']),
       sub('cat-s-workplace-not-listed', 'Not listed', 'Something about the workplace that none of the above covers. Read and routed by hand.', 'internal', ['cat-i-workplace-not-listed']),

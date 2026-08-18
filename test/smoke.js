@@ -530,6 +530,53 @@ for (const item of seed.serviceItems || []) {
 }
 
 /* ------------------------------------------------------------------ *
+ * GUARD — one leaf, one parent, one breadcrumb.
+ *
+ * The catalog briefly allowed an item to sit on two shelves. It reads well as a
+ * data model and fails as a UI: the portal builds its trail by walking DOWN from
+ * a product and keys the result by item id, so the last walk wins and an item
+ * opened under Network & Security could announce itself as "Devices & Hardware
+ * › …". A breadcrumb that lies about where you are is worse than the duplication
+ * it was avoiding.
+ *
+ * When a symptom genuinely belongs in two places the LEAF is copied and linked
+ * with `copyOf`. That is not a Rule 0 breach: Rule 0 governs knowledge and
+ * subforms, and both copies still reference the same atoms by id.
+ * ------------------------------------------------------------------ */
+
+const placements = new Map();
+const walkPlacements = (nodes, trail = []) => {
+  for (const n of nodes || []) {
+    if (n.type === 'item') {
+      if (!placements.has(n.id)) placements.set(n.id, []);
+      placements.get(n.id).push(trail.map(t => t.name).join(' > '));
+    }
+    if (n.children) walkPlacements(n.children, [...trail, n]);
+  }
+};
+walkPlacements(seed.catalog);
+
+for (const [id, trails] of placements) {
+  ok(`catalog item ${id} has one breadcrumb`, trails.length === 1, trails.join('  |  '));
+}
+
+/* A copy must point at a real original, and must not point at itself. */
+const itemById = new Map([...placements.keys()].map(id => [id, true]));
+const allItems = [];
+const collectItems = (nodes) => {
+  for (const n of nodes || []) {
+    if (n.type === 'item') allItems.push(n);
+    if (n.children) collectItems(n.children);
+  }
+};
+collectItems(seed.catalog);
+for (const it of allItems) {
+  if (!it.copyOf) continue;
+  ok(`${it.id} copyOf points at a real item`, itemById.has(it.copyOf), it.copyOf);
+  ok(`${it.id} copyOf is not itself`, it.copyOf !== it.id);
+}
+
+/* ------------------------------------------------------------------ *
  * Report
  * ------------------------------------------------------------------ */
 
