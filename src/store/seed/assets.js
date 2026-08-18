@@ -28,7 +28,7 @@
  * warranty, renewal and compliance screens all have real findings.
  */
 
-import { LOC, USR, CAT } from './ids.js';
+import { LOC, USR, CAT, MDL, LIC } from './ids.js';
 
 /* Region nodes are location-internal — nothing outside this domain references
  * them, so they are not in ids.js. The sites themselves always use LOC ids. */
@@ -124,67 +124,67 @@ export const LOCATIONS = [
 
 export const ASSET_MODELS = [
   {
-    id: 'mdl-mbp14', manufacturer: 'Apple', name: 'MacBook Pro 14" (M3 Pro)',
+    id: MDL.MBP14, manufacturer: 'Apple', name: 'MacBook Pro 14" (M3 Pro)',
     category: 'laptop', managedById: USR.EMMA, eol: '2028-06-30',
     defaults: { vendor: 'CDW', cost: 2399, warrantyMonths: 36, refreshYears: 3 },
     notes: 'Standard issue for engineering, design and leadership.',
   },
   {
-    id: 'mdl-mbp16', manufacturer: 'Apple', name: 'MacBook Pro 16" (M3 Max)',
+    id: MDL.MBP16, manufacturer: 'Apple', name: 'MacBook Pro 16" (M3 Max)',
     category: 'laptop', managedById: USR.EMMA, eol: '2028-06-30',
     defaults: { vendor: 'CDW', cost: 3499, warrantyMonths: 36, refreshYears: 3 },
     notes: 'Exception build — requires a manager approval on the request form.',
   },
   {
-    id: 'mdl-lat7440', manufacturer: 'Dell', name: 'Latitude 7440',
+    id: MDL.LAT7440, manufacturer: 'Dell', name: 'Latitude 7440',
     category: 'laptop', managedById: USR.EMMA, eol: '2027-12-31',
     defaults: { vendor: 'Dell Technologies', cost: 1749, warrantyMonths: 36, refreshYears: 4 },
     notes: 'Standard Windows build. Covered by Dell ProSupport Plus.',
   },
   {
-    id: 'mdl-x1c11', manufacturer: 'Lenovo', name: 'ThinkPad X1 Carbon Gen 11',
+    id: MDL.X1C11, manufacturer: 'Lenovo', name: 'ThinkPad X1 Carbon Gen 11',
     category: 'laptop', managedById: USR.EMMA, eol: '2027-06-30',
     defaults: { vendor: 'Insight', cost: 1899, warrantyMonths: 36, refreshYears: 4 },
     notes: 'Legacy standard — being phased out in favour of the Latitude.',
   },
   {
-    id: 'mdl-iphone15', manufacturer: 'Apple', name: 'iPhone 15 Pro (256GB)',
+    id: MDL.IPHONE15, manufacturer: 'Apple', name: 'iPhone 15 Pro (256GB)',
     category: 'phone', managedById: USR.EMMA, eol: '2029-09-30',
     defaults: { vendor: 'Verizon Business', cost: 1099, warrantyMonths: 18, refreshYears: 3 },
     notes: 'Issued to on-call, field sales and leadership only.',
   },
   {
-    id: 'mdl-u2723', manufacturer: 'Dell', name: 'UltraSharp U2723QE 27"',
+    id: MDL.U2723, manufacturer: 'Dell', name: 'UltraSharp U2723QE 27"',
     category: 'monitor', managedById: USR.EMMA, eol: '2030-01-01',
     defaults: { vendor: 'Dell Technologies', cost: 579, warrantyMonths: 36, refreshYears: 6 },
     notes: 'One per desk; hot-desk banks get two.',
   },
   {
-    id: 'mdl-c9300', manufacturer: 'Cisco', name: 'Catalyst 9300-24T',
+    id: MDL.C9300, manufacturer: 'Cisco', name: 'Catalyst 9300-24T',
     category: 'network', managedById: USR.PRIYA, eol: '2031-04-30',
     defaults: { vendor: 'Presidio', cost: 6850, warrantyMonths: 44, refreshYears: 7 },
     notes: 'Top-of-rack switching in Elk Grove. SmartNet covered.',
   },
   {
-    id: 'mdl-mr46', manufacturer: 'Cisco Meraki', name: 'MR46 Access Point',
+    id: MDL.MR46, manufacturer: 'Cisco Meraki', name: 'MR46 Access Point',
     category: 'network', managedById: USR.PRIYA, eol: '2030-09-30',
     defaults: { vendor: 'Presidio', cost: 1299, warrantyMonths: 36, refreshYears: 6 },
     notes: 'Site wireless. Licence is bundled with the hardware term.',
   },
   {
-    id: 'mdl-m479', manufacturer: 'HP', name: 'Color LaserJet Pro M479fdw',
+    id: MDL.M479, manufacturer: 'HP', name: 'Color LaserJet Pro M479fdw',
     category: 'printer', managedById: USR.LINDA, eol: '2029-12-31',
     defaults: { vendor: 'CDW', cost: 749, warrantyMonths: 12, refreshYears: 5 },
     notes: 'Facilities owns print. IT owns the driver package only.',
   },
   {
-    id: 'mdl-r650', manufacturer: 'Dell', name: 'PowerEdge R650',
+    id: MDL.R650, manufacturer: 'Dell', name: 'PowerEdge R650',
     category: 'server', managedById: USR.PRIYA, eol: '2030-06-30',
     defaults: { vendor: 'Dell Technologies', cost: 12400, warrantyMonths: 36, refreshYears: 5 },
     notes: 'vSphere hosts. Two CPU sockets each — licence position tracks sockets.',
   },
   {
-    id: 'mdl-ipad', manufacturer: 'Apple', name: 'iPad Air 11" (M2)',
+    id: MDL.IPAD, manufacturer: 'Apple', name: 'iPad Air 11" (M2)',
     category: 'tablet', managedById: USR.EMMA, eol: '2029-06-30',
     defaults: { vendor: 'CDW', cost: 799, warrantyMonths: 24, refreshYears: 4 },
     notes: 'Shared devices — receiving scanner, facilities walkthroughs.',
@@ -262,7 +262,7 @@ function sw(o) {
 const HARDWARE = [
   /* --- Apple laptops, NYC product + design --- */
   hw({
-    id: 'ast-lt-0142', assetTag: 'NW-LT-0142', serial: 'C02XK9QLMD6T', modelId: 'mdl-mbp16',
+    id: 'ast-lt-0142', assetTag: 'NW-LT-0142', serial: 'C02XK9QLMD6T', modelId: MDL.MBP16,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.MIKE, locationId: LOC.NYC,
     purchaseDate: '2024-03-12', cost: 3499, vendor: 'CDW', warrantyExpires: '2027-03-12',
     poNumber: 'PO-2024-0311', contractId: CTR.APPLECARE, catalogItemIds: CI_LAPTOP,
@@ -273,7 +273,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0143', assetTag: 'NW-LT-0143', serial: 'C02XK9QLMF8W', modelId: 'mdl-mbp16',
+    id: 'ast-lt-0143', assetTag: 'NW-LT-0143', serial: 'C02XK9QLMF8W', modelId: MDL.MBP16,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.JEN, locationId: LOC.NYC,
     purchaseDate: '2024-03-12', cost: 3499, vendor: 'CDW', warrantyExpires: '2027-03-12',
     poNumber: 'PO-2024-0311', contractId: CTR.APPLECARE, catalogItemIds: CI_LAPTOP,
@@ -283,7 +283,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0151', assetTag: 'NW-LT-0151', serial: 'C02ZR7TXN91K', modelId: 'mdl-mbp14',
+    id: 'ast-lt-0151', assetTag: 'NW-LT-0151', serial: 'C02ZR7TXN91K', modelId: MDL.MBP14,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.LISA, locationId: LOC.AUS,
     purchaseDate: '2024-06-04', cost: 2399, vendor: 'CDW', warrantyExpires: '2027-06-04',
     poNumber: 'PO-2024-0587', contractId: CTR.APPLECARE, catalogItemIds: CI_LAPTOP,
@@ -293,7 +293,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0158', assetTag: 'NW-LT-0158', serial: 'C02WD5KJP0YR', modelId: 'mdl-mbp14',
+    id: 'ast-lt-0158', assetTag: 'NW-LT-0158', serial: 'C02WD5KJP0YR', modelId: MDL.MBP14,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.SAM, locationId: LOC.AUS,
     purchaseDate: '2026-06-22', cost: 2399, vendor: 'CDW', warrantyExpires: '2029-06-22',
     poNumber: 'PO-2026-0219', contractId: CTR.APPLECARE, catalogItemIds: CI_LAPTOP,
@@ -305,7 +305,7 @@ const HARDWARE = [
   }),
   /* --- Dell / Lenovo fleet --- */
   hw({
-    id: 'ast-lt-0163', assetTag: 'NW-LT-0163', serial: '7QK4LM3', modelId: 'mdl-lat7440',
+    id: 'ast-lt-0163', assetTag: 'NW-LT-0163', serial: '7QK4LM3', modelId: MDL.LAT7440,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.DEVON, locationId: LOC.AUS,
     purchaseDate: '2023-11-02', cost: 1749, vendor: 'Dell Technologies', warrantyExpires: '2026-11-02',
     poNumber: 'PO-2023-0912', contractId: CTR.DELL_PROSUPPORT, catalogItemIds: CI_LAPTOP,
@@ -317,7 +317,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0164', assetTag: 'NW-LT-0164', serial: '7QK4LN8', modelId: 'mdl-lat7440',
+    id: 'ast-lt-0164', assetTag: 'NW-LT-0164', serial: '7QK4LN8', modelId: MDL.LAT7440,
     status: 'in_repair', assignmentType: 'person', assignedToId: USR.NADIA, locationId: LOC.REMOTE,
     purchaseDate: '2023-11-02', cost: 1749, vendor: 'Dell Technologies', warrantyExpires: '2026-11-02',
     poNumber: 'PO-2023-0912', contractId: CTR.DELL_PROSUPPORT, catalogItemIds: CI_LAPTOP,
@@ -329,7 +329,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0170', assetTag: 'NW-LT-0170', serial: 'PF3ZK9QA', modelId: 'mdl-x1c11',
+    id: 'ast-lt-0170', assetTag: 'NW-LT-0170', serial: 'PF3ZK9QA', modelId: MDL.X1C11,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.PRIYA, locationId: LOC.AUS,
     purchaseDate: '2024-08-19', cost: 1899, vendor: 'Insight', warrantyExpires: '2027-08-19',
     poNumber: 'PO-2024-0703', catalogItemIds: CI_LAPTOP,
@@ -339,7 +339,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0171', assetTag: 'NW-LT-0171', serial: 'PF3ZK9RB', modelId: 'mdl-x1c11',
+    id: 'ast-lt-0171', assetTag: 'NW-LT-0171', serial: 'PF3ZK9RB', modelId: MDL.X1C11,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.TOM, locationId: LOC.REMOTE,
     purchaseDate: '2024-08-19', cost: 1899, vendor: 'Insight', warrantyExpires: '2027-08-19',
     poNumber: 'PO-2024-0703', catalogItemIds: CI_LAPTOP,
@@ -349,7 +349,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0177', assetTag: 'NW-LT-0177', serial: 'C02VG8HHQ1M9', modelId: 'mdl-mbp14',
+    id: 'ast-lt-0177', assetTag: 'NW-LT-0177', serial: 'C02VG8HHQ1M9', modelId: MDL.MBP14,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.ADMIN, locationId: LOC.CHI,
     purchaseDate: '2025-01-15', cost: 2399, vendor: 'CDW', warrantyExpires: '2028-01-15',
     poNumber: 'PO-2025-0022', contractId: CTR.APPLECARE, catalogItemIds: CI_LAPTOP,
@@ -359,7 +359,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0180', assetTag: 'NW-LT-0180', serial: 'C02TF6LKR3P2', modelId: 'mdl-mbp14',
+    id: 'ast-lt-0180', assetTag: 'NW-LT-0180', serial: 'C02TF6LKR3P2', modelId: MDL.MBP14,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.EMMA, locationId: LOC.CHI,
     purchaseDate: '2025-01-15', cost: 2399, vendor: 'CDW', warrantyExpires: '2028-01-15',
     poNumber: 'PO-2025-0022', contractId: CTR.APPLECARE, catalogItemIds: CI_LAPTOP,
@@ -369,7 +369,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0181', assetTag: 'NW-LT-0181', serial: 'C02TF6LKR9J4', modelId: 'mdl-mbp14',
+    id: 'ast-lt-0181', assetTag: 'NW-LT-0181', serial: 'C02TF6LKR9J4', modelId: MDL.MBP14,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.MICHAEL, locationId: LOC.CHI,
     purchaseDate: '2025-01-15', cost: 2399, vendor: 'CDW', warrantyExpires: '2028-01-15',
     poNumber: 'PO-2025-0022', contractId: CTR.APPLECARE, catalogItemIds: CI_LAPTOP,
@@ -379,7 +379,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0184', assetTag: 'NW-LT-0184', serial: '8RM2PQ4', modelId: 'mdl-lat7440',
+    id: 'ast-lt-0184', assetTag: 'NW-LT-0184', serial: '8RM2PQ4', modelId: MDL.LAT7440,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.PATTI, locationId: LOC.CHI,
     purchaseDate: '2025-08-11', cost: 1749, vendor: 'Dell Technologies', warrantyExpires: '2028-08-11',
     poNumber: 'PO-2025-0455', contractId: CTR.DELL_PROSUPPORT, catalogItemIds: CI_LAPTOP,
@@ -390,7 +390,7 @@ const HARDWARE = [
   }),
   /* --- Stock at Bolingbrook — the unassigned pool --- */
   hw({
-    id: 'ast-lt-0185', assetTag: 'NW-LT-0185', serial: '8RM2PQ7', modelId: 'mdl-lat7440',
+    id: 'ast-lt-0185', assetTag: 'NW-LT-0185', serial: '8RM2PQ7', modelId: MDL.LAT7440,
     status: 'in_stock', assignmentType: null, assignedToId: null, locationId: LOC.WAREHOUSE,
     purchaseDate: '2026-05-30', cost: 1749, vendor: 'Dell Technologies', warrantyExpires: '2029-05-30',
     poNumber: 'PO-2026-0177', contractId: CTR.DELL_PROSUPPORT, catalogItemIds: CI_LAPTOP,
@@ -400,7 +400,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0186', assetTag: 'NW-LT-0186', serial: '8RM2PQ9', modelId: 'mdl-lat7440',
+    id: 'ast-lt-0186', assetTag: 'NW-LT-0186', serial: '8RM2PQ9', modelId: MDL.LAT7440,
     status: 'in_stock', assignmentType: null, assignedToId: null, locationId: LOC.WAREHOUSE,
     purchaseDate: '2026-05-30', cost: 1749, vendor: 'Dell Technologies', warrantyExpires: '2029-05-30',
     poNumber: 'PO-2026-0177', contractId: CTR.DELL_PROSUPPORT, catalogItemIds: CI_LAPTOP,
@@ -409,7 +409,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0187', assetTag: 'NW-LT-0187', serial: 'PF4TR2LC', modelId: 'mdl-x1c11',
+    id: 'ast-lt-0187', assetTag: 'NW-LT-0187', serial: 'PF4TR2LC', modelId: MDL.X1C11,
     status: 'in_stock', assignmentType: null, assignedToId: null, locationId: LOC.WAREHOUSE,
     purchaseDate: '2026-07-08', cost: 1899, vendor: 'Insight', warrantyExpires: '2029-07-08',
     poNumber: 'PO-2026-0301', catalogItemIds: CI_LAPTOP,
@@ -420,7 +420,7 @@ const HARDWARE = [
   }),
   /* --- End of life and incidents --- */
   hw({
-    id: 'ast-lt-0129', assetTag: 'NW-LT-0129', serial: 'C02QQ1ZZK8DL', modelId: 'mdl-mbp14',
+    id: 'ast-lt-0129', assetTag: 'NW-LT-0129', serial: 'C02QQ1ZZK8DL', modelId: MDL.MBP14,
     status: 'retired', assignmentType: null, assignedToId: null, locationId: LOC.WAREHOUSE,
     purchaseDate: '2021-09-14', cost: 2199, vendor: 'CDW', warrantyExpires: '2024-09-14',
     poNumber: 'PO-2021-0708', catalogItemIds: CI_LAPTOP,
@@ -433,7 +433,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0138', assetTag: 'NW-LT-0138', serial: 'PF2MK7WD', modelId: 'mdl-x1c11',
+    id: 'ast-lt-0138', assetTag: 'NW-LT-0138', serial: 'PF2MK7WD', modelId: MDL.X1C11,
     status: 'lost', assignmentType: 'person', assignedToId: USR.SARAH, locationId: LOC.NYC,
     purchaseDate: '2023-05-03', cost: 1899, vendor: 'Insight', warrantyExpires: '2026-05-03',
     poNumber: 'PO-2023-0402', catalogItemIds: CI_LAPTOP,
@@ -445,7 +445,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-lt-0190', assetTag: 'NW-LT-0190', serial: 'C02UU4XPQ7RF', modelId: 'mdl-mbp14',
+    id: 'ast-lt-0190', assetTag: 'NW-LT-0190', serial: 'C02UU4XPQ7RF', modelId: MDL.MBP14,
     status: 'in_transit', assignmentType: 'person', assignedToId: USR.SARAH, locationId: LOC.NYC,
     purchaseDate: '2026-08-03', cost: 2399, vendor: 'CDW', warrantyExpires: '2029-08-03',
     poNumber: 'PO-2026-0338', contractId: CTR.APPLECARE, catalogItemIds: CI_LAPTOP,
@@ -457,7 +457,7 @@ const HARDWARE = [
   }),
   /* --- Phones --- */
   hw({
-    id: 'ast-ph-0044', assetTag: 'NW-PH-0044', serial: '356789104512345', modelId: 'mdl-iphone15',
+    id: 'ast-ph-0044', assetTag: 'NW-PH-0044', serial: '356789104512345', modelId: MDL.IPHONE15,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.LISA, locationId: LOC.AUS,
     purchaseDate: '2025-02-10', cost: 1099, vendor: 'Verizon Business', warrantyExpires: '2026-08-30',
     poNumber: 'PO-2025-0071', contractId: CTR.VERIZON,
@@ -468,7 +468,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-ph-0047', assetTag: 'NW-PH-0047', serial: '356789104598877', modelId: 'mdl-iphone15',
+    id: 'ast-ph-0047', assetTag: 'NW-PH-0047', serial: '356789104598877', modelId: MDL.IPHONE15,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.ROBERT, locationId: LOC.CHI,
     purchaseDate: '2025-02-10', cost: 1099, vendor: 'Verizon Business', warrantyExpires: '2026-08-30',
     poNumber: 'PO-2025-0071', contractId: CTR.VERIZON,
@@ -478,7 +478,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-ph-0051', assetTag: 'NW-PH-0051', serial: '356789104612390', modelId: 'mdl-iphone15',
+    id: 'ast-ph-0051', assetTag: 'NW-PH-0051', serial: '356789104612390', modelId: MDL.IPHONE15,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.DEVON, locationId: LOC.AUS,
     purchaseDate: '2025-09-19', cost: 1099, vendor: 'Verizon Business', warrantyExpires: '2027-03-19',
     poNumber: 'PO-2025-0533', contractId: CTR.VERIZON,
@@ -488,7 +488,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-ph-0055', assetTag: 'NW-PH-0055', serial: '356789104655512', modelId: 'mdl-iphone15',
+    id: 'ast-ph-0055', assetTag: 'NW-PH-0055', serial: '356789104655512', modelId: MDL.IPHONE15,
     status: 'in_stock', assignmentType: null, assignedToId: null, locationId: LOC.WAREHOUSE,
     purchaseDate: '2026-04-02', cost: 1099, vendor: 'Verizon Business', warrantyExpires: '2027-10-02',
     poNumber: 'PO-2026-0128', contractId: CTR.VERIZON,
@@ -499,7 +499,7 @@ const HARDWARE = [
   }),
   /* --- Monitors: one personal, two shared at a site, one in stock --- */
   hw({
-    id: 'ast-mn-0212', assetTag: 'NW-MN-0212', serial: 'CN0K7T2H', modelId: 'mdl-u2723',
+    id: 'ast-mn-0212', assetTag: 'NW-MN-0212', serial: 'CN0K7T2H', modelId: MDL.U2723,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.MIKE, locationId: LOC.NYC,
     purchaseDate: '2024-04-01', cost: 579, vendor: 'Dell Technologies', warrantyExpires: '2027-04-01',
     poNumber: 'PO-2024-0344',
@@ -509,7 +509,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-mn-0213', assetTag: 'NW-MN-0213', serial: 'CN0K7T3J', modelId: 'mdl-u2723',
+    id: 'ast-mn-0213', assetTag: 'NW-MN-0213', serial: 'CN0K7T3J', modelId: MDL.U2723,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.CHI,
     purchaseDate: '2024-04-01', cost: 579, vendor: 'Dell Technologies', warrantyExpires: '2027-04-01',
     poNumber: 'PO-2024-0344', managedById: USR.LINDA,
@@ -520,7 +520,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-mn-0219', assetTag: 'NW-MN-0219', serial: 'CN0K8R1L', modelId: 'mdl-u2723',
+    id: 'ast-mn-0219', assetTag: 'NW-MN-0219', serial: 'CN0K8R1L', modelId: MDL.U2723,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.AUS,
     purchaseDate: '2024-09-16', cost: 579, vendor: 'Dell Technologies', warrantyExpires: '2027-09-16',
     poNumber: 'PO-2024-0761', managedById: USR.LISA,
@@ -531,7 +531,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-mn-0224', assetTag: 'NW-MN-0224', serial: 'CN0K8R9P', modelId: 'mdl-u2723',
+    id: 'ast-mn-0224', assetTag: 'NW-MN-0224', serial: 'CN0K8R9P', modelId: MDL.U2723,
     status: 'in_stock', assignmentType: null, assignedToId: null, locationId: LOC.WAREHOUSE,
     purchaseDate: '2026-05-30', cost: 579, vendor: 'Dell Technologies', warrantyExpires: '2029-05-30',
     poNumber: 'PO-2026-0177',
@@ -541,7 +541,7 @@ const HARDWARE = [
   }),
   /* --- Network, all assigned to a place --- */
   hw({
-    id: 'ast-sw-0007', assetTag: 'NW-SW-0007', serial: 'FOC2536L0KQ', modelId: 'mdl-c9300',
+    id: 'ast-sw-0007', assetTag: 'NW-SW-0007', serial: 'FOC2536L0KQ', modelId: MDL.C9300,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.DC1,
     purchaseDate: '2023-02-20', cost: 6850, vendor: 'Presidio', warrantyExpires: '2026-09-30',
     poNumber: 'PO-2023-0118', contractId: CTR.CISCO_SMARTNET, managedById: USR.PRIYA,
@@ -552,7 +552,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-sw-0008', assetTag: 'NW-SW-0008', serial: 'FOC2536L0MR', modelId: 'mdl-c9300',
+    id: 'ast-sw-0008', assetTag: 'NW-SW-0008', serial: 'FOC2536L0MR', modelId: MDL.C9300,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.DC1,
     purchaseDate: '2023-02-20', cost: 6850, vendor: 'Presidio', warrantyExpires: '2026-09-30',
     poNumber: 'PO-2023-0118', contractId: CTR.CISCO_SMARTNET, managedById: USR.PRIYA,
@@ -563,7 +563,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-ap-0031', assetTag: 'NW-AP-0031', serial: 'Q2PD-9XKM-4L2A', modelId: 'mdl-mr46',
+    id: 'ast-ap-0031', assetTag: 'NW-AP-0031', serial: 'Q2PD-9XKM-4L2A', modelId: MDL.MR46,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.CHI,
     purchaseDate: '2024-07-15', cost: 1299, vendor: 'Presidio', warrantyExpires: '2027-07-15',
     poNumber: 'PO-2024-0640', contractId: CTR.CISCO_SMARTNET, managedById: USR.PRIYA,
@@ -574,7 +574,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-ap-0032', assetTag: 'NW-AP-0032', serial: 'Q2PD-9XKM-7T8B', modelId: 'mdl-mr46',
+    id: 'ast-ap-0032', assetTag: 'NW-AP-0032', serial: 'Q2PD-9XKM-7T8B', modelId: MDL.MR46,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.NYC,
     purchaseDate: '2024-07-15', cost: 1299, vendor: 'Presidio', warrantyExpires: '2027-07-15',
     poNumber: 'PO-2024-0640', contractId: CTR.CISCO_SMARTNET, managedById: USR.PRIYA,
@@ -584,7 +584,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-ap-0033', assetTag: 'NW-AP-0033', serial: 'Q2PD-9XKM-2R4C', modelId: 'mdl-mr46',
+    id: 'ast-ap-0033', assetTag: 'NW-AP-0033', serial: 'Q2PD-9XKM-2R4C', modelId: MDL.MR46,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.AUS,
     purchaseDate: '2024-07-15', cost: 1299, vendor: 'Presidio', warrantyExpires: '2027-07-15',
     poNumber: 'PO-2024-0640', contractId: CTR.CISCO_SMARTNET, managedById: USR.PRIYA,
@@ -595,7 +595,7 @@ const HARDWARE = [
   }),
   /* --- Servers, all in the cage --- */
   hw({
-    id: 'ast-sv-0003', assetTag: 'NW-SV-0003', serial: '9KJ2TL3', modelId: 'mdl-r650',
+    id: 'ast-sv-0003', assetTag: 'NW-SV-0003', serial: '9KJ2TL3', modelId: MDL.R650,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.DC1,
     purchaseDate: '2023-06-08', cost: 12400, vendor: 'Dell Technologies', warrantyExpires: '2026-06-08',
     poNumber: 'PO-2023-0511', contractId: CTR.DELL_PROSUPPORT, managedById: USR.PRIYA,
@@ -606,7 +606,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-sv-0004', assetTag: 'NW-SV-0004', serial: '9KJ2TL4', modelId: 'mdl-r650',
+    id: 'ast-sv-0004', assetTag: 'NW-SV-0004', serial: '9KJ2TL4', modelId: MDL.R650,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.DC1,
     purchaseDate: '2023-06-08', cost: 12400, vendor: 'Dell Technologies', warrantyExpires: '2026-06-08',
     poNumber: 'PO-2023-0511', contractId: CTR.DELL_PROSUPPORT, managedById: USR.PRIYA,
@@ -617,7 +617,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-sv-0009', assetTag: 'NW-SV-0009', serial: '9KJ4QM8', modelId: 'mdl-r650',
+    id: 'ast-sv-0009', assetTag: 'NW-SV-0009', serial: '9KJ4QM8', modelId: MDL.R650,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.DC1,
     purchaseDate: '2025-03-17', cost: 12400, vendor: 'Dell Technologies', warrantyExpires: '2028-03-17',
     poNumber: 'PO-2025-0140', contractId: CTR.DELL_PROSUPPORT, managedById: USR.PRIYA,
@@ -629,7 +629,7 @@ const HARDWARE = [
   }),
   /* --- Print, owned by Facilities not IT --- */
   hw({
-    id: 'ast-pr-0018', assetTag: 'NW-PR-0018', serial: 'VNC3K12345', modelId: 'mdl-m479',
+    id: 'ast-pr-0018', assetTag: 'NW-PR-0018', serial: 'VNC3K12345', modelId: MDL.M479,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.CHI,
     purchaseDate: '2024-01-22', cost: 749, vendor: 'CDW', warrantyExpires: '2025-01-22',
     poNumber: 'PO-2024-0044', managedById: USR.LINDA,
@@ -640,7 +640,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-pr-0021', assetTag: 'NW-PR-0021', serial: 'VNC3K67890', modelId: 'mdl-m479',
+    id: 'ast-pr-0021', assetTag: 'NW-PR-0021', serial: 'VNC3K67890', modelId: MDL.M479,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.AUS,
     purchaseDate: '2024-09-16', cost: 749, vendor: 'CDW', warrantyExpires: '2025-09-16',
     poNumber: 'PO-2024-0761', managedById: USR.LINDA,
@@ -652,7 +652,7 @@ const HARDWARE = [
   }),
   /* --- Tablets: one shared at a place, one carried by a person --- */
   hw({
-    id: 'ast-tb-0009', assetTag: 'NW-TB-0009', serial: 'DMPX1K2L3M', modelId: 'mdl-ipad',
+    id: 'ast-tb-0009', assetTag: 'NW-TB-0009', serial: 'DMPX1K2L3M', modelId: MDL.IPAD,
     status: 'deployed', assignmentType: 'location', assignedToId: null, locationId: LOC.WAREHOUSE,
     purchaseDate: '2024-11-05', cost: 799, vendor: 'CDW', warrantyExpires: '2026-11-05',
     poNumber: 'PO-2024-0888', managedById: USR.JAMES,
@@ -663,7 +663,7 @@ const HARDWARE = [
     ],
   }),
   hw({
-    id: 'ast-tb-0012', assetTag: 'NW-TB-0012', serial: 'DMPX9Z8Y7X', modelId: 'mdl-ipad',
+    id: 'ast-tb-0012', assetTag: 'NW-TB-0012', serial: 'DMPX9Z8Y7X', modelId: MDL.IPAD,
     status: 'deployed', assignmentType: 'person', assignedToId: USR.LINDA, locationId: LOC.CHI,
     purchaseDate: '2025-06-18', cost: 799, vendor: 'CDW', warrantyExpires: '2027-06-18',
     poNumber: 'PO-2025-0312',
@@ -689,7 +689,7 @@ const HARDWARE = [
 
 const SOFTWARE = [
   sw({
-    id: 'lic-ms365-e3', vendor: 'Microsoft', product: 'Microsoft 365 E3', version: '2026 CSP',
+    id: LIC.MS365_E3, vendor: 'Microsoft', product: 'Microsoft 365 E3', version: '2026 CSP',
     contractType: 'subscription', licenseModel: 'per_seat',
     seatsOwned: 180, costPerSeat: 396, renewalDate: '2027-01-31', contractId: CTR.MSFT_EA,
     managedById: USR.JAMES,
@@ -702,7 +702,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-figma', vendor: 'Figma', product: 'Figma Organization', version: 'Org plan',
+    id: LIC.FIGMA, vendor: 'Figma', product: 'Figma Organization', version: 'Org plan',
     contractType: 'subscription', licenseModel: 'per_seat',
     seatsOwned: 25, costPerSeat: 540, renewalDate: '2026-11-30', contractId: null,
     managedById: USR.MIKE,
@@ -719,7 +719,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-adobe-cc', vendor: 'Adobe', product: 'Creative Cloud All Apps', version: '2026',
+    id: LIC.ADOBE_CC, vendor: 'Adobe', product: 'Creative Cloud All Apps', version: '2026',
     contractType: 'subscription', licenseModel: 'per_seat',
     seatsOwned: 12, costPerSeat: 720, renewalDate: '2026-10-09', contractId: CTR.ADOBE_VIP,
     managedById: USR.MIKE,
@@ -734,7 +734,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-salesforce', vendor: 'Salesforce', product: 'Sales Cloud Enterprise', version: 'Enterprise',
+    id: LIC.SALESFORCE, vendor: 'Salesforce', product: 'Sales Cloud Enterprise', version: 'Enterprise',
     contractType: 'subscription', licenseModel: 'per_seat',
     seatsOwned: 60, costPerSeat: 1980, renewalDate: '2026-10-31', contractId: CTR.SALESFORCE,
     managedById: USR.JAMES,
@@ -748,7 +748,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-zoom', vendor: 'Zoom', product: 'Zoom One Business', version: 'Business',
+    id: LIC.ZOOM, vendor: 'Zoom', product: 'Zoom One Business', version: 'Business',
     contractType: 'subscription', licenseModel: 'per_seat',
     seatsOwned: 150, costPerSeat: 249, renewalDate: '2027-02-28', contractId: CTR.ZOOM,
     managedById: USR.JAMES,
@@ -761,7 +761,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-slack', vendor: 'Salesforce', product: 'Slack Business+', version: 'Business+',
+    id: LIC.SLACK, vendor: 'Salesforce', product: 'Slack Business+', version: 'Business+',
     contractType: 'subscription', licenseModel: 'per_seat',
     seatsOwned: 190, costPerSeat: 180, renewalDate: '2027-05-31', contractId: CTR.SLACK,
     managedById: USR.JAMES,
@@ -774,7 +774,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-jira', vendor: 'Atlassian', product: 'Jira Software Premium', version: 'Cloud Premium',
+    id: LIC.JIRA, vendor: 'Atlassian', product: 'Jira Software Premium', version: 'Cloud Premium',
     contractType: 'subscription', licenseModel: 'per_seat',
     seatsOwned: 90, costPerSeat: 155, renewalDate: '2027-07-14', contractId: CTR.ATLASSIAN,
     managedById: USR.PRIYA,
@@ -787,7 +787,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-crowdstrike', vendor: 'CrowdStrike', product: 'Falcon Enterprise', version: '7.x',
+    id: LIC.CROWDSTRIKE, vendor: 'CrowdStrike', product: 'Falcon Enterprise', version: '7.x',
     contractType: 'subscription', licenseModel: 'per_device',
     seatsOwned: 240, costPerSeat: 79, renewalDate: '2027-03-31', contractId: CTR.CROWDSTRIKE,
     managedById: USR.EMMA,
@@ -801,7 +801,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-vmware', vendor: 'Broadcom', product: 'VMware vSphere Standard', version: '8.0 U3',
+    id: LIC.VMWARE, vendor: 'Broadcom', product: 'VMware vSphere Standard', version: '8.0 U3',
     contractType: 'perpetual', licenseModel: 'per_device',
     seatsOwned: 16, costPerSeat: 1394, renewalDate: '2027-09-28', contractId: CTR.VMWARE,
     managedById: USR.PRIYA,
@@ -811,7 +811,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-autocad', vendor: 'Autodesk', product: 'AutoCAD LT', version: '2026',
+    id: LIC.AUTOCAD, vendor: 'Autodesk', product: 'AutoCAD LT', version: '2026',
     contractType: 'subscription', licenseModel: 'concurrent',
     seatsOwned: 4, costPerSeat: 490, renewalDate: '2027-01-18', contractId: null,
     managedById: USR.LINDA,
@@ -823,7 +823,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-docusign', vendor: 'DocuSign', product: 'Business Pro', version: 'Business Pro',
+    id: LIC.DOCUSIGN, vendor: 'DocuSign', product: 'Business Pro', version: 'Business Pro',
     contractType: 'subscription', licenseModel: 'per_seat',
     seatsOwned: 10, costPerSeat: 480, renewalDate: '2027-04-30', contractId: null,
     managedById: USR.MICHAEL,
@@ -837,7 +837,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-github', vendor: 'GitHub', product: 'GitHub Enterprise Cloud', version: 'Enterprise',
+    id: LIC.GITHUB, vendor: 'GitHub', product: 'GitHub Enterprise Cloud', version: 'Enterprise',
     contractType: 'subscription', licenseModel: 'per_seat',
     seatsOwned: 40, costPerSeat: 231, renewalDate: '2027-02-14', contractId: null,
     managedById: USR.PRIYA,
@@ -852,7 +852,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-tableau', vendor: 'Salesforce', product: 'Tableau Creator', version: '2026.1',
+    id: LIC.TABLEAU, vendor: 'Salesforce', product: 'Tableau Creator', version: '2026.1',
     contractType: 'subscription', licenseModel: 'per_seat',
     seatsOwned: 15, costPerSeat: 1010, renewalDate: '2027-06-30', contractId: null,
     managedById: USR.MICHAEL,
@@ -866,7 +866,7 @@ const SOFTWARE = [
     ],
   }),
   sw({
-    id: 'lic-duo', vendor: 'Cisco', product: 'Duo Advantage', version: 'Advantage',
+    id: LIC.DUO, vendor: 'Cisco', product: 'Duo Advantage', version: 'Advantage',
     contractType: 'subscription', licenseModel: 'site',
     seatsOwned: null, costPerSeat: null, annualValue: 18400, renewalDate: '2027-05-15', contractId: null,
     managedById: USR.EMMA,
@@ -896,7 +896,7 @@ export const CONTRACTS = [
     id: CTR.ADOBE_VIP, name: 'Adobe VIP Marketplace Agreement', vendor: 'Adobe (via CDW)',
     type: 'software_subscription', startDate: '2023-10-10', endDate: '2026-10-09',
     value: 8640, currency: 'USD', autoRenew: true, noticeDays: 30, ownerId: USR.JAMES,
-    status: 'active', assetIds: [], licenseIds: ['lic-adobe-cc'],
+    status: 'active', assetIds: [], licenseIds: [LIC.ADOBE_CC],
     notes: 'Auto-renews at the current seat count. Deployment is over entitlement — resolve before the notice date.',
   },
   {
@@ -912,14 +912,14 @@ export const CONTRACTS = [
     id: CTR.SALESFORCE, name: 'Salesforce Sales Cloud Subscription', vendor: 'Salesforce',
     type: 'software_subscription', startDate: '2023-11-01', endDate: '2026-10-31',
     value: 118800, currency: 'USD', autoRenew: true, noticeDays: 45, ownerId: USR.MICHAEL,
-    status: 'active', assetIds: [], licenseIds: ['lic-salesforce'],
+    status: 'active', assetIds: [], licenseIds: [LIC.SALESFORCE],
     notes: 'Renews for another 36 months at 60 seats unless notice is served. Only 18 seats are in use.',
   },
   {
     id: CTR.MSFT_EA, name: 'Microsoft Enterprise Agreement', vendor: 'Microsoft (via SHI)',
     type: 'software_subscription', startDate: '2024-02-01', endDate: '2027-01-31',
     value: 213840, currency: 'USD', autoRenew: false, noticeDays: 60, ownerId: USR.JAMES,
-    status: 'active', assetIds: [], licenseIds: ['lic-ms365-e3'],
+    status: 'active', assetIds: [], licenseIds: [LIC.MS365_E3],
     notes: 'Three-year EA, annual true-up each January.',
   },
   {
@@ -953,35 +953,35 @@ export const CONTRACTS = [
     id: CTR.ZOOM, name: 'Zoom One Business Agreement', vendor: 'Zoom Video Communications',
     type: 'software_subscription', startDate: '2024-03-01', endDate: '2027-02-28',
     value: 37350, currency: 'USD', autoRenew: true, noticeDays: 30, ownerId: USR.JAMES,
-    status: 'active', assetIds: [], licenseIds: ['lic-zoom'],
+    status: 'active', assetIds: [], licenseIds: [LIC.ZOOM],
     notes: 'Overlaps with Teams from the Microsoft agreement. Candidate to drop at renewal.',
   },
   {
     id: CTR.CROWDSTRIKE, name: 'CrowdStrike Falcon Subscription', vendor: 'CrowdStrike',
     type: 'software_subscription', startDate: '2025-04-01', endDate: '2027-03-31',
     value: 18960, currency: 'USD', autoRenew: true, noticeDays: 60, ownerId: USR.EMMA,
-    status: 'active', assetIds: [], licenseIds: ['lic-crowdstrike'],
+    status: 'active', assetIds: [], licenseIds: [LIC.CROWDSTRIKE],
     notes: '240 device licences with deliberate headroom for the hiring plan.',
   },
   {
     id: CTR.VMWARE, name: 'VMware vSphere Production Support', vendor: 'Broadcom',
     type: 'support', startDate: '2025-09-29', endDate: '2027-09-28',
     value: 17856, currency: 'USD', autoRenew: true, noticeDays: 30, ownerId: USR.PRIYA,
-    status: 'active', assetIds: ['ast-sv-0003', 'ast-sv-0004', 'ast-sv-0009'], licenseIds: ['lic-vmware'],
+    status: 'active', assetIds: ['ast-sv-0003', 'ast-sv-0004', 'ast-sv-0009'], licenseIds: [LIC.VMWARE],
     notes: 'Support only — the licences themselves are perpetual.',
   },
   {
     id: CTR.SLACK, name: 'Slack Business+ Annual', vendor: 'Salesforce',
     type: 'software_subscription', startDate: '2025-06-01', endDate: '2027-05-31',
     value: 34200, currency: 'USD', autoRenew: true, noticeDays: 30, ownerId: USR.JAMES,
-    status: 'active', assetIds: [], licenseIds: ['lic-slack'],
+    status: 'active', assetIds: [], licenseIds: [LIC.SLACK],
     notes: 'Two-year term negotiated at the 2025 renewal.',
   },
   {
     id: CTR.ATLASSIAN, name: 'Atlassian Cloud Premium', vendor: 'Atlassian',
     type: 'software_subscription', startDate: '2025-07-15', endDate: '2027-07-14',
     value: 13950, currency: 'USD', autoRenew: true, noticeDays: 30, ownerId: USR.PRIYA,
-    status: 'active', assetIds: [], licenseIds: ['lic-jira'],
+    status: 'active', assetIds: [], licenseIds: [LIC.JIRA],
     notes: 'Jira Software Premium, 90 seats.',
   },
   {

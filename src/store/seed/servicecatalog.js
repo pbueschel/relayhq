@@ -62,7 +62,7 @@
  *   literals, so there is still exactly one place to change them.
  */
 
-import { Q, POL, KB, SF, SVCCAT, SVC, USR } from './ids.js';
+import { Q, POL, KB, SF, SVCCAT, SVC, USR, MDL, LIC } from './ids.js';
 
 /* ------------------------------------------------------------------ *
  * Request-form ids — the intakes this file authors, keyed identically to SVC.
@@ -101,14 +101,6 @@ const SVCSF = {
 /* Asset models that ordering provisions. These are the real ids from
  * assets.js ASSET_MODELS — do not invent one; if fulfilment cannot create the
  * instance the link is worse than absent. */
-const MDL = {
-  MBP14:    'mdl-mbp14',
-  LAT7440:  'mdl-lat7440',
-  X1C11:    'mdl-x1c11',
-  IPHONE15: 'mdl-iphone15',
-  U2723:    'mdl-u2723',
-};
-
 /* Shared vocabulary — the same words on every intake that asks the same
  * question. Kept identical to forms.js so a person filling in two requests is
  * not asked the same thing two different ways. */
@@ -681,6 +673,8 @@ export const SERVICE_SUBFORMS = [
   /* ---------------- Hardware ---------------- */
   {
     id: SVCSF.NEW_LAPTOP,
+    raises: 'service_request',
+    fulfils: { kind: 'hardware', modelId: MDL.LAT7440 },
     name: 'Order a laptop',
     description: 'Pick a build, tell us whether it replaces something, and where to send it.',
     audience: 'internal',
@@ -714,6 +708,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.MONITOR,
+    raises: 'service_request',
+    fulfils: { kind: 'hardware', modelId: MDL.U2723 },
     name: 'Order a monitor',
     description: 'A 27" UltraSharp for the office or for home.',
     audience: 'internal',
@@ -745,6 +741,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.HEADSET,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Order a headset',
     description: 'Noise-cancelling USB headset, no approval needed.',
     audience: 'internal',
@@ -768,6 +766,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.PHONE,
+    raises: 'service_request',
+    fulfils: { kind: 'hardware', modelId: MDL.IPHONE15 },
     name: 'Order a company phone',
     description: 'An iPhone on a Verizon business line, for roles that need one.',
     audience: 'internal',
@@ -800,6 +800,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.LOANER,
+    raises: 'service_request',
+    fulfils: { kind: 'hardware', modelId: MDL.X1C11 },
     name: 'Borrow a loaner laptop',
     description: 'A temporary machine while yours is away, or for a short-term contractor.',
     audience: 'internal',
@@ -828,6 +830,8 @@ export const SERVICE_SUBFORMS = [
   /* ---------------- Software & licences ---------------- */
   {
     id: SVCSF.SOFTWARE_LICENCE,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Request a software licence',
     description: 'For anything outside the standard Microsoft 365 bundle.',
     audience: 'internal',
@@ -859,6 +863,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.ADOBE_SEAT,
+    raises: 'service_request',
+    fulfils: { kind: 'software', licenceId: LIC.ADOBE_CC },
     name: 'Request an Adobe seat',
     description: 'A named Creative Cloud All Apps licence on the Northwind VIP agreement.',
     audience: 'internal',
@@ -889,6 +895,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.FIGMA_SEAT,
+    raises: 'service_request',
+    fulfils: { kind: 'software', licenceId: LIC.FIGMA },
     name: 'Request a Figma editor seat',
     description: 'Editor access to the Northwind organisation.',
     audience: 'internal',
@@ -917,6 +925,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.VM_SANDBOX,
+    raises: 'service_request',
+    fulfils: { kind: 'software', licenceId: LIC.VMWARE },
     name: 'Request a sandbox VM',
     description: 'A throwaway virtual machine on the Elk Grove cluster.',
     audience: 'internal',
@@ -948,6 +958,8 @@ export const SERVICE_SUBFORMS = [
    * fields and the policy already keyed to it. */
   {
     id: SVCSF.VPN_ACCESS,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Request VPN access',
     description: 'Remote access to the internal network on your managed device.',
     audience: 'internal',
@@ -971,6 +983,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.SHARED_MAILBOX,
+    raises: 'service_request',
+    fulfils: { kind: 'software', licenceId: LIC.MS365_E3 },
     name: 'Shared mailbox request',
     description: 'Create a team mailbox, or get access to one that exists.',
     audience: 'internal',
@@ -1001,6 +1015,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.ELEVATED_ACCESS,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Request elevated access',
     description: 'Time-boxed admin rights for a specific piece of work.',
     audience: 'internal',
@@ -1035,6 +1051,8 @@ export const SERVICE_SUBFORMS = [
    * forms.js has no intake for, is authored below. */
   {
     id: SVCSF.ROLE_CHANGE,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Role or team change',
     description: 'Rebase someone onto a new manager, team or site.',
     audience: 'internal',
@@ -1063,6 +1081,8 @@ export const SERVICE_SUBFORMS = [
   /* ---------------- Workplace & facilities ---------------- */
   {
     id: SVCSF.DESK_MOVE,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Book a desk move',
     description: 'Move a desk, a monitor and a phone extension.',
     audience: 'internal',
@@ -1088,6 +1108,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.MEETING_KIT,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Fit out a meeting room',
     description: 'Display, camera, microphones and a room account for hybrid meetings.',
     audience: 'internal',
@@ -1120,6 +1142,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.BUILDING_ACCESS,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Request building access',
     description: 'A badge for another site, a restricted area, or out-of-hours access.',
     audience: 'internal',
@@ -1149,6 +1173,8 @@ export const SERVICE_SUBFORMS = [
   /* ---------------- Customer services — external ---------------- */
   {
     id: SVCSF.EXTRA_SEATS,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Add Storefront seats',
     description: 'More admin users on your account, prorated to the current billing period.',
     audience: 'external',
@@ -1177,6 +1203,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.SANDBOX_TENANT,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Request a sandbox tenant',
     description: 'A free copy of your account to build and test against.',
     audience: 'external',
@@ -1203,6 +1231,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.PREMIUM_SUPPORT,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Upgrade to premium support',
     description: 'Enterprise service level with a named engineer and 24/7 cover.',
     audience: 'external',
@@ -1230,6 +1260,8 @@ export const SERVICE_SUBFORMS = [
 
   {
     id: SVCSF.ONBOARDING_HELP,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Book guided implementation',
     description: 'Two weeks of hands-on help getting Storefront live.',
     audience: 'external',

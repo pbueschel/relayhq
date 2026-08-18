@@ -483,6 +483,53 @@ for (const ap of seed.approvals || []) {
 }
 
 /* ------------------------------------------------------------------ *
+ * GUARD — every intake declares what it raises, and can be fulfilled.
+ *
+ * The Incident / Service Request split used to be inferred at render time from
+ * `ticket.serviceItemId`, which is set only when the portal drill stands on a
+ * service frame. The same subform therefore had two identities depending on
+ * which door the requester walked through. The designator now lives on the
+ * subform, so it has to be present on ALL of them — both the 18 in forms.js and
+ * the 20 the service catalog contributes.
+ * ------------------------------------------------------------------ */
+
+const RAISES = ['incident', 'service_request'];
+const modelIds = new Set((seed.assetModels || []).map(m => m.id));
+const licenceIds = new Set((seed.assets || []).filter(a => a.kind === 'software').map(a => a.id));
+
+for (const sf of seed.subforms || []) {
+  ok(`subform ${sf.id} declares what it raises`, RAISES.includes(sf.raises), String(sf.raises));
+
+  /* An incident is a fault report — there is nothing to provision, so a
+   * fulfilment target on one is a modelling mistake, not a harmless extra. */
+  if (sf.raises === 'incident') {
+    ok(`incident ${sf.id} has no fulfilment target`, !sf.fulfils, JSON.stringify(sf.fulfils));
+  }
+
+  if (sf.fulfils) {
+    const f = sf.fulfils;
+    ok(`${sf.id} fulfils a known kind`, f.kind === 'hardware' || f.kind === 'software', f.kind);
+    if (f.kind === 'hardware') {
+      ok(`${sf.id} points at a real asset model`, modelIds.has(f.modelId), f.modelId);
+      ok(`${sf.id} hardware target carries no licence`, !f.licenceId, f.licenceId);
+    }
+    if (f.kind === 'software') {
+      ok(`${sf.id} points at a real licence`, licenceIds.has(f.licenceId), f.licenceId);
+      ok(`${sf.id} software target carries no model`, !f.modelId, f.modelId);
+    }
+  }
+}
+
+/* Every service item's intake must agree with the item: you cannot list a
+ * fault report in a catalog of things to order. */
+for (const item of seed.serviceItems || []) {
+  const sf = (seed.subforms || []).find(f => f.id === item.subformId);
+  if (!sf) continue;
+  ok(`service item ${item.id} is ordered through a request intake`,
+    sf.raises === 'service_request', `${sf.id} raises ${sf.raises}`);
+}
+
+/* ------------------------------------------------------------------ *
  * Report
  * ------------------------------------------------------------------ */
 

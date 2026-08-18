@@ -47,7 +47,7 @@
  * misleading sentence.
  */
 
-import { USR, CON, KB, CRS, CUR, AUTO, PRJ, CAT, SF, LOC } from './ids.js';
+import { USR, CON, KB, CRS, CUR, AUTO, PRJ, CAT, SF, LOC, MDL, LIC } from './ids.js';
 
 /* Entries are numbered in write order so the log reads as a sequence rather
  * than a bag of records; `at` is what everything actually sorts on. */
@@ -94,7 +94,7 @@ export const ACTIVITY = [
   ev('2026-08-04T08:16:00', USR.LISA, 'enrolled', 'course', CRS.SUPPORT_FOUNDATIONS,
     'Support Foundations: your first week on the queue',
     'Sam Whitfield · due 14 Aug. Every lesson in it is an atom the help centre already publishes.'),
-  ev('2026-08-04T10:05:00', USR.EMMA, 'updated', 'software', 'lic-ms365-e3',
+  ev('2026-08-04T10:05:00', USR.EMMA, 'updated', 'software', LIC.MS365_E3,
     'Microsoft 365 E3 — 180 seats',
     'Reconciled against the July CSP invoice. Two leavers were still holding a licence; seats released back to the pool.'),
   ev('2026-08-04T14:22:00', USR.DEVON, 'commented', 'ticket', 'tkt-4802',
@@ -119,7 +119,7 @@ export const ACTIVITY = [
   ev('2026-08-06T10:12:00', USR.DAVID, 'approved', 'approval', 'apr-5',
     'TKT-4821 · Retail Ops Summit sponsorship deposit, $1,800',
     'Same slot as last year and it paid for itself. Approved.'),
-  ev('2026-08-06T13:05:00', USR.EMMA, 'checked_in', 'software', 'lic-figma',
+  ev('2026-08-06T13:05:00', USR.EMMA, 'checked_in', 'software', LIC.FIGMA,
     'Figma Organization — 25 seats',
     'Reclaimed three seats dormant for 90 days, ahead of the design systems request that everyone knows is coming.'),
   ev('2026-08-06T16:40:00', USR.DEVON, 'completed', 'projectTask', 'tsk-aca-01a',
@@ -152,7 +152,7 @@ export const ACTIVITY = [
     'run-8720 · Two Enterprise tickets crossed 75% of their resolution target on a Sunday. Raised to urgent and paged the weekend on-call lead.'),
 
   /* ================= Mon 10 Aug ================= */
-  ev('2026-08-10T07:00:00', AUTO.RENEWAL_ALERT, 'ran_automation', 'software', 'lic-adobe-cc',
+  ev('2026-08-10T07:00:00', AUTO.RENEWAL_ALERT, 'ran_automation', 'software', LIC.ADOBE_CC,
     'Adobe Creative Cloud All Apps — 12 seats',
     'run-8731 · Flagged the 30 September renewal 51 days out and notified Procurement with the seat count attached.'),
   ev('2026-08-10T09:41:00', USR.JAMES, 'checked_in', 'hardware', 'ast-lt-0190',
@@ -186,7 +186,7 @@ export const ACTIVITY = [
   ev('2026-08-12T09:30:00', USR.SAM, 'completed', 'lesson', KB.USING_MACROS,
     'Using macros without sounding like a robot',
     'Third lesson of Working the queue, 18 minutes. Same atom the agent panel shows next to a refund ticket.'),
-  ev('2026-08-12T11:20:00', USR.EMMA, 'updated', 'software', 'lic-adobe-cc',
+  ev('2026-08-12T11:20:00', USR.EMMA, 'updated', 'software', LIC.ADOBE_CC,
     'Adobe Creative Cloud All Apps — 12 seats',
     'Fourteen people are assigned against twelve owned seats. Either two come off before 30 September or the renewal quote grows.'),
   ev('2026-08-12T14:40:00', USR.NADIA, 'published', 'item', CAT.I_PAYMENTS,

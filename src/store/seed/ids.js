@@ -300,3 +300,44 @@ export const CON = {
   MEI:   'con-5',
   COLE:  'con-6',
 };
+
+/* ------------------------------------------------------------------ *
+ * Asset MODELS and software LICENCES.
+ *
+ * These are cross-domain now: a service-request subform declares the hardware
+ * model or the software licence it fulfils, so the assets domain is referenced
+ * from forms.js and servicecatalog.js as well as from assets.js. Hard rule 6
+ * says that makes them ids.js's business — servicecatalog.js used to keep a
+ * private five-entry MDL map, which is exactly the drift this file prevents.
+ * ------------------------------------------------------------------ */
+
+export const MDL = {
+  MBP14:    'mdl-mbp14',
+  MBP16:    'mdl-mbp16',
+  LAT7440:  'mdl-lat7440',
+  X1C11:    'mdl-x1c11',
+  IPHONE15: 'mdl-iphone15',
+  U2723:    'mdl-u2723',
+  C9300:    'mdl-c9300',
+  MR46:     'mdl-mr46',
+  M479:     'mdl-m479',
+  R650:     'mdl-r650',
+  IPAD:     'mdl-ipad',
+};
+
+export const LIC = {
+  MS365_E3:    'lic-ms365-e3',
+  FIGMA:       'lic-figma',
+  ADOBE_CC:    'lic-adobe-cc',
+  SALESFORCE:  'lic-salesforce',
+  ZOOM:        'lic-zoom',
+  SLACK:       'lic-slack',
+  JIRA:        'lic-jira',
+  CROWDSTRIKE: 'lic-crowdstrike',
+  VMWARE:      'lic-vmware',
+  AUTOCAD:     'lic-autocad',
+  DOCUSIGN:    'lic-docusign',
+  GITHUB:      'lic-github',
+  TABLEAU:     'lic-tableau',
+  DUO:         'lic-duo',
+};

@@ -101,6 +101,16 @@
  * @property {{queueId:string}} [routing]
  * @property {string} [approvalPolicyId]  policy that runs on submission
  * @property {'internal'|'external'|'both'} audience
+ * @property {'incident'|'service_request'} raises  what a submission BECOMES.
+ *   Declared here rather than inferred at render time from `ticket.serviceItemId`:
+ *   that only gets set when the portal drill stands on a service frame, so one
+ *   intake reachable from both doors — sf-request-access is on 20 catalog items
+ *   AND on svc-app-access — had two identities depending on the route in.
+ * @property {?{kind:'hardware', modelId:string}|{kind:'software', licenceId:string}} fulfils
+ *   what a service request provisions: an asset model, or a software licence.
+ *   Null when the request is not for a specific product (onboarding, a desk
+ *   move, an expense sign-off) — those are still service requests, they simply
+ *   have no hardware or software to hang off. Never set on an incident.
  */
 
 /**

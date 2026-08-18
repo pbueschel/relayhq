@@ -24,7 +24,7 @@
  * language rather than making an admin read JSON.
  */
 
-import { Q, SF, POL, CAT, USR } from './ids.js';
+import { Q, SF, POL, CAT, USR, LIC } from './ids.js';
 
 /* ------------------------------------------------------------------ *
  * Reusable option sets — written once so the same vocabulary appears on
@@ -43,6 +43,7 @@ export const SUBFORMS = [
   /* ---------------- Accounts & access ---------------- */
   {
     id: SF.REPORT_SIGNIN,
+    raises: 'incident',
     name: 'Report a sign-in problem',
     description: 'Something is stopping you getting into a Northwind system.',
     audience: 'internal',
@@ -73,6 +74,8 @@ export const SUBFORMS = [
 
   {
     id: SF.REQUEST_ACCESS,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Request access to a system',
     description: 'Ask for a new account, a new role, or a higher permission level.',
     audience: 'internal',
@@ -106,6 +109,8 @@ export const SUBFORMS = [
 
   {
     id: SF.MFA_RESET,
+    raises: 'service_request',
+    fulfils: { kind: 'software', licenceId: LIC.DUO },
     name: 'Reset multi-factor authentication',
     description: 'Lost, replaced or wiped the device that holds your MFA codes.',
     audience: 'internal',
@@ -133,6 +138,7 @@ export const SUBFORMS = [
   /* ---------------- Email ---------------- */
   {
     id: SF.EMAIL_PROBLEM,
+    raises: 'incident',
     name: 'Email is not working',
     description: 'Mail not sending, not arriving, or the client will not connect.',
     audience: 'internal',
@@ -162,6 +168,8 @@ export const SUBFORMS = [
 
   {
     id: SF.DISTRIBUTION_LIST,
+    raises: 'service_request',
+    fulfils: { kind: 'software', licenceId: LIC.MS365_E3 },
     name: 'Distribution list change',
     description: 'Create a list, or add and remove members on one you own.',
     audience: 'internal',
@@ -192,6 +200,7 @@ export const SUBFORMS = [
   /* ---------------- Devices ---------------- */
   {
     id: SF.LAPTOP_REPAIR,
+    raises: 'incident',
     name: 'Laptop repair or replacement',
     description: 'Your machine is damaged, failing or unusable.',
     audience: 'internal',
@@ -218,6 +227,8 @@ export const SUBFORMS = [
 
   {
     id: SF.NEW_HARDWARE,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Request new hardware',
     description: 'A monitor, dock, headset, phone or an additional machine.',
     audience: 'internal',
@@ -248,6 +259,8 @@ export const SUBFORMS = [
 
   {
     id: SF.RETURN_HARDWARE,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Return equipment',
     description: 'Send back a device you no longer need, or one belonging to someone who has left.',
     audience: 'internal',
@@ -276,6 +289,8 @@ export const SUBFORMS = [
   /* ---------------- Software & licensing ---------------- */
   {
     id: SF.SOFTWARE_REQUEST,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Request software',
     description: 'A licence for an application that is not in the standard bundle.',
     audience: 'internal',
@@ -310,6 +325,8 @@ export const SUBFORMS = [
 
   {
     id: SF.LICENSE_RENEWAL,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Renew a software licence',
     description: 'A contract is coming up for renewal and someone has to decide.',
     audience: 'internal',
@@ -337,6 +354,8 @@ export const SUBFORMS = [
   /* ---------------- People ---------------- */
   {
     id: SF.NEW_HIRE,
+    raises: 'service_request',
+    fulfils: null,
     name: 'New hire onboarding',
     description: 'Everything a person needs on day one — account, laptop, access, desk.',
     audience: 'internal',
@@ -368,6 +387,8 @@ export const SUBFORMS = [
 
   {
     id: SF.OFFBOARDING,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Offboarding',
     description: 'Close accounts, recover equipment and hand over work when someone leaves.',
     audience: 'internal',
@@ -398,6 +419,8 @@ export const SUBFORMS = [
   /* ---------------- Finance & workplace ---------------- */
   {
     id: SF.EXPENSE_APPROVAL,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Expense pre-approval',
     description: 'Get spend signed off before you commit to it.',
     audience: 'internal',
@@ -427,6 +450,7 @@ export const SUBFORMS = [
 
   {
     id: SF.FACILITIES_ISSUE,
+    raises: 'incident',
     name: 'Report a facilities issue',
     description: 'Something in the building is broken, unsafe or uncomfortable.',
     audience: 'internal',
@@ -454,6 +478,7 @@ export const SUBFORMS = [
   /* ---------------- External customer intakes ---------------- */
   {
     id: SF.STOREFRONT_BUG,
+    raises: 'incident',
     name: 'Report a Storefront bug',
     description: 'Something in Northwind Storefront is not behaving the way the docs say it should.',
     audience: 'external',
@@ -484,6 +509,8 @@ export const SUBFORMS = [
 
   {
     id: SF.BILLING_QUESTION,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Billing question',
     description: 'An invoice, a charge, a refund or a plan change.',
     audience: 'external',
@@ -512,6 +539,8 @@ export const SUBFORMS = [
 
   {
     id: SF.FEATURE_REQUEST,
+    raises: 'service_request',
+    fulfils: null,
     name: 'Request a feature',
     description: 'Tell the product team what Storefront should do that it does not.',
     audience: 'both',
@@ -539,6 +568,7 @@ export const SUBFORMS = [
 
   {
     id: SF.INTEGRATION_HELP,
+    raises: 'incident',
     name: 'Integration and API help',
     description: 'API calls, webhooks, SFTP feeds and third-party connectors.',
     audience: 'external',

@@ -373,6 +373,20 @@ function resolveRequester(data, ticket) {
  * Normalising the four record types into one row model
  * ==================================================================== */
 
+/**
+ * What a ticket RAISES, read off the intake it came through.
+ *
+ * Falls back to the service-item link for a ticket with no subform (a record
+ * raised before intakes existed, or created by an automation), and to Incident
+ * as the last resort — a fault report is the safer thing to be wrong about,
+ * because it routes to a queue rather than to a fulfilment path.
+ */
+function raisesOf(data, ticket) {
+  const sf = (data.subforms || []).find(f => f.id === ticket.subformId);
+  if (sf?.raises) return sf.raises;
+  return ticket.serviceItemId ? 'service_request' : 'incident';
+}
+
 function ticketItem(ticket, data, now) {
   const sla = slaFor(ticket, data.slaPolicies, data.organizations, now);
   const requester = resolveRequester(data, ticket);
@@ -383,7 +397,11 @@ function ticketItem(ticket, data, now) {
     id: ticket.id,
     title: ticket.title,
     keyLabel: ticket.key || ticket.id,
-    typeLabel: ticket.serviceItemId ? 'Service Request' : 'Incident',
+    /* The SUBFORM says what it raises. Inferring it from `serviceItemId` meant
+     * the same intake was an Incident through Get Help and a Service Request
+     * through the catalog — sf-request-access is reachable from 20 catalog
+     * items AND from svc-app-access, so one form had two identities. */
+    typeLabel: raisesOf(data, ticket) === 'service_request' ? 'Service Request' : 'Incident',
     queueName: queue?.name || null,
     subtitle: joinDots([
       requester?.name,
