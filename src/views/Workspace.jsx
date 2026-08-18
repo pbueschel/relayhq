@@ -5,7 +5,7 @@ import {
   User, Building2, Mail, Phone, MessageCircle, GitBranch, AlertOctagon,
   Timer, Send, ListChecks, Heading1, List, ListOrdered, Quote, Minus, Users,
   Tag, Play, Crown, MapPin, ShieldCheck, Check, CornerDownRight, Briefcase,
-  MonitorSmartphone, Star, Pause, Trash2, X, Hash, Target,
+  MonitorSmartphone, Star, Pause, Trash2, X, Hash, Target, ShoppingCart,
 } from 'lucide-react';
 import {
   useTheme, cx, ICON, DENSITY, PRIORITY, STATUS,
@@ -13,7 +13,7 @@ import {
   Button, IconButton, Chip, ChipGroup, StatusPill, PriorityFlag,
   EntityTag, Avatar, EmptyState, Card, Panel, Section, GroupLabel,
   ListRow, Stat, Banner, Divider,
-  Field, Input, Textarea, Checkbox, TileGroup, SearchInput,
+  Field, Input, Textarea, Select, Checkbox, TileGroup, SearchInput,
   Modal, Menu, MenuItem, MenuLabel, FilterPill,
   LensBar, SubTabs, PageBody,
   ModuleHeader, ScopedSearch, FilterBar, subsetLabel, optionCounts, passes,
@@ -21,7 +21,8 @@ import {
 } from '@/ds';
 import { useStore, patchIn, addTo, uid, NOW } from '@/store/store.js';
 import { navigate } from '@/lib/router.js';
-import { canDecide, decide, progress } from '@/lib/approvals.js';
+import { canDecide, decide, progress, startApproval, matchingPolicies } from '@/lib/approvals.js';
+import { raiseServiceRequest, nextTicketKey } from '@/lib/servicerequest.js';
 import { LOC } from '@/store/seed/ids.js';
 
 /**
@@ -678,6 +679,10 @@ export default function Workspace({ route }) {
     organizations: s.organizations,
     slaPolicies: s.slaPolicies,
     subforms: s.subforms,
+    serviceItems: s.serviceItems,
+    approvalPolicies: s.approvalPolicies,
+    assetModels: s.assetModels,
+    assets: s.assets,
     problems: s.problems,
     changes: s.changes,
     locations: s.locations,
@@ -913,7 +918,15 @@ export default function Workspace({ route }) {
 
       {openTicket && <TicketModal ticket={openTicket} data={data} meId={meId} now={now} onClose={() => navigate('workspace')} />}
       {openTask && <TaskModal task={openTask} data={data} meId={meId} now={now} onClose={() => navigate('workspace')} />}
-      {creating && (
+      {creating === 'servicerequest' && (
+        <NewServiceRequestModal
+          data={data}
+          meId={meId}
+          onClose={() => setCreating(null)}
+          onCreated={(id) => { setCreating(null); navigate('workspace', 'ticket', id); }}
+        />
+      )}
+      {creating && creating !== 'servicerequest' && (
         <NewRecordModal
           kind={creating}
           data={data}
@@ -951,6 +964,14 @@ function NewMenu({ onCreate }) {
           label="New Ticket"
           accent="rose"
           onClick={() => { setOpen(false); onCreate('ticket'); }}
+        />
+        {/* A request taken over the phone had nowhere to go: serviceItemId was
+            written in exactly one place, the portal's submit. */}
+        <MenuItem
+          icon={ShoppingCart}
+          label="New Service Request"
+          accent="amber"
+          onClick={() => { setOpen(false); onCreate('servicerequest'); }}
         />
       </Menu>
     </div>
@@ -2149,6 +2170,133 @@ function TaskModal({ task, data, meId, now, onClose }) {
 /* ==================================================================== *
  * Creation
  * ==================================================================== */
+
+
+/**
+ * Raising a service request by hand.
+ *
+ * Its own modal rather than a third branch of NewRecordModal: that component is
+ * already a ticket/task fork over one shared state bag, and a third kind would
+ * turn it into a three-way conditional where every field has to ask which sort
+ * of record it belongs to.
+ *
+ * The important part is what it does NOT do — it does not assemble a ticket and
+ * set a flag. It calls raiseServiceRequest(), the same path that runs the
+ * approval engine, so a $6,400 licence typed in by an agent cannot skip the
+ * sign-off an identical order through the catalog would have triggered.
+ */
+function NewServiceRequestModal({ data, meId, onClose, onCreated }) {
+  const { t } = useTheme();
+  const items = useMemo(
+    () => (data.serviceItems || []).filter(i => i.status !== 'draft'),
+    [data.serviceItems]);
+
+  const [itemId, setItemId] = useState(items[0]?.id || '');
+  const [requesterId, setRequesterId] = useState(meId || '');
+  const [priority, setPriority] = useState('medium');
+  const [note, setNote] = useState('');
+  const [quantity, setQuantity] = useState(1);
+
+  const item = items.find(i => i.id === itemId) || null;
+  const subform = (data.subforms || []).find(f => f.id === item?.subformId) || null;
+  const policy = (data.approvalPolicies || []).find(p => p.id === item?.approvalPolicyId) || null;
+  const requester = (data.directory || []).find(p => p.id === requesterId) || null;
+  const target = fulfilmentLabel(data, subform);
+
+  const create = () => {
+    if (!item) return;
+    const now = NOW.toISOString();
+    const { ticket, approval } = raiseServiceRequest({
+      subform,
+      serviceItem: item,
+      answers: { quantity: Number(quantity) || 1, priority, __description: note.trim() },
+      requester,
+      actor: { id: meId },
+      store: data,
+      now,
+      key: nextTicketKey(data.tickets),
+      ids: { ticketId: uid('tkt'), approvalId: uid('apr') },
+      startApproval,
+      matchingPolicies,
+    });
+    addTo('tickets', ticket);
+    if (approval) addTo('approvals', approval);
+    onCreated(ticket.id);
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      accent="amber"
+      size="modalMd"
+      icon={ShoppingCart}
+      title="New service request"
+      subtitle={requester && requester.id !== meId ? `On behalf of ${requester.name}` : null}
+      footer={<>
+        <span className={cx('text-xs', t.textMuted)}>
+          {policy ? `${policy.name} will run` : 'No approval on this item'}
+        </span>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="grad" module={MODULE} disabled={!item} onClick={create}>Raise request</Button>
+        </div>
+      </>}
+    >
+      <div className="space-y-4">
+        <Field label="Service">
+          <Select value={itemId} onChange={(e) => setItemId(e.target.value)}
+            options={items.map(i => ({ value: i.id, label: i.name }))} />
+        </Field>
+
+        {target && (
+          <div className={cx('flex items-center gap-2 text-xs', t.textSecondary)}>
+            <Tag size={ICON.xs} />
+            {target}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="For">
+            <Select value={requesterId} onChange={(e) => setRequesterId(e.target.value)}
+              options={(data.directory || []).map(p => ({ value: p.id, label: p.name }))} />
+          </Field>
+          <Field label="Quantity">
+            <Input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+          </Field>
+        </div>
+
+        <Field label="Priority">
+          <TileGroup
+            value={priority}
+            onChange={setPriority}
+            columns={4}
+            options={Object.keys(PRIORITY).map(p => ({
+              value: p, label: PRIORITY[p].label, accent: PRIORITY[p].hue, icon: PRIORITY[p].icon,
+            }))}
+          />
+        </Field>
+
+        <Field label="Note">
+          <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)}
+            placeholder="What did they ask for?" />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
+/** "Provisions Dell Latitude 7440" / "Provisions an Adobe Creative Cloud seat". */
+function fulfilmentLabel(data, subform) {
+  const f = subform?.fulfils;
+  if (!f) return null;
+  if (f.kind === 'hardware') {
+    const m = (data.assetModels || []).find(x => x.id === f.modelId);
+    return m ? `Provisions ${[m.manufacturer, m.name].filter(Boolean).join(' ')}` : null;
+  }
+  const l = (data.assets || []).find(x => x.id === f.licenceId);
+  return l ? `Provisions a seat of ${[l.vendor, l.product || l.name].filter(Boolean).join(' ')}` : null;
+}
 
 function NewRecordModal({ kind, data, meId, onClose, onCreated }) {
   const { t } = useTheme();

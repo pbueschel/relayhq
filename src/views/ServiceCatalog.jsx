@@ -69,6 +69,7 @@ const FORM_HUE = entityHue('subform');
 const KB_HUE = entityHue('article');
 const GUIDE_HUE = entityHue('guide');
 const ASSET_HUE = entityHue('hardware');
+const LICENCE_HUE = entityHue('software');
 
 const AUDIENCE = {
   internal: { value: 'internal', label: 'Internal', hue: 'slate', icon: Building2, hint: 'Employees' },
@@ -91,14 +92,40 @@ const RECURRENCE_OPTIONS = [
 ];
 
 /**
- * The two things this module authors. A lens rather than a tab strip: the bar
+ * Two collections and one cut across them. `items` and `categories` are the
+ * things this module authors; `fulfilment` is the same item list shelved by
+ * what ordering hands over, because "which laptop model does this provision"
+ * is not answerable from a category. A lens rather than a tab strip: the bar
  * carries the counts, which is why the header has no stat strip printing the
  * same numbers a second time in a second shape.
  */
 const LENSES = [
   { value: 'items', label: 'Items', icon: ShoppingCart, accent: ITEM_HUE, noun: 'service items' },
+  { value: 'fulfilment', label: 'Provisions', icon: Boxes, accent: ASSET_HUE, noun: 'items with a target' },
   { value: 'categories', label: 'Categories', icon: Folder, accent: CATEGORY_HUE, noun: 'categories' },
 ];
+
+/**
+ * WHAT ORDERING PROVISIONS.
+ *
+ * A service item is shelved by its category, which answers "where do I look for
+ * it". It is fulfilled by a hardware model or a software licence, which answers
+ * "what do we hand over" — a different question, and the one the assets domain
+ * cares about. The intake declares it (`subform.fulfils`), so the same
+ * declaration drives this list and the Get help walkthrough.
+ *
+ * `none` is a real member of this set, not a gap: onboarding, a desk move and
+ * an expense sign-off are genuine service requests with nothing to provision.
+ */
+const FULFIL_KINDS = [
+  { value: 'hardware', label: 'Hardware', icon: Monitor, hue: ASSET_HUE },
+  { value: 'software', label: 'Software', icon: Key, hue: LICENCE_HUE },
+  { value: 'none', label: 'Nothing to provision', icon: Layers, hue: 'gray' },
+];
+
+function fulfilMeta(kind) {
+  return FULFIL_KINDS.find(k => k.value === kind) || FULFIL_KINDS[2];
+}
 
 /**
  * The icon set an author picks from. Deliberately small — an unbounded lucide
@@ -289,6 +316,83 @@ function groupByCategory(items, categories) {
 }
 
 /* ==================================================================== *
+ * Fulfilment — pure
+ * ==================================================================== */
+
+/**
+ * Resolve what an item provisions, against the collections that own the target:
+ * hardware points at `assetModels`, software at the `assets` rows with
+ * `kind === 'software'`.
+ *
+ * The intake is the source of truth, because that declaration is what the
+ * portal walkthrough reads too. `item.assetModelId` is a fallback rather than a
+ * second source: it is the item's OWN declared provision, and without it an
+ * item that creates an asset record would sort under "nothing to provision"
+ * while its Provisions panel names a model. A target id that resolves to
+ * nothing is reported as missing — never swallowed, never replaced.
+ */
+function fulfilmentOf(item, subforms, assetModels, licences) {
+  const intake = (subforms || []).find(s => s.id === item?.subformId);
+  const target = intake?.fulfils || null;
+
+  if (target?.kind === 'hardware') {
+    const model = (assetModels || []).find(m => m.id === target.modelId) || null;
+    return { kind: 'hardware', targetId: target.modelId, model, licence: null, missing: !model };
+  }
+  if (target?.kind === 'software') {
+    const licence = (licences || []).find(l => l.id === target.licenceId) || null;
+    return { kind: 'software', targetId: target.licenceId, model: null, licence, missing: !licence };
+  }
+  if (item?.assetModelId) {
+    const model = (assetModels || []).find(m => m.id === item.assetModelId) || null;
+    return { kind: 'hardware', targetId: item.assetModelId, model, licence: null, missing: !model };
+  }
+  return { kind: 'none', targetId: null, model: null, licence: null, missing: false };
+}
+
+function modelLabel(model) {
+  if (!model) return '';
+  return model.manufacturer ? `${model.manufacturer} ${model.name}` : model.name;
+}
+
+function licenceLabel(licence) {
+  if (!licence) return '';
+  return licence.vendor ? `${licence.vendor} ${licence.product}` : (licence.product || licence.id);
+}
+
+/**
+ * Seats spare, derived from `allocations` exactly as the assets screen derives
+ * them — never stored, so the two cannot disagree. Null for a site licence or
+ * one with no seat count, where "spare" means nothing.
+ */
+function seatPosition(licence) {
+  if (!licence || licence.licenseModel === 'site' || licence.seatsOwned == null) return null;
+  const used = (licence.allocations || []).reduce((n, al) => n + (al.seats || 1), 0);
+  return { used, owned: licence.seatsOwned, spare: licence.seatsOwned - used };
+}
+
+function seatLabel(position) {
+  if (!position) return null;
+  if (position.spare < 0) return `${Math.abs(position.spare)} over ${position.owned}`;
+  return `${position.spare} spare of ${position.owned}`;
+}
+
+function seatAccent(position) {
+  if (!position) return 'gray';
+  if (position.spare < 0) return 'red';
+  if (position.spare === 0) return 'amber';
+  return 'lime';
+}
+
+/** Group items by what they provision, in FULFIL_KINDS order, dropping empties. */
+function groupByFulfilment(items, resolve) {
+  return FULFIL_KINDS.map(kind => ({
+    kind,
+    items: (items || []).filter(i => resolve(i).kind === kind.value),
+  })).filter(g => g.items.length > 0);
+}
+
+/* ==================================================================== *
  * View
  * ==================================================================== */
 
@@ -303,6 +407,7 @@ export default function ServiceCatalog({ route }) {
   const knowledge = useStore(s => s.knowledge);
   const policies = useStore(s => s.approvalPolicies);
   const assetModels = useStore(s => s.assetModels);
+  const assets = useStore(s => s.assets);
   const currentUser = useStore(s => s.currentUser);
 
   const [tab, setTab] = useState(r.sub === 'categories' ? 'categories' : 'items');
@@ -318,7 +423,7 @@ export default function ServiceCatalog({ route }) {
   // Follow the route when the sidebar deep-links a tab, but keep the tab in
   // local state so switching tabs here does not need to know the section name.
   useEffect(() => {
-    if (r.sub === 'items' || r.sub === 'categories') setTab(r.sub);
+    if (r.sub === 'items' || r.sub === 'categories' || r.sub === 'fulfilment') setTab(r.sub);
   }, [r.sub]);
 
   // A deep link to one item opens its editor exactly once. The ref stops the
@@ -334,6 +439,14 @@ export default function ServiceCatalog({ route }) {
 
   const list = items || [];
   const cats = categories || [];
+
+  // Software targets are asset rows, not their own collection.
+  const licences = useMemo(() => (assets || []).filter(a => a.kind === 'software'), [assets]);
+  const resolve = useCallback(
+    (item) => fulfilmentOf(item, subforms, assetModels, licences),
+    [subforms, assetModels, licences],
+  );
+  const itemsLens = tab !== 'categories';
 
   const totals = useMemo(() => {
     const published = list.filter(i => i.status === 'published');
@@ -353,11 +466,18 @@ export default function ServiceCatalog({ route }) {
     const byCategory = optionCounts(list, i => i.categoryId);
     const byAudience = optionCounts(list, audiencesOf);
     const byStatus = optionCounts(list, i => i.status || 'draft');
+    const byFulfilment = optionCounts(list, i => resolve(i).kind);
     return [
       {
         id: 'category', label: 'Category', icon: Folder,
         options: sortCategories(cats).map(c => ({
           value: c.id, label: c.name, count: byCategory.get(c.id) || 0,
+        })),
+      },
+      {
+        id: 'fulfils', label: 'Provisions', icon: Boxes,
+        options: FULFIL_KINDS.map(o => ({
+          value: o.value, label: o.label, count: byFulfilment.get(o.value) || 0,
         })),
       },
       {
@@ -373,14 +493,15 @@ export default function ServiceCatalog({ route }) {
         })),
       },
     ];
-  }, [list, cats]);
+  }, [list, cats, resolve]);
 
   const filtered = useMemo(() => list.filter(i => (
     matchesQuery(i, query)
     && passes(filters.category, i.categoryId)
+    && passes(filters.fulfils, resolve(i).kind)
     && passes(filters.audience, audiencesOf(i))
     && passes(filters.status, i.status || 'draft')
-  )), [list, query, filters]);
+  )), [list, query, filters, resolve]);
 
   const shownCats = useMemo(
     () => sortCategories(cats).filter(c => matchesQuery(c, query)),
@@ -388,15 +509,22 @@ export default function ServiceCatalog({ route }) {
   );
 
   const groups = useMemo(() => groupByCategory(filtered, cats), [filtered, cats]);
+  const fulfilGroups = useMemo(() => groupByFulfilment(filtered, resolve), [filtered, resolve]);
 
   const activeFilters = countActive(filters);
   const clearFilters = useCallback(() => { setFilters({}); setQuery(''); }, []);
-  const filtering = tab === 'items' && (!!query.trim() || activeFilters > 0);
+  const filtering = itemsLens && (!!query.trim() || activeFilters > 0);
+
+  /** How many orderable things actually hand something over. */
+  const targeted = useMemo(
+    () => list.filter(i => resolve(i).kind !== 'none').length,
+    [list, resolve],
+  );
 
   const lensItems = useMemo(() => LENSES.map(l => ({
     ...l,
-    count: l.value === 'items' ? list.length : cats.length,
-  })), [list.length, cats.length]);
+    count: l.value === 'categories' ? cats.length : l.value === 'fulfilment' ? targeted : list.length,
+  })), [list.length, cats.length, targeted]);
 
   /* ---------- writes ---------- */
 
@@ -523,11 +651,17 @@ export default function ServiceCatalog({ route }) {
             cats.length,
             plural(cats.length, 'category', 'categories'),
           )
-          : subsetLabel(
-            filtered.length,
-            list.length,
-            `${plural(list.length, 'orderable item', 'orderable items')} · ${totals.drafts} in draft`,
-          )}
+          : tab === 'fulfilment'
+            ? subsetLabel(
+              filtered.length,
+              list.length,
+              `${targeted} of ${plural(list.length, 'item', 'items')} provision something`,
+            )
+            : subsetLabel(
+              filtered.length,
+              list.length,
+              `${plural(list.length, 'orderable item', 'orderable items')} · ${totals.drafts} in draft`,
+            )}
         /* The lens is centred in row 1, between the module identity and the
          * primary action, so it holds still while either of them changes width. */
         nav={<LensBar items={lensItems} value={tab} onChange={setTab} inline />}
@@ -552,11 +686,11 @@ export default function ServiceCatalog({ route }) {
         filterBar={
           <FilterBar
             accent={CATEGORY_HUE}
-            /* The three filters narrow the ITEM list, so they are offered only
-             * on the lens they act on — a control that changes nothing on the
-             * screen in front of you is worse than no control. The search field
-             * is on both, which is why the band itself is never conditional. */
-            filters={tab === 'items' ? FILTER_DEFS : []}
+            /* The filters narrow the ITEM list, so they are offered only on the
+             * lenses they act on — a control that changes nothing on the screen
+             * in front of you is worse than no control. The search field is on
+             * every lens, which is why the band itself is never conditional. */
+            filters={itemsLens ? FILTER_DEFS : []}
             value={filters}
             onChange={setFilters}
             onClearAll={clearFilters}
@@ -615,11 +749,24 @@ export default function ServiceCatalog({ route }) {
             onNewItem={(categoryId) => setEditingItem({ item: null, categoryId })}
             onNew={() => setEditingCategory({ category: null })}
           />
+        ) : tab === 'fulfilment' ? (
+          <FulfilmentTab
+            groups={fulfilGroups}
+            queues={queues}
+            policies={policies}
+            resolve={resolve}
+            filtering={filtering}
+            onEdit={(item) => setEditingItem({ item })}
+            onDelete={(item) => setConfirming({ kind: 'item', record: item })}
+            onNew={(categoryId) => setEditingItem({ item: null, categoryId })}
+            hasCategories={cats.length > 0}
+          />
         ) : (
           <ItemsTab
             groups={groups}
             queues={queues}
             policies={policies}
+            resolve={resolve}
             filtering={filtering}
             onEdit={(item) => setEditingItem({ item })}
             onDelete={(item) => setConfirming({ kind: 'item', record: item })}
@@ -683,7 +830,7 @@ function cascadeNote(pending, items) {
  * ITEMS TAB
  * ==================================================================== */
 
-function ItemsTab({ groups, queues, policies, filtering, onEdit, onDelete, onNew, hasCategories }) {
+function ItemsTab({ groups, queues, policies, resolve, filtering, onEdit, onDelete, onNew, hasCategories }) {
   return (
     <>
       {groups.length === 0 ? (
@@ -708,6 +855,7 @@ function ItemsTab({ groups, queues, policies, filtering, onEdit, onDelete, onNew
               items={group.items}
               queues={queues}
               policies={policies}
+              resolve={resolve}
               onEdit={onEdit}
               onDelete={onDelete}
               onNew={onNew}
@@ -719,7 +867,82 @@ function ItemsTab({ groups, queues, policies, filtering, onEdit, onDelete, onNew
   );
 }
 
-function CategoryGroup({ category, items, queues, policies, onEdit, onDelete, onNew }) {
+/* ==================================================================== *
+ * PROVISIONS TAB — the same items, shelved by what they hand over
+ * ==================================================================== */
+
+function FulfilmentTab({ groups, queues, policies, resolve, filtering, onEdit, onDelete, onNew, hasCategories }) {
+  if (groups.length === 0) {
+    return (
+      <EmptyState
+        icon={filtering ? Search : Boxes}
+        title={filtering ? 'Nothing matches' : 'No service items yet'}
+        hint={filtering
+          ? 'Clear a filter or widen the audience.'
+          : hasCategories
+            ? undefined
+            : 'Create a category first; every item lives inside one.'}
+        action={hasCategories
+          ? <Button variant="solid" accent={ITEM_HUE} icon={Plus} onClick={() => onNew('')}>New service item</Button>
+          : null}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map(group => (
+        <FulfilmentGroup
+          key={group.kind.value}
+          kind={group.kind}
+          items={group.items}
+          queues={queues}
+          policies={policies}
+          resolve={resolve}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      ))}
+    </div>
+  );
+}
+
+function FulfilmentGroup({ kind, items, queues, policies, resolve, onEdit, onDelete }) {
+  const { t } = useTheme();
+  // Distinct targets, not rows: two items can order the same laptop model.
+  const targets = new Set(items.map(i => resolve(i).targetId).filter(Boolean));
+
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-2">
+        <IconTile icon={kind.icon} accent={kind.hue} size="sm" />
+        <div className="min-w-0">
+          <h3 className={cx('text-sm font-semibold truncate', t.text)}>{kind.label}</h3>
+          <p className={cx('text-[11px] tabular-nums', t.textMuted)}>
+            {plural(items.length, 'item', 'items')}
+            {targets.size ? ` · ${plural(targets.size, 'target', 'targets')}` : ''}
+          </p>
+        </div>
+      </div>
+
+      <div className={DENSITY.rowGap}>
+        {items.map(item => (
+          <ServiceItemRow
+            key={item.id}
+            item={item}
+            queues={queues}
+            policies={policies}
+            fulfilment={resolve(item)}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CategoryGroup({ category, items, queues, policies, resolve, onEdit, onDelete, onNew }) {
   const { t } = useTheme();
   const orphaned = category.id === UNCATEGORISED.id;
   const hue = orphaned ? 'red' : CATEGORY_HUE;
@@ -765,6 +988,7 @@ function CategoryGroup({ category, items, queues, policies, onEdit, onDelete, on
             item={item}
             queues={queues}
             policies={policies}
+            fulfilment={resolve(item)}
             onEdit={onEdit}
             onDelete={onDelete}
           />
@@ -774,7 +998,7 @@ function CategoryGroup({ category, items, queues, policies, onEdit, onDelete, on
   );
 }
 
-function ServiceItemRow({ item, queues, policies, onEdit, onDelete }) {
+function ServiceItemRow({ item, queues, policies, fulfilment, onEdit, onDelete }) {
   const { t } = useTheme();
   const Glyph = iconFor(item.icon);
   const aud = audienceMeta(item.audience);
@@ -826,6 +1050,8 @@ function ServiceItemRow({ item, queues, policies, onEdit, onDelete }) {
           </Chip>
         )}
 
+        <FulfilChips fulfilment={fulfilment} />
+
         {item.approvalPolicyId && (
           policy
             ? (
@@ -844,6 +1070,46 @@ function ServiceItemRow({ item, queues, policies, onEdit, onDelete }) {
         {item.popular && <Chip accent="amber" icon={Star}>Popular</Chip>}
       </div>
     </ListRow>
+  );
+}
+
+/**
+ * What ordering hands over, on the row: the model, or the licence and where it
+ * stands on seats. An item with no target renders nothing here — it is a
+ * service request all the same, and an absence is not a state worth a chip.
+ */
+function FulfilChips({ fulfilment }) {
+  if (!fulfilment || fulfilment.kind === 'none') return null;
+
+  if (fulfilment.missing) {
+    return (
+      <Chip accent="red" icon={AlertCircle} title={`${fulfilment.targetId} is not in the assets list`}>
+        Target not found
+      </Chip>
+    );
+  }
+
+  if (fulfilment.kind === 'hardware') {
+    return (
+      <Chip accent={ASSET_HUE} icon={Monitor} title="Ordering provisions this model">
+        {modelLabel(fulfilment.model)}
+      </Chip>
+    );
+  }
+
+  const seats = seatPosition(fulfilment.licence);
+  const label = seatLabel(seats);
+  return (
+    <>
+      <Chip accent={LICENCE_HUE} icon={Key} title="Ordering provisions a seat on this licence">
+        {licenceLabel(fulfilment.licence)}
+      </Chip>
+      {label && (
+        <Chip accent={seatAccent(seats)} icon={Users} title="Seats owned against seats allocated">
+          {label}
+        </Chip>
+      )}
+    </>
   );
 }
 

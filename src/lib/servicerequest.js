@@ -86,3 +86,132 @@ export function serviceRequestContext(item, answers = {}, requester = {}, store 
     },
   };
 }
+
+/**
+ * Raise a service request outside the portal.
+ *
+ * WHY THIS EXISTS: a service request used to be creatable only by walking the
+ * portal drill, because the ticket's `serviceItemId` was written in exactly one
+ * place — the portal's submit. An agent taking a request over the phone had no
+ * way to record one, and any hand-rolled "create a ticket and set a flag" would
+ * have skipped the approval engine entirely. That is the failure this guards:
+ * a $6,400 licence order that nobody signed off because it was typed in by an
+ * agent rather than ordered through the catalog.
+ *
+ * So the approval half is not optional and not reimplemented here — it runs
+ * through `serviceRequestContext` and `startApproval`, the same pair the portal
+ * and the smoke gate use.
+ *
+ * Returns the records to write; it does NOT touch the store, so the caller
+ * decides ordering and the function stays testable.
+ */
+export function raiseServiceRequest({
+  subform, serviceItem = null, answers = {}, requester = null, actor = null,
+  store = {}, now = new Date().toISOString(), key, ids = {},
+  startApproval, matchingPolicies,
+}) {
+  const queues = store.queues || [];
+  const policies = store.approvalPolicies || [];
+
+  /* A service item owns its fulfilment queue; an intake owns its routing. An
+   * unrouted request falls to the catch-all rather than to nothing. */
+  const wantedQueueId = serviceItem?.fulfilmentQueueId || subform?.routing?.queueId || null;
+  const queue = (wantedQueueId && queues.find(q => q.id === wantedQueueId))
+    || queues.find(q => q.isDefault) || queues[0] || null;
+
+  const title = serviceItem?.name
+    ? `Request: ${serviceItem.name}`
+    : subform?.name || 'Service request';
+
+  const ticket = {
+    id: ids.ticketId,
+    key,
+    title,
+    description: answers.__description || '',
+    status: 'open',
+    priority: answers.priority || 'medium',
+    queueId: queue?.id || null,
+    assigneeId: null,
+    isExternal: false,
+    requesterId: requester?.id || null,
+    contactId: null,
+    orgId: null,
+    /* Says how it got here. A request typed by an agent is not a portal
+     * submission and the record should not claim to be one. */
+    source: 'agent',
+    subformId: subform?.id || null,
+    catalogItemId: null,
+    serviceItemId: serviceItem?.id || null,
+    formId: null,
+    answers: { ...answers },
+    labels: [],
+    cc: [],
+    comments: [],
+    links: [],
+    slaPolicyId: null,
+    firstResponseAt: null,
+    raisedById: actor?.id || null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const policyId = serviceItem?.approvalPolicyId || subform?.approvalPolicyId || null;
+  const policy = policyId ? policies.find(p => p.id === policyId) || null : null;
+  let approval = null;
+
+  if (policy && startApproval) {
+    const who = {
+      id: requester?.id,
+      department: requester?.department || null,
+      isExternal: false,
+      vip: !!requester?.vip,
+      org: { plan: null },
+    };
+    const ordered = serviceItem
+      ? serviceRequestContext(serviceItem, answers, who, { directory: store.directory || [], queues })
+      : null;
+    const ctx = ordered
+      ? { ...ordered,
+          ticket: { ...ordered.ticket, title: ticket.title, priority: ticket.priority,
+                    status: ticket.status, queueId: ticket.queueId },
+          __now: now }
+      : { requesterId: requester?.id,
+          directory: store.directory || [], queues,
+          answers,
+          ticket: { title: ticket.title, priority: ticket.priority, status: ticket.status,
+                    queueId: ticket.queueId, source: 'agent', labels: [],
+                    subformId: subform?.id || null, catalogItemId: null },
+          requester: { department: who.department, isExternal: false, vip: who.vip },
+          org: who.org,
+          __now: now };
+
+    /* A service item DECLARES it needs sign-off; an intake ATTACHES a policy
+     * whose conditions decide. Same fork the portal takes. */
+    const declared = !!serviceItem?.approvalPolicyId;
+    if (declared || (matchingPolicies && matchingPolicies([policy], ctx).length)) {
+      approval = startApproval(policy, ctx, {
+        id: ids.approvalId,
+        subject: `${ticket.key} · ${ticket.title}`,
+        targetType: 'ticket',
+        targetId: ticket.id,
+        now,
+      });
+    }
+  }
+
+  return { ticket, approval, queue, policy };
+}
+
+/**
+ * The next ticket key. Shared, because two callers inventing their own numbers
+ * is how you get a duplicate key — the agent create used to mint
+ * `TKT-${random 1000..9999}`, which can collide with a seeded record.
+ */
+export function nextTicketKey(tickets) {
+  let max = 4800;
+  for (const tk of tickets || []) {
+    const m = /(\d+)\s*$/.exec(tk.key || '');
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `TKT-${max + 1}`;
+}

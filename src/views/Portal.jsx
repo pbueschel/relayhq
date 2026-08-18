@@ -24,7 +24,7 @@ import {
 } from '@/ds';
 import { useStore, getState, addTo, uid, NOW } from '@/store/store.js';
 import { evaluate } from '@/lib/conditions.js';
-import { serviceRequestContext, annualCost } from '@/lib/servicerequest.js';
+import { serviceRequestContext, annualCost, nextTicketKey } from '@/lib/servicerequest.js';
 import { startApproval, matchingPolicies, progress, canDecide } from '@/lib/approvals.js';
 import { useRoute, navigate } from '@/lib/router.js';
 import { Q, USR, CON, CAT } from '@/store/seed/ids.js';
@@ -347,15 +347,6 @@ function derivePriority(answers) {
   if (/blocking my work|cannot complete|orders are failing|safety hazard/.test(blob)) return 'high';
   if (/planning ahead|no impact/.test(blob)) return 'low';
   return 'medium';
-}
-
-function nextTicketKey(tickets) {
-  let max = 4800;
-  for (const tk of tickets || []) {
-    const m = /(\d+)\s*$/.exec(tk.key || '');
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `TKT-${max + 1}`;
 }
 
 /* ==================================================================== *
